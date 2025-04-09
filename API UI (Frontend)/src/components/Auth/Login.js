@@ -61,7 +61,7 @@ const Login = () => {
   return (
     <>
       <Container className="d-flex justify-content-center align-items-center vh-100">
-        <Card className="w-100" style={{ maxWidth: '400px' }}>
+        <Card className="w-100 bg-white" style={{ maxWidth: '400px' }}>
           <Card.Body>
             <h2 className="text-center mb-4">Sign in to your account</h2>
 
@@ -105,7 +105,7 @@ const Login = () => {
 
               <div className="text-center mt-3">
                 <a href="/register" className="text-decoration-none">
-                  Don't have an account? Register
+                  Don't have an account? Register here
                 </a>
               </div>
             </Form>

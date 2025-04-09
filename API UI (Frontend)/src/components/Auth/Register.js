@@ -40,8 +40,8 @@ const Register = () => {
   };
 
   return (
-    <Container className="d-flex justify-content-center align-items-center vh-100 bg-light">
-      <Card className="w-100" style={{ maxWidth: '500px' }}>
+    <Container className="bg-transparent d-flex justify-content-center align-items-center vh-100">
+      <Card className="w-100 bg-white" style={{ maxWidth: '500px' }}>
         <Card.Body>
           <h2 className="text-center mb-4">Register a new application</h2>
           
@@ -58,7 +58,7 @@ const Register = () => {
                 They will only be shown once!
               </Alert>
               
-              <Card className="mb-3 border-danger">
+              <Card className="mb-3 border-danger bg-white">
                 <Card.Body>
                   <h5 className="mb-3 text-danger">Client Credentials</h5>
                   

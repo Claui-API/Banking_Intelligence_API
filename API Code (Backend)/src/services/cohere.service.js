@@ -34,7 +34,7 @@ class CohereService {
         model: 'command-r-plus-08-2024',
         message: prompt,
         max_tokens: isGreeting ? 200 : 800,  // Shorter for greetings
-        temperature: isGreeting ? 0.8 : 0.7   // More variety for greetings
+        temperature: isGreeting ? 0.2 : 0.3   // More variety for greetings
       };
       
       // Call the Cohere API
