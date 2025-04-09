@@ -10,10 +10,9 @@ const Layout = ({ children }) => {
   const location = useLocation();
   
   // Determine if we should show sidebar based on route
-  const showSidebar = location.pathname.startsWith('/dashboard') || 
-                     location.pathname.startsWith('/accounts') ||
-                     location.pathname.startsWith('/transactions') ||
-                     location.pathname.startsWith('/insights');
+  // Added '/docs' route to the list
+  const showSidebar = location.pathname.startsWith('/dashboard') ||
+                     location.pathname.startsWith('/docs');
   
   return (
     <div className="d-flex flex-column min-vh-100">

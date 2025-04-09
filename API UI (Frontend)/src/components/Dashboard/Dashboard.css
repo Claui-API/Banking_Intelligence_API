@@ -1,0 +1,49 @@
+/* src/components/Dashboard/Dashboard.css */
+
+/* Cursor blink effect */
+.cursor-blink {
+  animation: blink 1s step-end infinite;
+  font-weight: bold;
+  color: #28a745;
+}
+
+@keyframes blink {
+  from, to { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* Pre tag responsive styles */
+pre {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  max-width: 100%;
+}
+
+/* Make API key more visible on small screens */
+@media (max-width: 576px) {
+  .text-truncate {
+    max-width: 150px;
+  }
+}
+
+/* Improve code display on small screens */
+@media (max-width: 768px) {
+  pre {
+    font-size: 0.8rem;
+  }
+}
+
+/* Ensure all content is properly contained */
+.container-fluid {
+  overflow-x: hidden;
+}
+
+/* Improve the readability of the code example */
+.bg-black pre {
+  line-height: 1.5;
+}
+
+/* Make cards fit within view on all screen sizes */
+.card {
+  overflow-x: auto;
+}

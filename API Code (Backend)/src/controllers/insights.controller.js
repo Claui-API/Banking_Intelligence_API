@@ -1,6 +1,6 @@
 // Fixed insights.controller.js with independent greeting detection function
 const cohereService = require('../services/cohere.service');
-const databaseService = require('../services/database.service');
+const databaseService = require('../services/data.service');
 const logger = require('../utils/logger');
 
 /**

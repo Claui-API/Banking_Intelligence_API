@@ -1,8 +1,6 @@
 // health.routes.js
 const express = require('express');
 const router = express.Router();
-const dbConnection = require('../utils/db-connection');
-const mongoose = require('mongoose');
 const logger = require('../utils/logger');
 
 router.get('/health', async (req, res) => {

@@ -1,4 +1,4 @@
-// server.js
+// server.js - removed MongoDB dependency
 const express = require('express');
 const helmet = require('helmet');
 const cors = require('cors');
@@ -14,14 +14,14 @@ dotenv.config();
 // Import the logger
 const logger = require('./utils/logger');
 
-// Create Express app (move this up)
+// Create Express app
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Now Sentry can use app
-const Sentry = require('@sentry/node');
+// Set up Sentry for error tracking in production
+const Sentry = process.env.NODE_ENV === 'production' ? require('@sentry/node') : null;
 
-if (process.env.NODE_ENV === 'production') {
+if (Sentry) {
   Sentry.init({
     dsn: process.env.SENTRY_DSN,
     environment: process.env.NODE_ENV
@@ -36,6 +36,7 @@ const authRoutes = require('./routes/auth.routes');
 const healthRoutes = require('./routes/health.routes');
 const plaidRoutes = require('./routes/plaid.routes');
 const webhookRoutes = require('./routes/plaid.webhook.routes');
+const diagnosticsRoutes = require('./routes/diagnostics.routes');
 
 // Middleware
 const { errorHandler, notFoundHandler } = require('./middleware/errorHandler');
@@ -88,6 +89,7 @@ app.use('/api/insights', authMiddleware, insightsRoutes);
 app.use('/api/plaid', plaidRoutes);
 app.use('/api/webhooks', webhookRoutes);
 app.use('/api', healthRoutes);
+app.use('/api/diagnostics', diagnosticsRoutes);
 // API v1 routes for mobile
 app.use('/api/v1/notifications', notificationRoutes);
 app.use('/api/v1/sync', syncRoutes);
@@ -147,7 +149,7 @@ const mobileRateLimiter = rateLimit({
 app.use('/api/v1', mobileRateLimiter);
 
 // Add Sentry error handler before your express error handler
-if (process.env.NODE_ENV === 'production') {
+if (Sentry) {
   app.use(Sentry.Handlers.errorHandler());
 }
 

@@ -1,10 +1,18 @@
-// controllers/sync.controller.js
-const SyncPackage = require('../models/SyncPackage');
-const Transaction = require('../models/Transaction');
-const Account = require('../models/Account');
+// controllers/sync.controller.js - No MongoDB dependency
 const logger = require('../utils/logger');
+const dataService = require('../services/data.service');
+const crypto = require('crypto');
 
 class SyncController {
+  constructor() {
+    // In-memory store for sync packages
+    this.syncPackages = new Map();
+    
+    // In-memory store for transactions modified by mobile clients
+    // In a production environment, you'd use a more persistent storage solution
+    this.mobileTransactions = new Map();
+  }
+
   /**
    * Generate a sync package for mobile apps to enable offline usage
    * @param {Object} req - Express request object
@@ -34,25 +42,30 @@ class SyncController {
         }
       }
       
-      // Get data changed since last sync
-      const syncPackage = await this._createSyncPackage(userId, lastSync);
+      // Get data for sync
+      const userData = await dataService.getUserFinancialData(userId);
       
-      // Save the sync package for tracking
-      const packageRecord = new SyncPackage({
+      // Create sync package
+      const syncPackage = this._createSyncPackage(userData, lastSync);
+      
+      // Generate an ID for this sync package
+      const syncId = crypto.randomUUID();
+      
+      // Store the sync package for tracking
+      this.syncPackages.set(syncId, {
         userId,
         timestamp: new Date(),
         packageSize: JSON.stringify(syncPackage).length,
         syncType: lastSync ? 'delta' : 'full',
-        deviceInfo: req.headers['user-agent']
+        deviceInfo: req.headers['user-agent'],
+        processed: false
       });
-      
-      await packageRecord.save();
       
       return res.status(200).json({
         success: true,
         data: {
           ...syncPackage,
-          syncId: packageRecord._id
+          syncId
         }
       });
     } catch (error) {
@@ -97,18 +110,17 @@ class SyncController {
       }
       
       // Record sync results
-      if (syncId) {
-        await SyncPackage.findByIdAndUpdate(syncId, {
-          $set: {
-            processed: true,
-            processedAt: new Date(),
-            results: {
-              accepted: results.accepted.length,
-              rejected: results.rejected.length,
-              conflicts: results.conflicts.length
-            }
-          }
-        });
+      if (syncId && this.syncPackages.has(syncId)) {
+        const syncPackage = this.syncPackages.get(syncId);
+        syncPackage.processed = true;
+        syncPackage.processedAt = new Date();
+        syncPackage.results = {
+          accepted: results.accepted.length,
+          rejected: results.rejected.length,
+          conflicts: results.conflicts.length
+        };
+        
+        this.syncPackages.set(syncId, syncPackage);
       }
       
       return res.status(200).json({
@@ -127,41 +139,41 @@ class SyncController {
   
   /**
    * Create a sync package with all necessary data for offline usage
-   * @param {string} userId - User ID
+   * @param {Object} userData - User financial data
    * @param {Date} lastSync - Timestamp of last sync
    * @returns {Object} - Sync package object
    */
-  async _createSyncPackage(userId, lastSync) {
-    // Query for accounts
-    const accountQuery = { userId };
+  _createSyncPackage(userData, lastSync) {
+    const { accounts, transactions } = userData;
+    
+    // Filter data based on lastSync if provided
+    let filteredAccounts = accounts;
+    let filteredTransactions = transactions;
+    
     if (lastSync) {
-      accountQuery.lastUpdated = { $gte: lastSync };
+      // In a real implementation with actual timestamps, you'd filter by last update time
+      // For our mock implementation, we'll include everything since we don't have real timestamps
+      // This is a placeholder for the real filtering logic
+      logger.info(`Delta sync requested since ${lastSync.toISOString()}`);
     }
     
-    const accounts = await Account.find(accountQuery);
-    
-    // Query for transactions
-    const transactionQuery = { userId };
-    if (lastSync) {
-      transactionQuery.updatedAt = { $gte: lastSync };
-    }
-    
-    // Only get recent transactions (e.g., last 90 days) for full sync
+    // For transactions, only include recent ones for full sync
     if (!lastSync) {
       const ninetyDaysAgo = new Date();
       ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
-      transactionQuery.date = { $gte: ninetyDaysAgo };
+      
+      filteredTransactions = transactions.filter(tx => 
+        new Date(tx.date) >= ninetyDaysAgo
+      );
     }
     
-    const transactions = await Transaction.find(transactionQuery);
-    
     // Generate checksums for conflict detection
-    const accountChecksums = accounts.map(account => ({
+    const accountChecksums = filteredAccounts.map(account => ({
       id: account.accountId,
       checksum: this._generateChecksum(account)
     }));
     
-    const transactionChecksums = transactions.map(transaction => ({
+    const transactionChecksums = filteredTransactions.map(transaction => ({
       id: transaction.transactionId,
       checksum: this._generateChecksum(transaction)
     }));
@@ -169,8 +181,8 @@ class SyncController {
     // Create and return the sync package
     return {
       timestamp: new Date().toISOString(),
-      accounts: accounts.map(account => account.toObject()),
-      transactions: transactions.map(transaction => transaction.toObject()),
+      accounts: filteredAccounts,
+      transactions: filteredTransactions,
       checksums: {
         accounts: accountChecksums,
         transactions: transactionChecksums
@@ -192,6 +204,10 @@ class SyncController {
       conflicts: []
     };
     
+    // Get existing transactions from our store
+    const userTransactionsKey = `transactions-${userId}`;
+    let existingTransactions = this.mobileTransactions.get(userTransactionsKey) || [];
+    
     // Process each transaction change
     for (const txChange of transactions) {
       try {
@@ -207,13 +223,14 @@ class SyncController {
         // Set the user ID explicitly
         txChange.userId = userId;
         
-        // Check if transaction exists
-        const existingTx = await Transaction.findOne({ 
-          transactionId: txChange.transactionId 
-        });
+        // Check if transaction exists in our store
+        const existingTxIndex = existingTransactions.findIndex(tx => 
+          tx.transactionId === txChange.transactionId
+        );
         
-        if (existingTx) {
+        if (existingTxIndex >= 0) {
           // Transaction exists - check for conflicts
+          const existingTx = existingTransactions[existingTxIndex];
           const serverChecksum = this._generateChecksum(existingTx);
           const baseChecksum = txChange._baseChecksum;
           
@@ -223,31 +240,28 @@ class SyncController {
             results.conflicts.push({
               id: txChange.transactionId,
               clientVersion: txChange,
-              serverVersion: existingTx.toObject()
+              serverVersion: existingTx
             });
             continue;
           }
           
           // No conflict - update the transaction
-          const updated = await Transaction.findOneAndUpdate(
-            { transactionId: txChange.transactionId },
-            { $set: { ...txChange, updatedAt: new Date() } },
-            { new: true }
-          );
+          txChange.updatedAt = new Date();
+          existingTransactions[existingTxIndex] = txChange;
           
           results.accepted.push({
-            id: updated.transactionId,
+            id: txChange.transactionId,
             type: 'update'
           });
         } else {
           // Transaction doesn't exist - create it
-          const newTx = new Transaction({
+          const newTx = {
             ...txChange,
             createdAt: new Date(),
             updatedAt: new Date()
-          });
+          };
           
-          await newTx.save();
+          existingTransactions.push(newTx);
           
           results.accepted.push({
             id: newTx.transactionId,
@@ -262,6 +276,9 @@ class SyncController {
         });
       }
     }
+    
+    // Save updated transactions back to our store
+    this.mobileTransactions.set(userTransactionsKey, existingTransactions);
     
     return results;
   }
@@ -285,6 +302,6 @@ class SyncController {
     
     return hash.toString(16);
   }
-  }
+}
 
 module.exports = new SyncController();

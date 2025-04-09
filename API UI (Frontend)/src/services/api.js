@@ -12,7 +12,7 @@ const api = axios.create({
     'Content-Type': 'application/json',
   },
   // Add timeout to prevent hanging requests
-  timeout: 30000, // 10 seconds
+  timeout: 60000, // 10 seconds
 });
 
 // Log API configuration

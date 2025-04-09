@@ -3,12 +3,13 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Container, Row, Col, Button, Card, Image } from 'react-bootstrap';
+import './HomePage.css'; // Import the CSS file
 
 const HomePage = () => {
   const { isAuthenticated } = useAuth();
   
   return (
-    <div style={{color: 'green', maxHeight: '100%', maxWidth: '100%'}}>
+    <div className="home-page-container">
       {/* Header section */}
       <div className="text-center py-4">
         <Container>

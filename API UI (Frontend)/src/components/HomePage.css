@@ -1,0 +1,18 @@
+
+/* src/components/HomePage.css */
+
+/* Target the homepage container specifically */
+.home-page-container {
+  background-color: #111111 !important; /* Dark background for homepage */
+  color: white;
+  min-height: 100vh; /* Make sure it covers the full height */
+}
+
+/* Additional styling for homepage elements if needed */
+.home-page-container .card {
+  background-color: #222222 !important;
+}
+
+.home-page-container pre {
+  background-color: #000000 !important;
+}

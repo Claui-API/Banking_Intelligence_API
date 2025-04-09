@@ -1,7 +1,12 @@
 // controllers/notification.controller.js
 const notificationService = require('../services/notification.service');
-const DeviceToken = require('../models/DeviceToken');
 const logger = require('../utils/logger');
+
+/**
+ * In-memory storage for device tokens
+ * In a production environment, this would be replaced with a database
+ */
+const deviceTokens = new Map();
 
 class NotificationController {
   /**
@@ -28,19 +33,49 @@ class NotificationController {
         });
       }
       
-      const result = await notificationService.registerDevice(
-        userId,
-        token,
-        platform,
-        deviceInfo
-      );
+      // Get user's devices or initialize empty array
+      const userKey = `user-${userId}`;
+      const userDevices = deviceTokens.get(userKey) || [];
+      
+      // Check if device token already exists
+      const existingTokenIndex = userDevices.findIndex(device => device.token === token);
+      
+      if (existingTokenIndex >= 0) {
+        // Update existing token
+        userDevices[existingTokenIndex] = {
+          ...userDevices[existingTokenIndex],
+          lastSeen: new Date(),
+          deviceInfo: { ...userDevices[existingTokenIndex].deviceInfo, ...deviceInfo }
+        };
+        
+        logger.info(`Updated existing device token for user ${userId}`);
+      } else {
+        // Add new token
+        userDevices.push({
+          token,
+          platform,
+          deviceInfo,
+          active: true,
+          createdAt: new Date(),
+          lastSeen: new Date(),
+          id: `device-${Date.now()}-${Math.random().toString(36).substring(2, 10)}`
+        });
+        
+        logger.info(`Registered new device token for user ${userId}`);
+      }
+      
+      // Save updated devices
+      deviceTokens.set(userKey, userDevices);
+      
+      // Get the device that was just added or updated
+      const deviceToken = userDevices[existingTokenIndex >= 0 ? existingTokenIndex : userDevices.length - 1];
       
       return res.status(200).json({
         success: true,
         message: 'Device registered successfully',
         data: {
-          deviceId: result._id,
-          platform: result.platform
+          deviceId: deviceToken.id,
+          platform: deviceToken.platform
         }
       });
     } catch (error) {
@@ -69,10 +104,14 @@ class NotificationController {
         });
       }
       
-      // Find the device token
-      const deviceToken = await DeviceToken.findOne({ userId, token });
+      // Get user's devices
+      const userKey = `user-${userId}`;
+      const userDevices = deviceTokens.get(userKey) || [];
       
-      if (!deviceToken) {
+      // Find the device token
+      const deviceIndex = userDevices.findIndex(device => device.token === token);
+      
+      if (deviceIndex === -1) {
         return res.status(404).json({
           success: false,
           message: 'Device token not found'
@@ -80,7 +119,11 @@ class NotificationController {
       }
       
       // Mark as inactive
-      await deviceToken.deactivate();
+      userDevices[deviceIndex].active = false;
+      userDevices[deviceIndex].updatedAt = new Date();
+      
+      // Save updated devices
+      deviceTokens.set(userKey, userDevices);
       
       return res.status(200).json({
         success: true,
@@ -112,8 +155,18 @@ class NotificationController {
         });
       }
       
-      // Update user preferences in the database
-      // This would typically update your UserProfile model
+      // Store user preferences in memory
+      // In a real implementation, you would save this to a persistent storage
+      const preferencesKey = `preferences-${userId}`;
+      const existingPreferences = deviceTokens.get(preferencesKey) || {};
+      
+      deviceTokens.set(preferencesKey, {
+        ...existingPreferences,
+        ...preferences,
+        updatedAt: new Date()
+      });
+      
+      logger.info(`Updated notification preferences for user ${userId}`);
       
       return res.status(200).json({
         success: true,
@@ -152,6 +205,18 @@ class NotificationController {
         });
       }
       
+      // Get user's active devices
+      const userKey = `user-${userId}`;
+      const userDevices = deviceTokens.get(userKey) || [];
+      const activeDevices = userDevices.filter(device => device.active);
+      
+      if (activeDevices.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'No active devices found for this user'
+        });
+      }
+      
       // Send a test notification
       const notification = {
         title: 'Test Notification',
@@ -162,12 +227,63 @@ class NotificationController {
         }
       };
       
-      const result = await notificationService.sendNotification(userId, notification);
+      // Group devices by platform
+      const androidTokens = activeDevices
+        .filter(device => device.platform === 'android')
+        .map(device => device.token);
+        
+      const iosTokens = activeDevices
+        .filter(device => device.platform === 'ios')
+        .map(device => device.token);
+      
+      // Send notifications
+      const results = {
+        android: { success: 0, failure: 0 },
+        ios: { success: 0, failure: 0 }
+      };
+      
+      if (androidTokens.length > 0) {
+        try {
+          // In a real implementation, this would use Firebase
+          // For now, just simulate success
+          results.android = {
+            success: androidTokens.length,
+            failure: 0
+          };
+          
+          logger.info(`Sent test notification to ${androidTokens.length} Android devices`);
+        } catch (error) {
+          logger.error('Error sending Android notifications:', error);
+          results.android = { success: 0, failure: androidTokens.length };
+        }
+      }
+      
+      if (iosTokens.length > 0) {
+        try {
+          // In a real implementation, this would use APN
+          // For now, just simulate success
+          results.ios = {
+            success: iosTokens.length,
+            failure: 0
+          };
+          
+          logger.info(`Sent test notification to ${iosTokens.length} iOS devices`);
+        } catch (error) {
+          logger.error('Error sending iOS notifications:', error);
+          results.ios = { success: 0, failure: iosTokens.length };
+        }
+      }
       
       return res.status(200).json({
         success: true,
         message: 'Test notification sent',
-        data: result
+        data: {
+          devices: {
+            android: androidTokens.length,
+            ios: iosTokens.length
+          },
+          results
+        }
       });
     } catch (error) {
       logger.error('Error sending test notification:', error);

@@ -1,7 +1,8 @@
-// routes/plaid.routes.js
+// routes/plaid.routes.js - Updated for no MongoDB
 const express = require('express');
 const router = express.Router();
 const plaidService = require('../services/plaid.service');
+const dataService = require('../services/data.service'); // Updated service
 const authMiddleware = require('../middleware/auth');
 const logger = require('../utils/logger');
 
@@ -39,7 +40,7 @@ router.post('/create-link-token', authMiddleware, async (req, res) => {
 
 /**
  * @route POST /api/plaid/exchange-public-token
- * @desc Exchange public token for access token and save to database
+ * @desc Exchange public token for access token and store it
  * @access Private
  */
 router.post('/exchange-public-token', authMiddleware, async (req, res) => {
@@ -57,8 +58,12 @@ router.post('/exchange-public-token', authMiddleware, async (req, res) => {
     // Exchange public token for access token
     const { accessToken, itemId } = await plaidService.exchangePublicToken(publicToken);
     
-    // Here you would typically save the access token to the user's record in the database
-    // For this example, we'll just return it (in a real app, never return this to frontend)
+    // Store token using data service (no database needed)
+    await dataService.storeToken(userId, {
+      accessToken,
+      itemId,
+      createdAt: new Date()
+    });
     
     return res.status(200).json({
       success: true,
@@ -85,28 +90,44 @@ router.get('/accounts', authMiddleware, async (req, res) => {
   try {
     const { userId } = req.auth;
     
-    // In a real application, you would retrieve the user's Plaid access token from your database
-    // For this example, we're getting it from the request
-    const { accessToken } = req.query;
+    // Get all of the user's Plaid tokens
+    const tokens = await dataService.getPlaidTokens(userId);
     
-    if (!accessToken) {
-      return res.status(400).json({
-        success: false,
-        message: 'Access token is required'
+    if (!tokens || tokens.length === 0) {
+      // Return mock accounts if no tokens available
+      const mockData = dataService.getMockUserData(userId);
+      
+      return res.status(200).json({
+        success: true,
+        data: mockData.accounts,
+        isMock: true
       });
     }
     
-    const accounts = await plaidService.getAccounts(accessToken);
+    // Get accounts from all connections
+    const allAccounts = [];
+    
+    for (const token of tokens) {
+      const accounts = await plaidService.getAccounts(token.accessToken);
+      allAccounts.push(...accounts);
+    }
     
     return res.status(200).json({
       success: true,
-      data: accounts
+      data: allAccounts
     });
   } catch (error) {
     logger.error('Error getting accounts:', error);
-    return res.status(500).json({
-      success: false,
-      message: error.message
+    
+    // Return mock accounts on error
+    const { userId } = req.auth;
+    const mockData = dataService.getMockUserData(userId);
+    
+    return res.status(200).json({
+      success: true,
+      data: mockData.accounts,
+      isMock: true,
+      error: error.message
     });
   }
 });
@@ -119,15 +140,19 @@ router.get('/accounts', authMiddleware, async (req, res) => {
 router.get('/transactions', authMiddleware, async (req, res) => {
   try {
     const { userId } = req.auth;
+    const { startDate, endDate } = req.query;
     
-    // In a real application, you would retrieve the user's Plaid access token from your database
-    // For this example, we're getting it from the request
-    const { accessToken, startDate, endDate } = req.query;
+    // Get all of the user's Plaid tokens
+    const tokens = await dataService.getPlaidTokens(userId);
     
-    if (!accessToken) {
-      return res.status(400).json({
-        success: false,
-        message: 'Access token is required'
+    if (!tokens || tokens.length === 0) {
+      // Return mock transactions if no tokens available
+      const mockData = dataService.getMockUserData(userId);
+      
+      return res.status(200).json({
+        success: true,
+        data: mockData.transactions,
+        isMock: true
       });
     }
     
@@ -136,17 +161,34 @@ router.get('/transactions', authMiddleware, async (req, res) => {
     const start = startDate ? new Date(startDate) : new Date(end);
     start.setDate(end.getDate() - 30);
     
-    const transactions = await plaidService.getTransactions(accessToken, start, end);
+    // Get transactions from all connections
+    const allTransactions = [];
+    
+    for (const token of tokens) {
+      const transactions = await plaidService.getTransactions(
+        token.accessToken, 
+        start, 
+        end
+      );
+      allTransactions.push(...transactions);
+    }
     
     return res.status(200).json({
       success: true,
-      data: transactions
+      data: allTransactions
     });
   } catch (error) {
     logger.error('Error getting transactions:', error);
-    return res.status(500).json({
-      success: false,
-      message: error.message
+    
+    // Return mock transactions on error
+    const { userId } = req.auth;
+    const mockData = dataService.getMockUserData(userId);
+    
+    return res.status(200).json({
+      success: true,
+      data: mockData.transactions,
+      isMock: true,
+      error: error.message
     });
   }
 });

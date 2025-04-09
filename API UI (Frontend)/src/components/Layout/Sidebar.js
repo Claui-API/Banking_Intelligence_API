@@ -29,7 +29,7 @@ const Sidebar = () => {
     <Nav 
       className={`d-md-block bg-black sidebar transition-width ${collapsed ? 'collapsed' : ''}`}
       style={{ 
-        width: collapsed ? '60px' : '400px',
+        width: collapsed ? '60px' : '210px',
         transition: 'width 0.3s ease'
       }}
     >

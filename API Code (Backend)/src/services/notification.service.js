@@ -2,7 +2,6 @@
 const admin = require('firebase-admin');
 const apn = require('apn'); // Apple Push Notification
 const logger = require('../utils/logger');
-const DeviceToken = require('../models/DeviceToken');
 
 class NotificationService {
   constructor() {

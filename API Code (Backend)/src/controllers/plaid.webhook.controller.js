@@ -1,15 +1,36 @@
-// controllers/plaid.webhook.controller.js
-const PlaidItem = require('../models/PlaidItem');
+// controllers/plaid.webhook.controller.js - No MongoDB dependency
 const plaidService = require('../services/plaid.service');
-const databaseService = require('../services/database.service');
-const Account = require('../models/Account');
-const Transaction = require('../models/Transaction');
+const dataService = require('../services/data.service');
 const logger = require('../utils/logger');
 
 /**
  * Controller for Plaid webhook events
+ * This version doesn't use MongoDB and instead uses in-memory storage
  */
 class PlaidWebhookController {
+  constructor() {
+    // In-memory store for webhook processing status
+    this.webhookProcessingStatus = new Map();
+    
+    // In-memory store for transactions
+    this.transactionsStore = new Map();
+    
+    // In-memory store for item status
+    this.itemStatusStore = new Map();
+  }
+  
+  /**
+   * Store transactions in memory
+   * @param {string} key - Storage key
+   * @param {Array} transactions - Transactions to store
+   */
+  _storeTransactions(key, transactions) {
+    this.transactionsStore.set(key, {
+      transactions,
+      updatedAt: new Date()
+    });
+  }
+
   /**
    * Handle Plaid webhook events
    * @param {Object} req - Express request object
@@ -21,12 +42,33 @@ class PlaidWebhookController {
       
       logger.info(`Received Plaid webhook: ${webhook_type}/${webhook_code} for item ${item_id}`);
       
+      // Generate a webhook processing ID
+      const webhookId = `webhook-${Date.now()}-${Math.random().toString(36).substring(2, 10)}`;
+      
+      // Store initial status
+      this.webhookProcessingStatus.set(webhookId, {
+        item_id,
+        webhook_type,
+        webhook_code,
+        startTime: new Date(),
+        status: 'received'
+      });
+      
       // Respond to Plaid immediately to acknowledge receipt
-      res.status(200).json({ success: true, message: 'Webhook received' });
+      res.status(200).json({ success: true, message: 'Webhook received', webhookId });
       
       // Process the webhook asynchronously
-      this._processWebhook(req.body).catch(error => {
+      this._processWebhook(webhookId, req.body).catch(error => {
         logger.error('Error processing webhook:', error);
+        
+        // Update processing status
+        const status = this.webhookProcessingStatus.get(webhookId);
+        if (status) {
+          status.status = 'error';
+          status.error = error.message;
+          status.endTime = new Date();
+          this.webhookProcessingStatus.set(webhookId, status);
+        }
       });
       
     } catch (error) {
@@ -37,253 +79,363 @@ class PlaidWebhookController {
   
   /**
    * Process the webhook based on type and code
+   * @param {string} webhookId - Webhook processing ID
    * @param {Object} webhookData - Webhook payload
    */
-  async _processWebhook(webhookData) {
+  async _processWebhook(webhookId, webhookData) {
     const { webhook_type, webhook_code, item_id } = webhookData;
     
-    // Find the Plaid item in our database
-    const plaidItem = await PlaidItem.findOne({ itemId: item_id });
+    // Update status to processing
+    const status = this.webhookProcessingStatus.get(webhookId);
+    status.status = 'processing';
+    this.webhookProcessingStatus.set(webhookId, status);
     
-    if (!plaidItem) {
-      logger.error(`Plaid item ${item_id} not found in database`);
-      return;
-    }
-    
-    switch (webhook_type) {
-      case 'TRANSACTIONS':
-        await this._handleTransactionsWebhook(webhookData, plaidItem);
-        break;
-        
-      case 'ITEM':
-        await this._handleItemWebhook(webhookData, plaidItem);
-        break;
-        
-      case 'AUTH':
-        await this._handleAuthWebhook(webhookData, plaidItem);
-        break;
-        
-      default:
-        logger.info(`Unhandled webhook type: ${webhook_type}/${webhook_code}`);
+    try {
+      // Find the user associated with this Plaid item
+      // In a real implementation, you'd look this up in a database
+      // For now, we'll simulate finding the user
+      let userId = null;
+      
+      // Try to find the user by simulating a lookup
+      const allTokens = await this._getAllPlaidTokens();
+      for (const [user, tokens] of allTokens) {
+        for (const token of tokens) {
+          if (token.itemId === item_id) {
+            userId = user;
+            break;
+          }
+        }
+        if (userId) break;
+      }
+      
+      if (!userId) {
+        logger.error(`Could not find user for Plaid item ${item_id}`);
+        status.status = 'error';
+        status.error = 'User not found';
+        status.endTime = new Date();
+        this.webhookProcessingStatus.set(webhookId, status);
+        return;
+      }
+      
+      // Process based on webhook type
+      switch (webhook_type) {
+        case 'TRANSACTIONS':
+          await this._handleTransactionsWebhook(webhookId, webhookData, userId, item_id);
+          break;
+          
+        case 'ITEM':
+          await this._handleItemWebhook(webhookId, webhookData, userId, item_id);
+          break;
+          
+        case 'AUTH':
+          await this._handleAuthWebhook(webhookId, webhookData, userId, item_id);
+          break;
+          
+        default:
+          logger.info(`Unhandled webhook type: ${webhook_type}/${webhook_code}`);
+          status.status = 'ignored';
+          status.reason = 'Unsupported webhook type';
+          status.endTime = new Date();
+          this.webhookProcessingStatus.set(webhookId, status);
+      }
+    } catch (error) {
+      logger.error(`Error processing webhook ${webhookId}:`, error);
+      status.status = 'error';
+      status.error = error.message;
+      status.endTime = new Date();
+      this.webhookProcessingStatus.set(webhookId, status);
     }
   }
   
   /**
-   * Handle transaction-related webhooks
-   * @param {Object} webhookData - Webhook payload
-   * @param {Object} plaidItem - Plaid item from database
+   * Simulate getting all users' Plaid tokens
+   * In a real implementation, this would query a database
+   * @returns {Map} - Map of user IDs to token arrays
    */
-  async _handleTransactionsWebhook(webhookData, plaidItem) {
+  async _getAllPlaidTokens() {
+    // This is a placeholder - in a real implementation,
+    // you'd query your database for all Plaid tokens
+    
+    // For now, return an empty map which would cause webhook processing
+    // to fail gracefully when it can't find a matching user
+    return new Map();
+  }
+  
+  /**
+   * Handle transaction-related webhooks
+   * @param {string} webhookId - Webhook processing ID
+   * @param {Object} webhookData - Webhook payload
+   * @param {string} userId - User ID
+   * @param {string} itemId - Plaid item ID
+   */
+  async _handleTransactionsWebhook(webhookId, webhookData, userId, itemId) {
     const { webhook_code, new_transactions } = webhookData;
+    const status = this.webhookProcessingStatus.get(webhookId);
+    logger.info(`Processing transactions webhook for user ${userId}, item ${itemId}`);
     
     switch (webhook_code) {
       case 'INITIAL_UPDATE':
       case 'HISTORICAL_UPDATE':
       case 'DEFAULT_UPDATE':
         // Sync transactions
-        await this._syncTransactions(plaidItem);
+        try {
+          status.status = 'syncing';
+          status.details = `Syncing ${new_transactions} new transactions`;
+          this.webhookProcessingStatus.set(webhookId, status);
+          
+          // Get the access token for this item
+          const tokens = await dataService.getPlaidTokens(userId);
+          const tokenInfo = tokens.find(token => token.itemId === itemId);
+          
+          if (!tokenInfo) {
+            throw new Error(`Access token not found for item ${itemId}`);
+          }
+          
+          // Get date range (last 30 days by default)
+          const endDate = new Date();
+          const startDate = new Date(endDate);
+          startDate.setDate(endDate.getDate() - 30);
+          
+          // Get transactions from Plaid
+          const transactions = await plaidService.getTransactions(
+            tokenInfo.accessToken, 
+            startDate, 
+            endDate
+          );
+          
+          logger.info(`Retrieved ${transactions.length} transactions for user ${userId}`);
+          
+          // Store updated transactions in memory or cache
+          // In a real implementation, you would save this to a database
+          // Here we'll store it temporarily in the controller
+          const transactionsKey = `transactions-${userId}-${itemId}`;
+          this._storeTransactions(transactionsKey, transactions);
+          
+          status.status = 'completed';
+          status.transactionCount = transactions.length;
+          status.endTime = new Date();
+          this.webhookProcessingStatus.set(webhookId, status);
+        } catch (error) {
+          logger.error(`Error syncing transactions for webhook ${webhookId}:`, error);
+          status.status = 'error';
+          status.error = error.message;
+          status.endTime = new Date();
+          this.webhookProcessingStatus.set(webhookId, status);
+        }
         break;
         
       case 'TRANSACTIONS_REMOVED':
-        // Remove transactions that were deleted on the bank's side
-        await this._removeTransactions(webhookData, plaidItem);
+        // Handle removed transactions
+        try {
+          const { removed_transactions } = webhookData;
+          
+          if (!removed_transactions || !Array.isArray(removed_transactions)) {
+            logger.warn('No removed transactions in webhook data');
+            status.status = 'skipped';
+            status.reason = 'No transactions to remove';
+            status.endTime = new Date();
+            this.webhookProcessingStatus.set(webhookId, status);
+            return;
+          }
+          
+          status.status = 'removing';
+          status.details = `Removing ${removed_transactions.length} transactions`;
+          this.webhookProcessingStatus.set(webhookId, status);
+          
+          // In a real implementation, you would remove these transactions from your database
+          // Here we'll just log it
+          logger.info(`Would remove ${removed_transactions.length} transactions for user ${userId}`);
+          
+          status.status = 'completed';
+          status.removedCount = removed_transactions.length;
+          status.endTime = new Date();
+          this.webhookProcessingStatus.set(webhookId, status);
+        } catch (error) {
+          logger.error(`Error removing transactions for webhook ${webhookId}:`, error);
+          status.status = 'error';
+          status.error = error.message;
+          status.endTime = new Date();
+          this.webhookProcessingStatus.set(webhookId, status);
+        }
         break;
         
       default:
         logger.info(`Unhandled transactions webhook code: ${webhook_code}`);
+        status.status = 'ignored';
+        status.reason = 'Unsupported webhook code';
+        status.endTime = new Date();
+        this.webhookProcessingStatus.set(webhookId, status);
     }
   }
   
   /**
    * Handle item-related webhooks
+   * @param {string} webhookId - Webhook processing ID
    * @param {Object} webhookData - Webhook payload
-   * @param {Object} plaidItem - Plaid item from database
+   * @param {string} userId - User ID
+   * @param {string} itemId - Plaid item ID
    */
-  async _handleItemWebhook(webhookData, plaidItem) {
+  async _handleItemWebhook(webhookId, webhookData, userId, itemId) {
     const { webhook_code, error } = webhookData;
+    const status = this.webhookProcessingStatus.get(webhookId);
     
     switch (webhook_code) {
       case 'ERROR':
         // Update item status to error
-        plaidItem.status = 'error';
-        plaidItem.error = error;
-        await plaidItem.save();
-        
-        logger.error(`Plaid item error: ${error.error_code} - ${error.error_message}`);
+        try {
+          status.status = 'processing';
+          status.details = 'Handling item error';
+          this.webhookProcessingStatus.set(webhookId, status);
+          
+          // Store item error status
+          this.itemStatusStore.set(`item-${itemId}`, {
+            status: 'error',
+            error: error,
+            updatedAt: new Date()
+          });
+          
+          logger.error(`Plaid item error for user ${userId}: ${error.error_code} - ${error.error_message}`);
+          
+          status.status = 'completed';
+          status.endTime = new Date();
+          this.webhookProcessingStatus.set(webhookId, status);
+        } catch (err) {
+          logger.error(`Error handling item error webhook ${webhookId}:`, err);
+          status.status = 'error';
+          status.error = err.message;
+          status.endTime = new Date();
+          this.webhookProcessingStatus.set(webhookId, status);
+        }
         break;
         
       case 'PENDING_EXPIRATION':
         // Update consent expiration
-        if (webhookData.consent_expiration_time) {
-          plaidItem.consentExpiresAt = new Date(webhookData.consent_expiration_time);
-          await plaidItem.save();
+        try {
+          status.status = 'processing';
+          status.details = 'Handling pending expiration';
+          this.webhookProcessingStatus.set(webhookId, status);
           
-          logger.warn(`Plaid item consent expiring on ${plaidItem.consentExpiresAt}`);
+          if (webhookData.consent_expiration_time) {
+            const consentExpiresAt = new Date(webhookData.consent_expiration_time);
+            
+            // Store expiration info
+            this.itemStatusStore.set(`item-${itemId}`, {
+              status: 'expiring',
+              consentExpiresAt,
+              updatedAt: new Date()
+            });
+            
+            logger.warn(`Plaid item consent expiring on ${consentExpiresAt} for user ${userId}`);
+          }
+          
+          status.status = 'completed';
+          status.endTime = new Date();
+          this.webhookProcessingStatus.set(webhookId, status);
+        } catch (err) {
+          logger.error(`Error handling pending expiration webhook ${webhookId}:`, err);
+          status.status = 'error';
+          status.error = err.message;
+          status.endTime = new Date();
+          this.webhookProcessingStatus.set(webhookId, status);
         }
         break;
         
       case 'USER_PERMISSION_REVOKED':
         // Mark item as disconnected
-        plaidItem.status = 'disconnected';
-        await plaidItem.save();
-        
-        logger.warn(`User permission revoked for item ${plaidItem.itemId}`);
+        try {
+          status.status = 'processing';
+          status.details = 'Handling permission revoked';
+          this.webhookProcessingStatus.set(webhookId, status);
+          
+          // Store status
+          this.itemStatusStore.set(`item-${itemId}`, {
+            status: 'disconnected',
+            updatedAt: new Date()
+          });
+          
+          logger.warn(`User permission revoked for item ${itemId}, user ${userId}`);
+          
+          status.status = 'completed';
+          status.endTime = new Date();
+          this.webhookProcessingStatus.set(webhookId, status);
+        } catch (err) {
+          logger.error(`Error handling permission revoked webhook ${webhookId}:`, err);
+          status.status = 'error';
+          status.error = err.message;
+          status.endTime = new Date();
+          this.webhookProcessingStatus.set(webhookId, status);
+        }
         break;
         
       default:
         logger.info(`Unhandled item webhook code: ${webhook_code}`);
+        status.status = 'ignored';
+        status.reason = 'Unsupported webhook code';
+        status.endTime = new Date();
+        this.webhookProcessingStatus.set(webhookId, status);
     }
   }
   
   /**
    * Handle auth-related webhooks
+   * @param {string} webhookId - Webhook processing ID
    * @param {Object} webhookData - Webhook payload
-   * @param {Object} plaidItem - Plaid item from database
+   * @param {string} userId - User ID
+   * @param {string} itemId - Plaid item ID
    */
-  async _handleAuthWebhook(webhookData, plaidItem) {
+  async _handleAuthWebhook(webhookId, webhookData, userId, itemId) {
     const { webhook_code } = webhookData;
+    const status = this.webhookProcessingStatus.get(webhookId);
     
     switch (webhook_code) {
       case 'AUTOMATICALLY_VERIFIED':
       case 'VERIFICATION_EXPIRED':
         // Sync accounts to update status
-        await this._syncAccounts(plaidItem);
+        try {
+          status.status = 'syncing';
+          status.details = `Syncing accounts for auth webhook ${webhook_code}`;
+          this.webhookProcessingStatus.set(webhookId, status);
+          
+          // Get the access token for this item
+          const tokens = await dataService.getPlaidTokens(userId);
+          const tokenInfo = tokens.find(token => token.itemId === itemId);
+          
+          if (!tokenInfo) {
+            throw new Error(`Access token not found for item ${itemId}`);
+          }
+          
+          // Get accounts from Plaid
+          const accounts = await plaidService.getAccounts(tokenInfo.accessToken);
+          
+          logger.info(`Retrieved ${accounts.length} accounts for user ${userId}`);
+          
+          // Store updated accounts in memory or cache
+          // In a real implementation, you would save this to a database
+          const accountsKey = `accounts-${userId}-${itemId}`;
+          this.transactionsStore.set(accountsKey, {
+            accounts,
+            updatedAt: new Date()
+          });
+          
+          status.status = 'completed';
+          status.accountCount = accounts.length;
+          status.endTime = new Date();
+          this.webhookProcessingStatus.set(webhookId, status);
+        } catch (error) {
+          logger.error(`Error syncing accounts for webhook ${webhookId}:`, error);
+          status.status = 'error';
+          status.error = error.message;
+          status.endTime = new Date();
+          this.webhookProcessingStatus.set(webhookId, status);
+        }
         break;
         
       default:
         logger.info(`Unhandled auth webhook code: ${webhook_code}`);
-    }
-  }
-  
-  /**
-   * Sync transactions for a Plaid item
-   * @param {Object} plaidItem - Plaid item from database
-   */
-  async _syncTransactions(plaidItem) {
-    try {
-      const { userId, accessToken } = plaidItem;
-      
-      // Get date range (last 30 days)
-      const endDate = new Date();
-      const startDate = new Date(endDate);
-      startDate.setDate(endDate.getDate() - 30);
-      
-      // Get transactions from Plaid
-      const transactions = await plaidService.getTransactions(accessToken, startDate, endDate);
-      
-      // Save transactions to database
-      for (const transaction of transactions) {
-        await Transaction.findOneAndUpdate(
-          { 
-            userId,
-            transactionId: transaction.transactionId
-          },
-          {
-            ...transaction,
-            userId
-          },
-          { upsert: true, new: true }
-        );
-      }
-      
-      // Update Plaid item
-      plaidItem.lastSuccessfulUpdate = new Date();
-      await plaidItem.save();
-      
-      logger.info(`Synced ${transactions.length} transactions for user ${userId}`);
-    } catch (error) {
-      logger.error('Error syncing transactions:', error);
-      
-      // Update Plaid item status
-      plaidItem.status = 'error';
-      plaidItem.error = {
-        errorCode: 'SYNC_ERROR',
-        errorMessage: error.message
-      };
-      await plaidItem.save();
-    }
-  }
-  
-  /**
-   * Remove transactions that were deleted on the bank's side
-   * @param {Object} webhookData - Webhook payload
-   * @param {Object} plaidItem - Plaid item from database
-   */
-  async _removeTransactions(webhookData, plaidItem) {
-    try {
-      const { userId } = plaidItem;
-      const { removed_transactions } = webhookData;
-      
-      if (!removed_transactions || !Array.isArray(removed_transactions)) {
-        logger.warn('No removed transactions in webhook data');
-        return;
-      }
-      
-      // Delete transactions from database
-      await Transaction.deleteMany({
-        userId,
-        transactionId: { $in: removed_transactions }
-      });
-      
-      logger.info(`Removed ${removed_transactions.length} transactions for user ${userId}`);
-    } catch (error) {
-      logger.error('Error removing transactions:', error);
-    }
-  }
-  
-  /**
-   * Sync accounts for a Plaid item
-   * @param {Object} plaidItem - Plaid item from database
-   */
-  async _syncAccounts(plaidItem) {
-    try {
-      const { userId, accessToken } = plaidItem;
-      
-      // Get accounts from Plaid
-      const accounts = await plaidService.getAccounts(accessToken);
-      
-      // Save accounts to database
-      for (const account of accounts) {
-        await Account.findOneAndUpdate(
-          { 
-            userId,
-            accountId: account.accountId
-          },
-          {
-            ...account,
-            userId
-          },
-          { upsert: true, new: true }
-        );
-      }
-      
-      // Get institution info if not already stored
-      if (!plaidItem.institutionId || !plaidItem.institutionName) {
-        try {
-          const itemInfo = await plaidService.getItemInfo(accessToken);
-          
-          plaidItem.institutionId = itemInfo.institutionId;
-          plaidItem.institutionName = itemInfo.institutionName;
-        } catch (error) {
-          logger.warn('Error getting institution info:', error);
-        }
-      }
-      
-      // Update Plaid item
-      plaidItem.lastSuccessfulUpdate = new Date();
-      await plaidItem.save();
-      
-      logger.info(`Synced ${accounts.length} accounts for user ${userId}`);
-    } catch (error) {
-      logger.error('Error syncing accounts:', error);
-      
-      // Update Plaid item status
-      plaidItem.status = 'error';
-      plaidItem.error = {
-        errorCode: 'SYNC_ERROR',
-        errorMessage: error.message
-      };
-      await plaidItem.save();
+        status.status = 'ignored';
+        status.reason = 'Unsupported webhook code';
+        status.endTime = new Date();
+        this.webhookProcessingStatus.set(webhookId, status);
     }
   }
 }
