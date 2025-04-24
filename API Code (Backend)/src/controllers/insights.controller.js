@@ -1,25 +1,25 @@
-// Fixed insights.controller.js with independent greeting detection function
+// Enhanced insights.controller.js with comprehensive query classification
 const cohereService = require('../services/cohere.service');
 const databaseService = require('../services/data.service');
 const logger = require('../utils/logger');
 
 /**
- * Check if a query is just a simple greeting
+ * Determine the type of query
  * @param {string} query - The user's query
- * @returns {boolean} - True if the query is just a greeting
+ * @returns {string} - The query type: 'greeting', 'joke', 'budgeting', 'spending', 'financial'
  */
-function isGreeting(query) {
-  if (!query) return false;
+function classifyQuery(query) {
+  if (!query) return 'financial'; // Default to financial if empty
   
   // Normalize the query (trim and lowercase)
   const normalizedQuery = query.trim().toLowerCase();
   
-  // Check for simple one-word greetings
+  // Check for greetings
   if (/^(hi|hello|hey|howdy|hola|yo|sup|greetings)$/i.test(normalizedQuery)) {
-    return true;
+    return 'greeting';
   }
   
-  // Check for greetings with CLAU's name or punctuation
+  // Check for extended greetings with CLAU's name or punctuation
   const greetingPatterns = [
     /^(hi|hello|hey|howdy|hola)(\s+clau)?(\s*[!,.?]*)$/i,
     /^(good\s+(morning|afternoon|evening))(\s+clau)?(\s*[!,.?]*)$/i,
@@ -27,7 +27,42 @@ function isGreeting(query) {
     /^(greetings|welcome)(\s+clau)?(\s*[!,.?]*)$/i
   ];
   
-  return greetingPatterns.some(pattern => pattern.test(normalizedQuery));
+  if (greetingPatterns.some(pattern => pattern.test(normalizedQuery))) {
+    return 'greeting';
+  }
+  
+  // Check for joke requests
+  if (/tell\s+me\s+a\s+joke|got\s+any\s+jokes|joke|make\s+me\s+laugh|something\s+funny/i.test(normalizedQuery)) {
+    return 'joke';
+  }
+  
+  // Check for budgeting queries
+  if (/budget|how\s+to\s+budget|budgeting|create\s+a\s+budget|manage\s+budget|budget\s+plan|monthly\s+budget/i.test(normalizedQuery)) {
+    return 'budgeting';
+  }
+  
+  // Check for spending queries
+  if (/spend|spending|how\s+much\s+did\s+i\s+spend|spent|where\s+is\s+my\s+money\s+going|expenses|expense|track\s+spending|spending\s+habits/i.test(normalizedQuery)) {
+    return 'spending';
+  }
+  
+  // Check for saving queries
+  if (/save|saving|savings|how\s+to\s+save|save\s+money|save\s+more|increase\s+savings/i.test(normalizedQuery)) {
+    return 'saving';
+  }
+  
+  // Check for investment queries
+  if (/invest|investing|investment|stock|stocks|etf|mutual\s+fund|portfolio|retirement/i.test(normalizedQuery)) {
+    return 'investing';
+  }
+  
+  // Check for debt queries
+  if (/debt|loan|credit\s+card|mortgage|pay\s+off|interest\s+rate|refinance/i.test(normalizedQuery)) {
+    return 'debt';
+  }
+  
+  // Default to financial for any other queries
+  return 'financial';
 }
 
 /**
@@ -60,13 +95,11 @@ class InsightsController {
         });
       }
       
-      // Check if this is just a greeting - using the standalone function
-      const isSimpleGreeting = isGreeting(query);
-      logger.info(`Query classified as ${isSimpleGreeting ? 'greeting' : 'financial question'}`, {
-        query
-      });
+      // Classify the query using our enhanced classifier
+      const queryType = classifyQuery(query);
+      logger.info(`Query classified as: ${queryType}`, { query });
       
-      // Get user data for both greeting and financial queries
+      // Get user data for all query types
       let userData;
       try {
         userData = await databaseService.getUserFinancialData(userId);
@@ -93,11 +126,11 @@ class InsightsController {
       // Generate insights using Cohere
       let insights;
       try {
-        // Pass the isGreeting flag to the Cohere service to adjust the prompt accordingly
+        // Pass the queryType to the Cohere service to adjust the prompt accordingly
         insights = await cohereService.generateInsights({
           ...userData,
           query,
-          isGreeting: isSimpleGreeting // Pass the greeting flag to Cohere service
+          queryType
         });
       } catch (error) {
         logger.error('Error generating insights with Cohere:', error);
@@ -106,19 +139,42 @@ class InsightsController {
         if (process.env.NODE_ENV !== 'production') {
           logger.info('Using mock insights due to Cohere service error');
           
-          if (isSimpleGreeting) {
-            // Mock greeting response
-            insights = {
-              insight: `Hey ${userData.userProfile?.name || 'there'}! 👋 How can I help with your finances today?`,
-              timestamp: new Date().toISOString(),
-              isGreeting: true
-            };
-          } else {
-            // Mock financial insight
-            insights = {
-              insight: `Here's an analysis of your finances based on your query: "${query}"\n\nYour overall financial health is good. Your spending patterns show that you're managing your budget effectively, with approximately **20%** of your income going to savings.\n\nYou could optimize your finances further by reviewing your subscription services, which currently account for about **$75** monthly.`,
-              timestamp: new Date().toISOString()
-            };
+          // Generate mock response based on query type
+          switch(queryType) {
+            case 'greeting':
+              insights = {
+                insight: `Hey ${userData.userProfile?.name || 'there'}! 👋 How can I help with your finances today?`,
+                timestamp: new Date().toISOString(),
+                queryType
+              };
+              break;
+            case 'joke':
+              insights = {
+                insight: `Why don't scientists trust atoms? Because they make up everything! 😂 Need any financial help today?`,
+                timestamp: new Date().toISOString(),
+                queryType
+              };
+              break;
+            case 'budgeting':
+              insights = {
+                insight: `Looking at your finances, I'd recommend a 50/30/20 budget: 50% on necessities, 30% on wants, and 20% on savings. Based on your monthly income of $${userData._calculateMonthlyIncome().toFixed(2)}, you should aim to save about $${(userData._calculateMonthlyIncome() * 0.2).toFixed(2)} each month. 💰`,
+                timestamp: new Date().toISOString(),
+                queryType
+              };
+              break;
+            case 'spending':
+              insights = {
+                insight: `In the past month, you've spent $${userData._calculateMonthlyExpenses().toFixed(2)}, mostly on ${userData._getTopExpenseCategories()[0] || 'groceries'} ($${(userData._calculateMonthlyExpenses() * 0.25).toFixed(2)}), ${userData._getTopExpenseCategories()[1] || 'dining'} ($${(userData._calculateMonthlyExpenses() * 0.15).toFixed(2)}), and ${userData._getTopExpenseCategories()[2] || 'entertainment'} ($${(userData._calculateMonthlyExpenses() * 0.1).toFixed(2)}). 📊`,
+                timestamp: new Date().toISOString(),
+                queryType
+              };
+              break;
+            default:
+              insights = {
+                insight: `Here's an analysis of your finances based on your query: "${query}"\n\nYour overall financial health is good. Your spending patterns show that you're managing your budget effectively, with approximately **20%** of your income going to savings.\n\nYou could optimize your finances further by reviewing your subscription services, which currently account for about **$75** monthly.`,
+                timestamp: new Date().toISOString(),
+                queryType
+              };
           }
         } else {
           return res.status(500).json({
@@ -150,7 +206,8 @@ class InsightsController {
             query: req.body.query || 'financial analysis',
             insights: {
               insight: `Here's a financial analysis based on mock data.\n\nYour spending patterns show a healthy balance with approximately **30%** going to essential expenses. Your savings rate is around **15%**, which is good but could be improved.\n\nConsider reducing discretionary spending on dining and entertainment by **$100** per month to boost your savings rate.`,
-              timestamp: new Date().toISOString()
+              timestamp: new Date().toISOString(),
+              queryType: 'financial'
             },
             timestamp: new Date().toISOString()
           }
@@ -168,7 +225,7 @@ class InsightsController {
    * @param {Function} next - Express next middleware function
    */
   async getFinancialSummary(req, res, next) {
-    // This method remains unchanged
+    // This method remains mostly unchanged from the original
     try {
       const { userId } = req.auth; // Extracted from auth middleware
       

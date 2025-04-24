@@ -65,3 +65,20 @@ body {
   width: 180px;
   transition: width 0.3s ease;
 }
+
+.nav-tabs .nav-link.active {
+  background-color: #fff;
+  border-bottom-color: transparent;
+}
+
+.nav-tabs .nav-link:not(.active) {
+  background-color: #f8f9fa; /* Light gray for inactive tabs */
+}
+
+.register-link {
+  color: #28a745; /* Green color or any color of your choice */
+}
+
+.login-link {
+  color: #28a745;
+}

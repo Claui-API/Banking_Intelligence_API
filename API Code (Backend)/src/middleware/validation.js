@@ -1,8 +1,41 @@
-// validation.js
+// src/middleware/validation.js
+const logger = require('../utils/logger');
 
 /**
- * Validation middleware for API requests
+ * Validate insights generation request
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @param {Function} next - Express next middleware function
  */
+const validateInsightsRequest = (req, res, next) => {
+  try {
+    const { query } = req.body;
+    
+    if (!query) {
+      return res.status(400).json({
+        success: false,
+        message: 'Query is required to generate insights'
+      });
+    }
+    
+    // Optional: validate query length
+    if (query.length < 5 || query.length > 500) {
+      return res.status(400).json({
+        success: false,
+        message: 'Query must be between 5 and 500 characters'
+      });
+    }
+    
+    next();
+  } catch (error) {
+    logger.error('Validation error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Validation error',
+      error: error.message
+    });
+  }
+};
 
 /**
  * Validate login request
@@ -11,16 +44,44 @@
  * @param {Function} next - Express next middleware function
  */
 const validateLogin = (req, res, next) => {
-  const { clientId, clientSecret } = req.body;
-  
-  if (!clientId || !clientSecret) {
-    return res.status(400).json({
+  try {
+    const { clientId, clientSecret, email, password } = req.body;
+    
+    // Allow either clientId/clientSecret or email/password
+    if (email && password) {
+      // Email/password login
+      if (!validateEmail(email)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid email format'
+        });
+      }
+      
+      if (password.length < 8) {
+        return res.status(400).json({
+          success: false,
+          message: 'Password must be at least 8 characters'
+        });
+      }
+    } else if (clientId && clientSecret) {
+      // API credentials login - no additional validation needed
+    } else {
+      // Neither credential set is complete
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide either Client ID and Client Secret, or Email and Password'
+      });
+    }
+    
+    next();
+  } catch (error) {
+    logger.error('Login validation error:', error);
+    return res.status(500).json({
       success: false,
-      message: 'Client ID and Client Secret are required'
+      message: 'Validation error',
+      error: error.message
     });
   }
-  
-  next();
 };
 
 /**
@@ -30,47 +91,67 @@ const validateLogin = (req, res, next) => {
  * @param {Function} next - Express next middleware function
  */
 const validateRegister = (req, res, next) => {
-  const { clientName, description } = req.body;
-  
-  if (!clientName) {
-    return res.status(400).json({
+  try {
+    const { clientName, email, password, confirmPassword, description } = req.body;
+    
+    if (!clientName) {
+      return res.status(400).json({
+        success: false,
+        message: 'Client Name is required'
+      });
+    }
+    
+    // Validate email if provided
+    if (email) {
+      if (!validateEmail(email)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid email format'
+        });
+      }
+    }
+    
+    // Validate password if provided
+    if (password) {
+      if (password.length < 8) {
+        return res.status(400).json({
+          success: false,
+          message: 'Password must be at least 8 characters long'
+        });
+      }
+      
+      // Confirm password match if both provided
+      if (confirmPassword && password !== confirmPassword) {
+        return res.status(400).json({
+          success: false,
+          message: 'Passwords do not match'
+        });
+      }
+    }
+    
+    next();
+  } catch (error) {
+    logger.error('Registration validation error:', error);
+    return res.status(500).json({
       success: false,
-      message: 'Client Name is required'
+      message: 'Validation error',
+      error: error.message
     });
   }
-  
-  next();
 };
 
 /**
- * Validate insights generation request
- * @param {Object} req - Express request object
- * @param {Object} res - Express response object
- * @param {Function} next - Express next middleware function
+ * Validate email format
+ * @param {string} email - Email to validate
+ * @returns {boolean} - Whether email is valid
  */
-const validateInsightsRequest = (req, res, next) => {
-  const { query } = req.body;
-  
-  if (!query) {
-    return res.status(400).json({
-      success: false,
-      message: 'Query is required to generate insights'
-    });
-  }
-  
-  // Optional: validate query length
-  if (query.length < 5 || query.length > 200) {
-    return res.status(400).json({
-      success: false,
-      message: 'Query must be between 5 and 200 characters'
-    });
-  }
-  
-  next();
+const validateEmail = (email) => {
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return emailRegex.test(email);
 };
 
 module.exports = {
+  validateInsightsRequest,
   validateLogin,
-  validateRegister,
-  validateInsightsRequest
+  validateRegister
 };

@@ -1,248 +1,420 @@
-# Installation Guide
-
-This guide provides instructions for setting up and running both the backend API and frontend application for the Banking Intelligence Platform.
+# Banking Intelligence API Documentation
 
 ## Table of Contents
+1. [Project Overview](#project-overview)
+2. [Frontend Architecture](#frontend-architecture)
+3. [Backend Architecture](#backend-architecture)
+4. [API Endpoints](#api-endpoints)
+5. [Authentication](#authentication)
+6. [Data Models](#data-models)
+7. [Services](#services)
+8. [Development Environment Setup](#development-environment-setup)
+9. [Windows Environment Configuration](#windows-environment-configuration)
 
-- [Prerequisites](#prerequisites)
-- [Backend Setup](#backend-setup)
-- [Frontend Setup](#frontend-setup)
-- [Running the Complete Application](#running-the-complete-application)
-- [Troubleshooting](#troubleshooting)
+## Project Overview
 
-## Prerequisites
+The Banking Intelligence API is a financial technology platform that provides AI-powered financial insights based on user transaction data. The system consists of a React-based frontend and an Express.js backend with the following key features:
 
-Before installing the application, ensure you have the following installed:
+- User authentication with JWT tokens
+- Connection to banking data via Plaid
+- AI-powered financial insights using Cohere
+- Transaction categorization and analysis
+- Mobile-friendly API endpoints for native applications
+- Dashboard for monitoring financial health
 
-- **Node.js** (v14 or higher)
-- **npm** (v6 or higher) or **yarn**
-- **MongoDB** (local installation or MongoDB Atlas account)
-- **Git** (for cloning the repository)
+## Frontend Architecture
 
-## Backend Setup
+### Tech Stack
+- **React** - Core UI library
+- **React Router** - Client-side routing
+- **Bootstrap** - UI framework for styling
+- **Axios** - HTTP client for API requests
 
-### 1. Clone the Repository
+### Project Structure
 
-```bash
-git clone https://github.com/Claui-API/API-Main.git
-cd API-Main/API Code (Backend)
+```
+src/
+  ├── components/
+  │   ├── Auth/
+  │   │   ├── Login.js - User login component
+  │   │   └── Register.js - User registration component
+  │   ├── Dashboard/
+  │   │   ├── AccountSummary.js - Account summary widget
+  │   │   ├── Dashboard.js - Main dashboard component
+  │   │   ├── FinancialSummary.js - Financial overview widget
+  │   │   ├── InsightsPanel.js - AI insights widget
+  │   │   └── RecentTransactions.js - Recent transactions list
+  │   ├── Documentation/
+  │   │   └── Documentation.js - API documentation component
+  │   ├── Layout/
+  │   │   ├── Footer.js - App footer
+  │   │   ├── Header.js - App header with navigation
+  │   │   ├── Layout.js - Main layout wrapper
+  │   │   ├── PrivateRoute.js - Protected route component
+  │   │   └── Sidebar.js - Navigation sidebar
+  │   ├── Plaid/
+  │   │   └── PlaidLinkButton.js - Plaid connection button
+  │   ├── APITokenManagement.js - API token management
+  │   ├── ConnectAccounts.js - Account connection flow
+  │   └── HomePage.js - Landing page component
+  ├── context/
+  │   └── AuthContext.js - Authentication context provider
+  ├── services/
+  │   ├── api.js - Axios instance for API calls
+  │   ├── auth.js - Authentication service
+  │   ├── insights.js - Insights API service
+  │   └── mockInsights.js - Mock data for development
+  ├── utils/
+  │   ├── ApiCheck.js - API connection checker
+  │   └── logger.js - Client-side logging utility
+  ├── App.js - Main application component with routes
+  ├── index.js - Application entry point
+  └── index.css - Global styles
 ```
 
-### 2. Install Dependencies
+### Key Components
 
-Using npm:
-```bash
-npm install
+1. **Auth Components**: Handle user registration and login flows
+2. **Dashboard Components**: Display financial data and insights
+3. **Layout Components**: Manage the application structure and navigation
+4. **Plaid Components**: Handle bank account connections
+
+### State Management
+
+The application uses React Context for state management, particularly for authentication state through `AuthContext.js`. This context provides:
+
+- User authentication status
+- Login/registration methods
+- Token management
+- User profile information
+
+## Backend Architecture
+
+### Tech Stack
+- **Node.js** - Runtime environment
+- **Express.js** - Web server framework
+- **Sequelize** - ORM for database interactions
+- **JWT** - Token-based authentication
+- **Cohere API** - AI-powered financial insights
+- **Plaid API** - Banking data integration
+
+### Project Structure
+
+```
+src/
+  ├── config/
+  │   └── database.js - Database configuration
+  ├── controllers/
+  │   ├── auth.controller.js - Authentication logic
+  │   ├── insights.controller.js - Financial insights logic
+  │   ├── notification.controller.js - Push notification logic
+  │   ├── plaid.webhook.controller.js - Plaid webhook handling
+  │   └── sync.controller.js - Mobile sync logic
+  ├── middleware/
+  │   ├── auth.js - JWT authentication middleware
+  │   ├── errorHandler.js - Global error handler
+  │   ├── mobile-optimizer.js - Mobile response optimization
+  │   ├── requestLogger.js - Request logging middleware
+  │   └── validation.js - Request validation middleware
+  ├── models/
+  │   ├── Token.js - Token database model
+  │   └── User.js - User and Client database models
+  ├── routes/
+  │   ├── admin.routes.js - Admin dashboard routes
+  │   ├── auth.routes.js - Authentication routes
+  │   ├── diagnostics.routes.js - System diagnostics routes
+  │   ├── health.routes.js - Health check routes
+  │   ├── insights.mobile.routes.js - Mobile-specific insights routes
+  │   ├── insights.routes.js - Insights API routes
+  │   ├── notification.routes.js - Push notification routes
+  │   ├── plaid.routes.js - Plaid integration routes
+  │   ├── plaid.webhook.routes.js - Plaid webhook routes
+  │   └── sync.routes.js - Mobile sync routes
+  ├── services/
+  │   ├── auth.js - Authentication service
+  │   ├── cohere.service.js - AI insights generation
+  │   ├── data.service.js - Financial data service
+  │   ├── notification.service.js - Push notification service
+  │   └── plaid.service.js - Plaid integration service
+  ├── utils/
+  │   ├── api-diagnostics.js - API diagnostic tools
+  │   ├── env-helper.js - Environment configuration helper
+  │   └── logger.js - Server-side logging utility
+  ├── migrations/
+  │   ├── seed.js - Database seed script
+  │   └── setup.js - Database setup script
+  └── server.js - Main server entry point
 ```
 
-Using yarn:
-```bash
-yarn install
-```
+### Key Components
 
-This will install all the dependencies listed in the backend's `package.json` file:
+1. **Controllers**: Handle request processing and response generation
+2. **Middleware**: Process requests before they reach route handlers
+3. **Models**: Define database schemas and relationships
+4. **Routes**: Define API endpoints and map them to controllers
+5. **Services**: Contain business logic and external API integrations
 
-```json
-"dependencies": {
-  "@sentry/node": "^9.5.0",
-  "aws-sdk": "^2.1692.0",
-  "cohere-ai": "^7.15.4",
-  "cors": "^2.8.5",
-  "dotenv": "^16.4.7",
-  "express": "^4.21.2",
-  "express-rate-limit": "^6.7.0",
-  "helmet": "^6.1.0",
-  "jsonwebtoken": "^9.0.2",
-  "mongodb": "^6.14.1",
-  "mongoose": "^8.12.0",
-  "plaid": "^31.1.0",
-  "winston": "^3.17.0"
+## API Endpoints
+
+### Authentication
+
+- `POST /api/auth/register` - Register a new user
+- `POST /api/auth/login` - Authenticate a user and get token
+- `POST /api/auth/refresh` - Refresh access token
+- `POST /api/auth/logout` - Logout and revoke tokens
+- `POST /api/auth/change-password` - Change user password
+- `POST /api/auth/change-secret` - Change client secret
+- `POST /api/auth/generate-token` - Generate an API token
+
+### Financial Insights
+
+- `POST /api/insights/generate` - Generate personalized financial insights
+- `GET /api/insights/summary` - Get financial summary for the user
+
+### Plaid Integration
+
+- `POST /api/plaid/create-link-token` - Create a Plaid Link token
+- `POST /api/plaid/exchange-public-token` - Exchange public token for access token
+- `GET /api/plaid/accounts` - Get user's bank accounts
+- `GET /api/plaid/transactions` - Get user's transactions
+
+### Mobile-Specific API
+
+- `GET /api/v1/mobile/financial-snapshot` - Get lightweight financial summary
+- `POST /api/v1/mobile/quick-insight` - Get a short insight for mobile display
+- `POST /api/v1/notifications/register-device` - Register a device for push notifications
+- `POST /api/v1/notifications/unregister-device` - Unregister a device
+- `PUT /api/v1/notifications/preferences` - Update notification preferences
+- `GET /api/v1/sync/package` - Get a sync package for offline use
+- `POST /api/v1/sync/changes` - Process changes from mobile client
+
+### System & Diagnostics
+
+- `GET /api/health` - Health check endpoint
+- `GET /api/diagnostics/database` - Check database status (admin only)
+- `GET /api/diagnostics/env` - Check environment configuration (admin only)
+- `GET /api/diagnostics/app` - Get application diagnostics (admin only)
+
+## Authentication
+
+The application uses JWT (JSON Web Token) for authentication with the following token types:
+
+1. **Access Token**: Short-lived token for API access (default 1 hour)
+2. **Refresh Token**: Long-lived token to obtain new access tokens (default 7 days)
+3. **API Token**: Used for API access from external applications (default 30 days)
+
+### Authentication Flow
+
+1. **User Registration**:
+   - User submits registration form with client name, email, and password
+   - System creates user account and generates client credentials
+   - Returns client ID and client secret to the user
+
+2. **User Login**:
+   - User submits email/password or clientId/clientSecret
+   - System validates credentials and issues access and refresh tokens
+   - Tokens are stored in localStorage on the client
+
+3. **Token Refresh**:
+   - When access token expires, client uses refresh token to obtain a new one
+   - If refresh token is invalid or expired, user must login again
+
+4. **API Authentication**:
+   - API clients authenticate using client credentials
+   - System issues an API token for subsequent requests
+   - API token is included in the Authorization header
+
+## Data Models
+
+### User Model
+
+```javascript
+User = {
+  id: UUID,
+  clientName: String,
+  email: String,
+  passwordHash: String,
+  description: String,
+  status: Enum('active', 'inactive', 'suspended'),
+  lastLoginAt: Date,
+  createdAt: Date,
+  updatedAt: Date,
+  deletedAt: Date
 }
 ```
 
-### 3. Set Up Environment Variables
+### Client Model
 
-Create a `.env` file in the backend directory with the following variables:
-
-```
-# Server configuration
-PORT=3000
-NODE_ENV=development
-
-# Database Configuration
-MONGODB_URI=mongodb://localhost:27017/banking-intelligence
-# or for MongoDB Atlas:
-# MONGODB_URI=mongodb+srv://<username>:<password>@<cluster>.mongodb.net/banking-intelligence
-
-# Authentication
-JWT_SECRET=your_jwt_secret_key_here
-JWT_REFRESH_SECRET=your_refresh_token_secret_key_here
-JWT_EXPIRY=2h
-JWT_REFRESH_EXPIRY=7d
-
-# Cohere API (for AI insights)
-COHERE_API_KEY=your_cohere_api_key_here
-
-# Plaid Configuration (for bank connections)
-PLAID_CLIENT_ID=your_plaid_client_id_here
-PLAID_SECRET=your_plaid_secret_here
-PLAID_ENV=sandbox
-PLAID_WEBHOOK_URL=https://your-domain.com/api/webhooks/plaid
-# For local testing with Plaid webhooks, you can use ngrok
-
-# Rate Limiting
-RATE_LIMIT_WINDOW_MS=900000
-RATE_LIMIT_MAX=100
-
-# Logging
-LOG_LEVEL=info
-```
-
-### 4. Start the Backend Server
-
-For development with auto-restart (What we'd be using):
-```bash
-npm run dev
-```
-
-For production:
-```bash
-npm start
-```
-
-The backend server will start on the port specified in your `.env` file (default: 3000).
-
-## Frontend Setup
-
-### 1. Navigate to the Frontend Directory
-
-```bash
-cd ../API UI (Frontend)
-```
-
-### 2. Install Dependencies
-
-Using npm:
-```bash
-npm install
-```
-
-Using yarn:
-```bash
-yarn install
-```
-
-This will install all the dependencies listed in the frontend's `package.json` file:
-
-```json
-"dependencies": {
-  "axios": "^1.6.7",
-  "bootstrap": "^5.3.3",
-  "jwt-decode": "^4.0.0",
-  "react": "^18.3.1",
-  "react-bootstrap": "^2.10.9",
-  "react-dom": "^18.3.1",
-  "react-plaid-link": "^3.6.1",
-  "react-router-dom": "^7.3.0",
-  "react-scripts": "^5.0.1",
-  "web-vitals": "^4.2.4",
-  "winston": "^3.17.0",
-  "winston-daily-rotate-file": "^5.0.0"
+```javascript
+Client = {
+  id: UUID,
+  userId: UUID,
+  clientId: String,
+  clientSecret: String,
+  description: String,
+  status: Enum('active', 'inactive', 'revoked'),
+  lastUsedAt: Date,
+  createdAt: Date,
+  updatedAt: Date,
+  deletedAt: Date
 }
 ```
 
-### 3. Set Up Environment Variables
+### Token Model
 
-Create a `.env` file in the frontend directory with the following variables:
-
-```
-REACT_APP_API_URL=http://localhost:3000/api
-```
-
-### 4. Start the Frontend Development Server
-
-```bash
-npm start
-```
-
-The frontend application will start on port 3001 and should automatically open in your default web browser.
-
-## Running the Complete Application
-
-To run both the backend and frontend together:
-
-1. Start the backend server (Terminal 1):
-```bash
-cd backend
-npm run dev
+```javascript
+Token = {
+  id: UUID,
+  userId: UUID,
+  clientId: String,
+  tokenType: Enum('access', 'refresh', 'api'),
+  token: String,
+  expiresAt: Date,
+  isRevoked: Boolean,
+  lastUsedAt: Date,
+  ipAddress: String,
+  userAgent: String,
+  createdAt: Date,
+  updatedAt: Date
+}
 ```
 
-2. Start the frontend application (Terminal 2):
-```bash
-cd frontend
-npm start
+### Financial Data Models
+
+The application uses the following models to represent financial data from Plaid:
+
+```javascript
+Account = {
+  accountId: String,
+  userId: String,
+  name: String,
+  type: String,
+  subtype: String,
+  balance: Number,
+  availableBalance: Number,
+  currency: String,
+  mask: String,
+  officialName: String
+}
+
+Transaction = {
+  transactionId: String,
+  userId: String,
+  accountId: String,
+  date: Date,
+  description: String,
+  amount: Number,
+  category: String,
+  subCategory: String,
+  type: Enum('income', 'expense', 'transfer'),
+  merchantName: String,
+  location: String,
+  pending: Boolean
+}
 ```
 
-You should now be able to access:
-- Frontend: http://localhost:3001
-- Backend API: http://localhost:3000/api
+## Services
 
-## Building for Production
+### Authentication Service (auth.js)
 
-### Backend
-```bash
-cd backend
-npm install --production
+Handles user registration, login, token generation, and validation.
+
+### Data Service (data.service.js)
+
+Retrieves and processes financial data, either from Plaid or from mock data for development.
+
+### Cohere Service (cohere.service.js)
+
+Integrates with the Cohere API to generate AI-powered financial insights based on user data.
+
+### Plaid Service (plaid.service.js)
+
+Manages communication with the Plaid API for bank account connections and transaction retrieval.
+
+### Notification Service (notification.service.js)
+
+Handles push notifications for mobile devices using Firebase Cloud Messaging and Apple Push Notification service.
+
+## Development Environment Setup
+
+### Prerequisites
+
+- Node.js 16+
+- npm or yarn
+- SQLite (development) or PostgreSQL (production)
+
+### Installation
+
+1. Clone the repository
+2. Install frontend dependencies:
+   ```
+   cd client
+   npm install
+   ```
+3. Install backend dependencies:
+   ```
+   cd server
+   npm install
+   ```
+4. Set up environment variables:
+   ```
+   cp .env.example .env
+   ```
+5. Set up the database:
+   ```
+   npm run setup-db
+   npm run seed-db
+   ```
+6. Start the development servers:
+   ```
+   # Backend
+   npm run dev
+   
+   # Frontend
+   cd client
+   npm start
+   ```
+
+## Windows Environment Configuration
+
+When running the application on Windows, there are specific considerations for environment variables and port configuration.
+
+### Setting Port in Windows
+
+#### Create a .env file (Recommended)
+
+Create a file named `.env` in your project root directory with the content:
+```
+PORT=3001
 ```
 
-### Frontend
-```bash
-cd frontend
-npm run build
+Then simplify your start script to:
+```json
+"start": "node scripts/create-logs-dir.js && react-scripts start"
 ```
 
-This will create a production-ready build in the `build` directory.
+### API Configuration for Windows
 
-## Troubleshooting
+In the `api.js` file, ensure the API_URL is correctly pointing to your backend:
 
-### Common Issues
-
-#### "MongoDB Connection Error"
-- Ensure MongoDB is running
-- Check your MongoDB connection string in `.env`
-- Verify network connectivity to MongoDB Atlas (if using cloud)
-
-#### "Invalid API Key" with Cohere
-- Verify your Cohere API key in the backend `.env` file
-- Check if the key has enough quota remaining
-
-#### "Cross-Origin Request Blocked"
-- Ensure the backend CORS settings are correctly configured
-- Check that the frontend is connecting to the correct API URL
-
-#### "Cannot find module"
-- Run `npm install` again in the affected directory
-- Check if the package is listed in your package.json
-
-#### "JWT Malformed"
-- Check your JWT_SECRET in the backend .env
-- Ensure tokens are being properly generated and stored
-
-### Debugging
-
-#### Backend
-To run the backend in debug mode with extra logging:
-```bash
-LOG_LEVEL=debug npm run dev
+```javascript
+// src/services/api.js
+const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001/api';
 ```
 
-#### Frontend
-For detailed frontend logging, open the browser's developer console.
+### CORS Configuration for Windows
 
-## Support
+Ensure that your backend's CORS configuration in `server.js` allows requests from your frontend:
 
-If you encounter any issues not covered by this guide, please contact me at sreenivas@vivytech.com or create an issue on GitHub.
+```javascript
+app.use(cors({
+  origin: process.env.NODE_ENV === 'production' 
+    ? 'https://your-production-domain.com' 
+    : ['http://localhost:3001', 'http://127.0.0.1:3001'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true
+}));
+```
 
----
-
-&copy; 2025 VIVY TECH USA INC. All rights reserved.
+These configurations will ensure that your Banking Intelligence API application runs smoothly on Windows environments with the frontend communicating correctly with the backend.

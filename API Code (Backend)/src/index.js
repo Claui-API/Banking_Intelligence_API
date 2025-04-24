@@ -1,9 +1,4 @@
-const mongoose = require('mongoose');
 const dbConnection = require('./utils/db-connection');
-const Transaction = require('./models/Transaction');
-const Account = require('./models/Account');
-const UserProfile = require('./models/UserProfile');
-const SpendingPattern = require('./models/SpendingPattern');
 const logger = require('./utils/logger');
 
 async function testSchemas() {

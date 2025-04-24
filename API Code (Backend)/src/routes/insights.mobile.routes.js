@@ -1,18 +1,15 @@
-// insights.mobile.routes.js
+// src/routes/insights.mobile.routes.js
 const express = require('express');
-const insightsController = require('../controllers/insights.controller');
-const mobileOptimizer = require('../middleware/mobile-optimizer');
-const logger = require('../utils/logger');
-const authMiddleware = require('../middleware/auth');
-
 const router = express.Router();
+const { authMiddleware } = require('../middleware/auth');
+const logger = require('../utils/logger');
 
 /**
  * @route GET /api/v1/mobile/financial-snapshot
  * @desc Get lightweight financial summary for mobile devices
  * @access Private
  */
-router.get('/financial-snapshot', authMiddleware, mobileOptimizer, async (req, res, next) => {
+router.get('/financial-snapshot', authMiddleware, (req, res) => {
   try {
     const { userId } = req.auth;
     
@@ -25,46 +22,53 @@ router.get('/financial-snapshot', authMiddleware, mobileOptimizer, async (req, r
     
     logger.info(`Getting financial snapshot for mobile - user: ${userId}`);
     
-    // Get the full data first
-    const fullData = await insightsController.getFinancialSummaryData(userId);
-    
-    // Create a lightweight version for mobile
-    const mobileData = {
-      totalBalance: fullData.totalBalance,
-      netWorth: fullData.netWorth,
-      accountCount: fullData.accounts.length,
-      // Simplify account data
-      accounts: fullData.accounts.map(account => ({
-        id: account.accountId,
-        name: account.name,
-        type: account.type,
-        balance: account.balance
-      })),
-      // Only include last 3 transactions
-      recentTransactions: fullData.recentTransactions.slice(0, 3).map(tx => ({
-        id: tx.transactionId,
-        date: tx.date,
-        description: tx.description,
-        amount: tx.amount,
-        category: tx.category
-      })),
-      // Add a timestamp for caching purposes
-      timestamp: new Date().toISOString()
-    };
-    
-    // Set appropriate cache headers
-    res.set('Cache-Control', 'private, max-age=300'); // 5 minutes
-    
+    // Here you would implement your financial snapshot logic
+    // For now, just return a mock response
     return res.status(200).json({
       success: true,
-      data: mobileData
+      data: {
+        totalBalance: 15000.25,
+        netWorth: 12500.50,
+        accountCount: 3,
+        accounts: [
+          {
+            id: 'acc-001',
+            name: 'Checking',
+            type: 'Checking',
+            balance: 5000.25
+          },
+          {
+            id: 'acc-002',
+            name: 'Savings',
+            type: 'Savings',
+            balance: 10000.00
+          }
+        ],
+        recentTransactions: [
+          {
+            id: 'txn-001',
+            date: new Date().toISOString(),
+            description: 'Grocery Store',
+            amount: -125.50,
+            category: 'Food'
+          },
+          {
+            id: 'txn-002',
+            date: new Date().toISOString(),
+            description: 'Paycheck',
+            amount: 3000.00,
+            category: 'Income'
+          }
+        ],
+        timestamp: new Date().toISOString()
+      }
     });
   } catch (error) {
-    logger.error(`Error getting financial snapshot for mobile: ${error.message}`, {
-      error: error.stack,
-      userId: req.auth?.userId
+    logger.error('Error getting financial snapshot for mobile:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to get financial snapshot'
     });
-    next(error);
   }
 });
 
@@ -73,7 +77,7 @@ router.get('/financial-snapshot', authMiddleware, mobileOptimizer, async (req, r
  * @desc Get a short insight for mobile display
  * @access Private
  */
-router.post('/quick-insight', authMiddleware, mobileOptimizer, async (req, res, next) => {
+router.post('/quick-insight', authMiddleware, (req, res) => {
   try {
     const { userId } = req.auth;
     const { query } = req.body;
@@ -85,23 +89,23 @@ router.post('/quick-insight', authMiddleware, mobileOptimizer, async (req, res, 
       });
     }
     
-    // Get a shortened insight for mobile display
-    const insight = await insightsController.generateQuickInsight(userId, query);
+    logger.info(`Generating quick insight for user ${userId}, query: ${query}`);
     
+    // Here you would implement your quick insight generation logic
+    // For now, just return a mock response
     return res.status(200).json({
       success: true,
       data: {
-        insight,
+        insight: `Based on your spending patterns, you're doing well with your budgeting this month. Your biggest expense category is Food (25% of spending).`,
         timestamp: new Date().toISOString()
       }
     });
   } catch (error) {
-    logger.error(`Error generating quick insight for mobile: ${error.message}`, {
-      error: error.stack,
-      userId: req.auth?.userId,
-      query: req.body?.query
+    logger.error('Error generating quick insight for mobile:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to generate quick insight'
     });
-    next(error);
   }
 });
 

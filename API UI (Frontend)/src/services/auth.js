@@ -1,7 +1,10 @@
-// src/services/auth.js
+// src/services/auth.js (Frontend)
 import api from './api';
 import logger from '../utils/logger';
 import { jwtDecode } from 'jwt-decode';
+
+// Note: This is a frontend implementation of the auth service
+// It only handles client-side auth operations and API calls
 
 export const authService = {
   // Decode and extract user info from token
@@ -32,22 +35,36 @@ export const authService = {
   },
 
   // Register a new client
-  register: async (clientData) => {
+  register: async (userData) => {
     try {
-      const response = await api.post('/auth/register', clientData);
+      const response = await api.post('/auth/register', userData);
       
       logger.info('Registration successful', {
-        clientName: clientData.clientName
+        clientName: userData.clientName,
+        email: userData.email
       });
 
       return response.data;
     } catch (error) {
       logger.logError('Registration Error', error);
-      throw error.response?.data || { message: 'Registration failed' };
+      
+      // Enhanced error handling
+      if (error.response) {
+        // The request was made and the server responded with a status code
+        // that falls out of the range of 2xx
+        const errorMessage = error.response.data?.message || 'Registration failed';
+        throw new Error(errorMessage);
+      } else if (error.request) {
+        // The request was made but no response was received
+        throw new Error('No response from server. Please check your network connection.');
+      } else {
+        // Something happened in setting up the request that triggered an Error
+        throw new Error('Error setting up registration request');
+      }
     }
   },
 
-  // Log in an existing client
+  // Log in - supports both email/password and clientId/clientSecret
   login: async (credentials) => {
     try {
       const response = await api.post('/auth/login', credentials);
@@ -56,7 +73,9 @@ export const authService = {
       // Check if this is a first-time login or requires token generation
       if (data.requiresTokenGeneration) {
         logger.info('First-time login - token generation required', {
-          clientId: credentials.clientId
+          // Use either clientId or email for logging
+          clientId: credentials.clientId,
+          email: credentials.email
         });
 
         return {
@@ -71,15 +90,48 @@ export const authService = {
         localStorage.setItem('refreshToken', data.refreshToken);
       }
       
+      // Store client credentials if using clientId login
+      if (credentials.clientId) {
+        localStorage.setItem('clientId', credentials.clientId);
+      }
+      
+      // Store email if using email login
+      if (credentials.email) {
+        localStorage.setItem('userEmail', credentials.email);
+      }
+      
       logger.info('Login successful', {
         userId: data.userId,
-        clientId: data.clientId
+        clientId: data.clientId,
+        email: credentials.email
       });
 
       return data;
     } catch (error) {
       logger.logError('Login Error', error);
-      throw error.response?.data || { message: 'Login failed' };
+      
+      // Enhanced error handling
+      if (error.response) {
+        // The request was made and the server responded with a status code
+        // that falls out of the range of 2xx
+        if (error.response.status === 401) {
+          // Determine which login method was used
+          if (credentials.email) {
+            throw new Error('Invalid email or password. Please check your credentials.');
+          } else {
+            throw new Error('Invalid credentials. Please check your Client ID and Secret.');
+          }
+        } else {
+          const errorMessage = error.response.data?.message || 'Login failed';
+          throw new Error(errorMessage);
+        }
+      } else if (error.request) {
+        // The request was made but no response was received
+        throw new Error('No response from server. Please check your network connection.');
+      } else {
+        // Something happened in setting up the request that triggered an Error
+        throw new Error('Error setting up login request');
+      }
     }
   },
 
@@ -100,7 +152,16 @@ export const authService = {
       return data.token;
     } catch (error) {
       logger.logError('API Token Generation Failed', error);
-      throw error.response?.data || { message: 'Token generation failed' };
+      
+      // Enhanced error handling
+      if (error.response) {
+        const errorMessage = error.response.data?.message || 'Token generation failed';
+        throw new Error(errorMessage);
+      } else if (error.request) {
+        throw new Error('No response from server. Please check your network connection.');
+      } else {
+        throw new Error('Error setting up token generation request');
+      }
     }
   },
 
@@ -127,7 +188,15 @@ export const authService = {
       localStorage.removeItem('token');
       localStorage.removeItem('refreshToken');
       
-      throw error.response?.data || { message: 'Token refresh failed' };
+      // Enhanced error handling
+      if (error.response) {
+        const errorMessage = error.response.data?.message || 'Token refresh failed';
+        throw new Error(errorMessage);
+      } else if (error.request) {
+        throw new Error('No response from server. Please check your network connection.');
+      } else {
+        throw new Error('Error setting up token refresh request');
+      }
     }
   },
 
@@ -135,6 +204,9 @@ export const authService = {
   logout: () => {
     localStorage.removeItem('token');
     localStorage.removeItem('refreshToken');
+    localStorage.removeItem('userEmail');
+    
+    // Keep clientId for convenience on next login
     
     logger.info('Logout - tokens cleared');
   },
@@ -163,6 +235,57 @@ export const authService = {
     } catch (error) {
       logger.logError('Authentication Check Failed', error);
       return false;
+    }
+  },
+  
+  // Change password
+  changePassword: async (currentPassword, newPassword) => {
+    try {
+      const response = await api.post('/auth/change-password', {
+        currentPassword,
+        newPassword,
+        confirmPassword: newPassword
+      });
+      
+      logger.info('Password changed successfully');
+      
+      return response.data;
+    } catch (error) {
+      logger.logError('Password Change Failed', error);
+      
+      if (error.response) {
+        const errorMessage = error.response.data?.message || 'Password change failed';
+        throw new Error(errorMessage);
+      } else if (error.request) {
+        throw new Error('No response from server. Please check your network connection.');
+      } else {
+        throw new Error('Error setting up password change request');
+      }
+    }
+  },
+  
+  // Change client secret
+  changeClientSecret: async (clientId, currentSecret) => {
+    try {
+      const response = await api.post('/auth/change-secret', {
+        clientId,
+        currentSecret
+      });
+      
+      logger.info('Client secret changed successfully');
+      
+      return response.data;
+    } catch (error) {
+      logger.logError('Client Secret Change Failed', error);
+      
+      if (error.response) {
+        const errorMessage = error.response.data?.message || 'Client secret change failed';
+        throw new Error(errorMessage);
+      } else if (error.request) {
+        throw new Error('No response from server. Please check your network connection.');
+      } else {
+        throw new Error('Error setting up client secret change request');
+      }
     }
   }
 };

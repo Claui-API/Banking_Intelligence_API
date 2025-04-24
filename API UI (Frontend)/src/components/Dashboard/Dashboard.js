@@ -1,10 +1,10 @@
-// src/components/Dashboard/Dashboard.js
+// Updated Dashboard.js to include client credentials in the dashboard
 import React, { useState, useEffect, useRef } from 'react';
-import { Row, Col, Card, Button, Form, InputGroup, Container } from 'react-bootstrap';
+import { Row, Col, Card, Button, Form, InputGroup, Container, Alert } from 'react-bootstrap';
 import { insightsService } from '../../services/insights';
 import { useAuth } from '../../context/AuthContext';
 import logger from '../../utils/logger';
-import './Dashboard.css'; // CSS file for the cursor blink effect
+import './Dashboard.css';
 
 const Dashboard = () => {
   const { user } = useAuth();
@@ -13,6 +13,14 @@ const Dashboard = () => {
   const [apiKey, setApiKey] = useState(() => {
     return user?.token || localStorage.getItem('token') || 'No API key found';
   });
+  
+  // Store client credentials
+  const [clientId, setClientId] = useState(() => {
+    return localStorage.getItem('clientId') || 'No Client ID found';
+  });
+  
+  const [clientSecret, setClientSecret] = useState('');
+  const [showSecret, setShowSecret] = useState(false);
   
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
@@ -31,6 +39,12 @@ const Dashboard = () => {
       if (storedToken) {
         setApiKey(storedToken);
       }
+    }
+    
+    // Try to load client secret if it exists
+    const storedSecret = localStorage.getItem('clientSecret');
+    if (storedSecret) {
+      setClientSecret(storedSecret);
     }
   }, [user]);
   
@@ -168,6 +182,23 @@ const Dashboard = () => {
     logger.info('API key copied to clipboard');
   };
   
+  const handleCopyClientId = () => {
+    navigator.clipboard.writeText(clientId);
+    logger.info('Client ID copied to clipboard');
+  };
+  
+  const handleCopyClientSecret = () => {
+    navigator.clipboard.writeText(clientSecret);
+    logger.info('Client secret copied to clipboard');
+  };
+  
+  const handleSaveClientSecret = () => {
+    if (clientSecret) {
+      localStorage.setItem('clientSecret', clientSecret);
+      alert('Client secret saved!');
+    }
+  };
+  
   const handleRegenerateKey = (e) => {
     e.preventDefault();
     // In a real application, this would make an API call to regenerate the token
@@ -250,9 +281,61 @@ const Dashboard = () => {
       <div className="mx-auto" style={{ maxWidth: '1200px' }}>
         <h1 className="mb-4 text-white">API Dashboard</h1>
         
+        {/* Client Credentials section */}
+        <Card className="bg-white text-black border-secondary mb-4">
+          <Card.Header className="bg-white">Client Credentials</Card.Header>
+          <Card.Body>
+            <Row>
+              <Col md={6}>
+                <Form.Group className="mb-3">
+                  <Form.Label>Client ID</Form.Label>
+                  <InputGroup>
+                    <Form.Control
+                      type="text"
+                      value={clientId}
+                      readOnly
+                      className="bg-white text-success border-primary text-truncate"
+                    />
+                    <Button variant="outline-secondary" onClick={handleCopyClientId}>
+                      <i className="bi bi-clipboard"></i> Copy
+                    </Button>
+                  </InputGroup>
+                </Form.Group>
+              </Col>
+              
+              <Col md={6}>
+                <Form.Group className="mb-3">
+                  <Form.Label>Client Secret</Form.Label>
+                  <InputGroup>
+                    <Form.Control
+                      type={showSecret ? "text" : "password"}
+                      value={clientSecret}
+                      onChange={(e) => setClientSecret(e.target.value)}
+                      placeholder="Enter your client secret"
+                      className="bg-white text-success border-primary"
+                    />
+                    <Button variant="outline-secondary" onClick={() => setShowSecret(!showSecret)}>
+                      <i className={`bi bi-eye${showSecret ? '-slash' : ''}`}></i>
+                    </Button>
+                    <Button variant="outline-secondary" onClick={handleCopyClientSecret} disabled={!clientSecret}>
+                      <i className="bi bi-clipboard"></i> Copy
+                    </Button>
+                    <Button variant="outline-primary" onClick={handleSaveClientSecret} disabled={!clientSecret}>
+                      Save
+                    </Button>
+                  </InputGroup>
+                  <Form.Text className="text-muted">
+                    {clientSecret ? 'Client secret will be saved locally for this session.' : 'Enter your client secret to save it for this session.'}
+                  </Form.Text>
+                </Form.Group>
+              </Col>
+            </Row>
+          </Card.Body>
+        </Card>
+        
         {/* API Key section */}
         <Card className="bg-white text-black border-secondary mb-4">
-          <Card.Header className="bg-white">Your API Credentials</Card.Header>
+          <Card.Header className="bg-white">Your API Key</Card.Header>
           <Card.Body>
             <InputGroup className="mb-3">
               <Form.Control

@@ -41,7 +41,8 @@ const diagnosticsRoutes = require('./routes/diagnostics.routes');
 // Middleware
 const { errorHandler, notFoundHandler } = require('./middleware/errorHandler');
 const requestLogger = require('./middleware/requestLogger');
-const authMiddleware = require('./middleware/auth');
+// Import the specific middleware function, not the whole object
+const { authMiddleware } = require('./middleware/auth');
 const { validateInsightsRequest } = require('./middleware/validation');
 
 // Rate limiter

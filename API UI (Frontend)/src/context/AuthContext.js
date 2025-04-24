@@ -41,7 +41,20 @@ export const AuthProvider = ({ children }) => {
   const login = async (credentials) => {
     setIsLoading(true);
     try {
+      // Determine login method based on credentials provided
+      const isEmailLogin = credentials.email && credentials.password;
+      const isClientIdLogin = credentials.clientId && credentials.clientSecret;
+      
+      if (!isEmailLogin && !isClientIdLogin) {
+        throw new Error('Invalid credentials format');
+      }
+      
       const data = await authService.login(credentials);
+      
+      // Save client ID for future use if provided
+      if (credentials.clientId) {
+        localStorage.setItem('clientId', credentials.clientId);
+      }
       
       // Check if this is a first-time login or requires additional steps
       if (data.requiresTokenGeneration) {
@@ -62,7 +75,9 @@ export const AuthProvider = ({ children }) => {
       const userData = authService.getUserFromToken();
       setUser({
         ...userData,
-        token: data.accessToken
+        token: data.accessToken,
+        // Store email if email login was used
+        email: isEmailLogin ? credentials.email : null
       });
       
       return data;
@@ -74,10 +89,16 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const register = async (clientData) => {
+  const register = async (userData) => {
     setIsLoading(true);
     try {
-      return await authService.register(clientData);
+      // Ensure required fields are present
+      if (!userData.clientName || !userData.email || !userData.password) {
+        throw new Error('Client name, email and password are required');
+      }
+      
+      const result = await authService.register(userData);
+      return result;
     } catch (error) {
       logger.error('Registration failed:', error);
       throw error;
@@ -91,6 +112,7 @@ export const AuthProvider = ({ children }) => {
     setIsAuthenticated(false);
     setUser(null);
     localStorage.removeItem('token');
+    // Don't remove clientId so users can log back in easily
   };
   
   const updateToken = (token) => {

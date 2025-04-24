@@ -1,33 +1,26 @@
-// health.routes.js
+// src/routes/health.routes.js
 const express = require('express');
 const router = express.Router();
 const logger = require('../utils/logger');
+const { sequelize } = require('../config/database');
 
 router.get('/health', async (req, res) => {
   try {
     // Check database connection
-    if (mongoose.connection.readyState !== 1) {
-      logger.error('Health check failed: Database not connected');
-      return res.status(500).json({
-        status: 'error',
-        message: 'Database connection failed',
-        details: {
-          database: 'disconnected',
-          api: 'running'
-        }
-      });
+    let dbStatus = 'disconnected';
+    try {
+      await sequelize.authenticate();
+      dbStatus = 'connected';
+    } catch (dbError) {
+      logger.error('Health check failed: Database not connected', dbError);
     }
-    
-    // Try a simple database operation (read-only)
-    const collections = await mongoose.connection.db.listCollections().toArray();
     
     // Return success response with details
     return res.status(200).json({
-      status: 'healthy',
+      status: dbStatus === 'connected' ? 'healthy' : 'degraded',
       details: {
-        database: 'connected',
+        database: dbStatus,
         api: 'running',
-        collections: collections.length,
         environment: process.env.NODE_ENV,
         timestamp: new Date().toISOString()
       }

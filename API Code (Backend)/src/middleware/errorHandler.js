@@ -1,4 +1,4 @@
-// errorHandler.js
+// src/middleware/errorHandler.js
 const logger = require('../utils/logger');
 
 /**
@@ -28,6 +28,8 @@ const errorHandler = (err, req, res, next) => {
   if (err.name === 'JsonWebTokenError' || err.name === 'TokenExpiredError') {
     statusCode = 401;
   } else if (err.name === 'ValidationError') {
+    statusCode = 400;
+  } else if (err.name === 'SequelizeValidationError' || err.name === 'SequelizeUniqueConstraintError') {
     statusCode = 400;
   }
   

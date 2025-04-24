@@ -2,16 +2,24 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { Container, Form, Button, Alert, Card, Modal } from 'react-bootstrap';
+import { Container, Form, Button, Alert, Card, Modal, Tabs, Tab } from 'react-bootstrap';
 import logger from '../../utils/logger';
 
 const Login = () => {
-  const [clientId, setClientId] = useState('');
+  // User credentials state
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  
+  // API credentials state
+  const [clientId, setClientId] = useState(localStorage.getItem('clientId') || '');
   const [clientSecret, setClientSecret] = useState('');
+  
+  // UI state
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [showTokenModal, setShowTokenModal] = useState(false);
   const [generatedToken, setGeneratedToken] = useState(null);
+  const [loginMethod, setLoginMethod] = useState('user'); // 'user' or 'api'
 
   const { login } = useAuth();
   const navigate = useNavigate();
@@ -22,7 +30,19 @@ const Login = () => {
     setLoading(true);
 
     try {
-      const loginResult = await login({ clientId, clientSecret });
+      // Choose credentials based on login method
+      const credentials = loginMethod === 'user' 
+        ? { email, password }
+        : { clientId, clientSecret };
+      
+      // Validate required fields
+      if (loginMethod === 'user' && (!email || !password)) {
+        throw new Error('Email and password are required');
+      } else if (loginMethod === 'api' && (!clientId || !clientSecret)) {
+        throw new Error('Client ID and Client Secret are required');
+      }
+      
+      const loginResult = await login(credentials);
       
       // Check if this is a first-time login or requires additional steps
       if (loginResult.requiresTokenGeneration) {
@@ -61,7 +81,7 @@ const Login = () => {
   return (
     <>
       <Container className="d-flex justify-content-center align-items-center vh-100">
-        <Card className="w-100 bg-white" style={{ maxWidth: '400px' }}>
+        <Card className="w-100 bg-white" style={{ maxWidth: '450px' }}>
           <Card.Body>
             <h2 className="text-center mb-4">Sign in to your account</h2>
 
@@ -70,45 +90,108 @@ const Login = () => {
                 {error}
               </Alert>
             )}
+            <div className="mb-4">
+              <ul className="nav nav-tabs d-flex w-100">
+                <li className="nav-item">
+                  <button
+                    className={`nav-link ${loginMethod === 'user' ? 'active' : ''}`}
+                    onClick={() => setLoginMethod('user')}
+                  >
+                    Email & Password
+                  </button>
+                </li>
+                <li className="nav-item ms-auto">
+                  <button
+                    className={`nav-link ${loginMethod === 'api' ? 'active' : ''}`}
+                    onClick={() => setLoginMethod('api')}
+                  >
+                    API Credentials
+                  </button>
+                </li>
+              </ul>
 
-            <Form onSubmit={handleSubmit}>
-              <Form.Group className="mb-3">
-                <Form.Label>Client ID</Form.Label>
-                <Form.Control
-                  type="text"
-                  value={clientId}
-                  onChange={(e) => setClientId(e.target.value)}
-                  required
-                  placeholder="Enter Client ID"
-                />
-              </Form.Group>
+              <div className="tab-content">
+                <div className={`tab-pane fade ${loginMethod === 'user' ? 'show active' : ''}`}>
+                  {/* Email & Password Form */}
+                  <Form onSubmit={handleSubmit} className="mt-4">
+                    {/* Your existing Email & Password form code */}
+                    <Form.Group className="mb-3">
+                      <Form.Label>Email</Form.Label>
+                      <Form.Control
+                        type="email"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        placeholder="Enter your email"
+                        required={loginMethod === 'user'}
+                      />
+                    </Form.Group>
 
-              <Form.Group className="mb-3">
-                <Form.Label>Client Secret</Form.Label>
-                <Form.Control
-                  type="password"
-                  value={clientSecret}
-                  onChange={(e) => setClientSecret(e.target.value)}
-                  required
-                  placeholder="Enter Client Secret"
-                />
-              </Form.Group>
+                    <Form.Group className="mb-3">
+                      <Form.Label>Password</Form.Label>
+                      <Form.Control
+                        type="password"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        placeholder="Enter your password"
+                        required={loginMethod === 'user'}
+                      />
+                    </Form.Group>
 
-              <Button
-                variant="success"
-                type="submit"
-                className="w-100"
-                disabled={loading}
-              >
-                {loading ? 'Signing in...' : 'Sign In'}
-              </Button>
+                    <Button
+                      variant="success"
+                      type="submit"
+                      className="w-100"
+                      disabled={loading || (loginMethod === 'user' && (!email || !password))}
+                    >
+                      {loading ? 'Signing in...' : 'Sign In'}
+                    </Button>
+                  </Form>
+                </div>
+                
+                <div className={`tab-pane fade ${loginMethod === 'api' ? 'show active' : ''}`}>
+                  {/* API Credentials Form */}
+                  <Form onSubmit={handleSubmit} className="mt-4">
+                    {/* Your existing API Credentials form code */}
+                    <Form.Group className="mb-3">
+                      <Form.Label>Client ID</Form.Label>
+                      <Form.Control
+                        type="text"
+                        value={clientId}
+                        onChange={(e) => setClientId(e.target.value)}
+                        placeholder="Enter Client ID"
+                        required={loginMethod === 'api'}
+                      />
+                    </Form.Group>
 
-              <div className="text-center mt-3">
-                <a href="/register" className="text-decoration-none">
-                  Don't have an account? Register here
-                </a>
+                    <Form.Group className="mb-3">
+                      <Form.Label>Client Secret</Form.Label>
+                      <Form.Control
+                        type="password"
+                        value={clientSecret}
+                        onChange={(e) => setClientSecret(e.target.value)}
+                        placeholder="Enter Client Secret"
+                        required={loginMethod === 'api'}
+                      />
+                    </Form.Group>
+
+                    <Button
+                      variant="success"
+                      type="submit"
+                      className="w-100"
+                      disabled={loading || (loginMethod === 'api' && (!clientId || !clientSecret))}
+                    >
+                      {loading ? 'Signing in...' : 'Sign In'}
+                    </Button>
+                  </Form>
+                </div>
               </div>
-            </Form>
+            </div>
+
+            <div className="text-center mt-3">
+              <a href="/register" className="text-decoration-none">
+                Don't have an account? <span className="register-link">Register here</span>
+              </a>
+            </div>
           </Card.Body>
         </Card>
       </Container>
