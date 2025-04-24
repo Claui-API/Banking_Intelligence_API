@@ -418,3 +418,8 @@ app.use(cors({
 ```
 
 These configurations will ensure that your Banking Intelligence API application runs smoothly on Windows environments with the frontend communicating correctly with the backend.
+
+Support
+For support, contact us at sreenivas@vivytech.com or create an issue on GitHub.
+
+© 2025 VIVY TECH USA INC. All rights reserved.
