@@ -3,7 +3,7 @@ import axios from 'axios';
 import logger from '../utils/logger';
 
 // Determine API URL, with fallback
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:3000/api';
+const API_URL = process.env.REACT_APP_API_URL || 'http://https://bankingintelligenceapi.com//api';
 
 // Create axios instance with default config
 const api = axios.create({

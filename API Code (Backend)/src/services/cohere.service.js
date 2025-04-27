@@ -1,6 +1,7 @@
 // Enhanced cohere.service.js with specialized prompts for different query types
 const dotenv = require('dotenv');
 const logger = require('../utils/logger');
+const fetch = require('node-fetch');
 
 dotenv.config();
 
