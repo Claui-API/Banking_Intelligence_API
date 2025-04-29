@@ -91,7 +91,7 @@ const Register = () => {
     <Container className="bg-transparent d-flex justify-content-center align-items-center vh-100">
       <Card className="w-100 bg-white" style={{ maxWidth: '500px' }}>
         <Card.Body>
-          <h2 className="text-center mb-4">Register a new account</h2>
+          <h2 className="text-center mb-4 text-black">Register a new account</h2>
           
           {error && (
             <Alert variant="danger">

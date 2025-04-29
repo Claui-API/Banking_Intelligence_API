@@ -83,7 +83,7 @@ const Login = () => {
       <Container className="d-flex justify-content-center align-items-center vh-100">
         <Card className="w-100 bg-white" style={{ maxWidth: '450px' }}>
           <Card.Body>
-            <h2 className="text-center mb-4">Sign in to your account</h2>
+            <h2 className="text-center mb-4 text-black">Sign in to your account</h2>
 
             {error && (
               <Alert variant="danger">
@@ -91,7 +91,7 @@ const Login = () => {
               </Alert>
             )}
             <div className="mb-4">
-              <ul className="nav nav-tabs d-flex w-100">
+              <ul className="nav nav-tabs d-flex justify-content-center gap-2">
                 <li className="nav-item">
                   <button
                     className={`nav-link ${loginMethod === 'user' ? 'active' : ''}`}
@@ -103,7 +103,7 @@ const Login = () => {
                     Email & Password
                   </button>
                 </li>
-                <li className="nav-item ms-auto">
+                <li className="nav-item gap-2">
                   <button
                     className={`nav-link ${loginMethod === 'api' ? 'active' : ''}`}
                     onClick={() => {

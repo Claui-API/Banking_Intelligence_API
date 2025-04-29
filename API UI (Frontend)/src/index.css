@@ -67,7 +67,7 @@ body {
 }
 
 .nav-tabs .nav-link.active {
-  background-color: #fff;
+  background-color: #ffffff;
   border-bottom-color: transparent;
 }
 
@@ -134,7 +134,7 @@ body {
 
 /* Nav Tabs Styles */
 .nav-tabs {
-  border-bottom: 1px solid #dee2e6;
+  border-bottom: 1px solid #ffffff;
 }
 
 .nav-tabs .nav-link {

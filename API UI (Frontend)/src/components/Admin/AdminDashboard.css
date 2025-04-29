@@ -112,6 +112,15 @@
 	padding: 0.5rem 1rem;
   }
   
+  .nav-tabs .nav-item {
+	margin-right: 0.75rem;  /* adjust to taste */
+  }
+  
+  /* optional: remove right-margin on the last tab so it doesn’t overflow */
+  .nav-tabs .nav-item:last-child {
+	margin-right: 0;
+  }
+
   .nav-tabs .nav-link.active {
 	color: #198754;
 	background-color: #fff;

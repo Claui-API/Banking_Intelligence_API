@@ -1,5 +1,7 @@
 // Modified Dashboard.js with improved API data handling
 import React, { useState, useEffect, useRef } from 'react';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { Row, Col, Card, Button, Form, InputGroup, Container, Alert, Badge } from 'react-bootstrap';
 import { insightsService } from '../../services/insights';
 import { useAuth } from '../../context/AuthContext';
@@ -7,6 +9,36 @@ import { Link } from 'react-router-dom';
 import logger from '../../utils/logger';
 import './Dashboard.css';
 import ApiDebugPanel from '../Debug/ApiDebugPanel';
+
+const codeString = `// Example: Generate financial insights
+fetch('https://api.banking-intelligence.com/v1/insights/generate', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': 'Bearer \${apiKey}'
+  },
+  body: JSON.stringify({
+    query: 'How can I improve my savings?',
+    userData: {
+      accounts: [
+        { accountId: 'acc-1', type: 'Checking', balance: 1250.50 },
+        { accountId: 'acc-2', type: 'Savings', balance: 5000.00 }
+      ],
+      transactions: [
+        { transactionId: 'txn-1', date: '2025-03-15', description: 'Grocery Store', amount: -85.20 },
+        { transactionId: 'txn-2', date: '2025-03-14', description: 'Salary Deposit', amount: 3000.00 }
+      ]
+    }
+  })
+})`;
+
+const CodeBlock = () => (
+  <div className="bg-black p-3 rounded" style={{ overflowX: 'auto' }}>
+    <SyntaxHighlighter language="javascript" style={oneDark} wrapLongLines customStyle={{ fontSize: '0.9rem', margin: 0 }}>
+      {codeString}
+    </SyntaxHighlighter>
+  </div>
+);
 
 const Dashboard = () => {
   const { user, clientStatus, refreshClientStatus, isLoading } = useAuth();
@@ -774,41 +806,22 @@ const Dashboard = () => {
             
             {/* Code Sample */}
             <Card className="bg-white text-black border-secondary">
-              <Card.Header className="bg-white">Integration Example</Card.Header>
-              <Card.Body>
-                <Card.Text className="mb-3">
-                  Here's how to call the API in your application:
-                </Card.Text>
-                <div className="bg-black p-3 rounded" style={{ overflowX: 'auto' }}>
-                  <pre className="text-success mb-0" style={{ fontSize: '0.9rem' }}>
-{`// Example: Generate financial insights
-fetch('https://api.banking-intelligence.com/v1/insights/generate', {
-  method: 'POST',
-  headers: {
-    'Content-Type': 'application/json',
-    'Authorization': 'Bearer ${apiKey}'
-  },
-  body: JSON.stringify({
-    query: 'How can I improve my savings?',
-    userData: {
-      accounts: [
-        { accountId: 'acc-1', type: 'Checking', balance: 1250.50 },
-        { accountId: 'acc-2', type: 'Savings', balance: 5000.00 }
-      ],
-      transactions: [
-        { transactionId: 'txn-1', date: '2025-03-15', description: 'Grocery Store', amount: -85.20 },
-        { transactionId: 'txn-2', date: '2025-03-14', description: 'Salary Deposit', amount: 3000.00 }
-      ]
-    }
-  })
-})`}
-                  </pre>
-                </div>
-                <div className="text-end mt-3">
-                  <Button variant="link" className="text-success" href="/docs">View Full Documentation →</Button>
-                </div>
-              </Card.Body>
-            </Card>
+							<Card.Header className="bg-white">Integration Example</Card.Header>
+							<Card.Body>
+								<Card.Text className="mb-3">
+									Here's how to call the API in your application:
+								</Card.Text>
+
+								{/* ✅ Render CodeBlock component */}
+								<CodeBlock />
+
+								<div className="text-end mt-3">
+									<Button variant="link" className="text-success" href="/docs">
+										View Full Documentation →
+									</Button>
+								</div>
+							</Card.Body>
+						</Card>
           </>
         ) : (
           <Card className="bg-white text-black border-secondary mb-4">
