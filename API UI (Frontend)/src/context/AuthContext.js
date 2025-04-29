@@ -1,5 +1,5 @@
 // src/context/AuthContext.js
-import React, { createContext, useState, useEffect, useContext } from 'react';
+import React, { createContext, useState, useEffect, useContext, useRef } from 'react';
 import { authService } from '../services/auth';
 import logger from '../utils/logger';
 
@@ -11,7 +11,15 @@ export const AuthProvider = ({ children }) => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [user, setUser] = useState(null);
-  const [isAdmin, setIsAdmin] = useState(false); // Add admin state
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [clientStatus, setClientStatus] = useState('unknown');
+  
+  // Add a flag to prevent multiple simultaneous status refreshes
+  const refreshingStatus = useRef(false);
+  // Add a timer reference for debounce
+  const statusRefreshTimer = useRef(null);
+  // Track last refresh time to prevent too frequent refreshes
+  const lastRefreshTime = useRef(0);
 
   useEffect(() => {
     // Check authentication status on initial load
@@ -29,6 +37,23 @@ export const AuthProvider = ({ children }) => {
           
           // Check if user is admin
           setIsAdmin(userData.role === 'admin');
+          
+          // Set initial client status from token if available
+          if (userData.clientId && userData.clientStatus) {
+            setClientStatus(userData.clientStatus);
+            
+            // Only fetch fresh status if we haven't refreshed recently
+            const now = Date.now();
+            if (now - lastRefreshTime.current > 30000) { // 30 second cooldown
+              // Schedule a status refresh (debounced)
+              if (statusRefreshTimer.current) {
+                clearTimeout(statusRefreshTimer.current);
+              }
+              statusRefreshTimer.current = setTimeout(() => {
+                refreshClientStatus();
+              }, 500); // Debounce for 500ms
+            }
+          }
         }
         
         setIsAuthenticated(auth);
@@ -40,7 +65,55 @@ export const AuthProvider = ({ children }) => {
     };
 
     checkAuth();
+    
+    // Cleanup timer on unmount
+    return () => {
+      if (statusRefreshTimer.current) {
+        clearTimeout(statusRefreshTimer.current);
+      }
+    };
   }, []);
+
+  // Add a function to refresh client status
+  const refreshClientStatus = async () => {
+    if (!user || !user.clientId) return;
+    
+    // Prevent multiple simultaneous refreshes
+    if (refreshingStatus.current) {
+      logger.info('Status refresh already in progress, skipping');
+      return;
+    }
+    
+    // Enforce a minimum interval between refreshes
+    const now = Date.now();
+    if (now - lastRefreshTime.current < 5000) { // 5 second cooldown
+      logger.info('Rate limiting status refresh, too many requests');
+      return;
+    }
+    
+    try {
+      refreshingStatus.current = true;
+      lastRefreshTime.current = now;
+      
+      // Do not set global loading state for status refresh
+      // setIsLoading(true);
+      
+      // Make an API call to get the current client status
+      const api = await import('../services/api').then(module => module.default);
+      const response = await api.get(`/api/clients/status/${user.clientId}`);
+      
+      if (response.data && response.data.success) {
+        logger.info(`Client status refreshed: ${response.data.data.status}`);
+        setClientStatus(response.data.data.status);
+      }
+    } catch (error) {
+      logger.error('Failed to refresh client status:', error);
+      // Don't change the status on error, keep the current value
+    } finally {
+      // setIsLoading(false);
+      refreshingStatus.current = false;
+    }
+  };
 
   const login = async (credentials) => {
     setIsLoading(true);
@@ -89,6 +162,11 @@ export const AuthProvider = ({ children }) => {
       // Check if user is admin
       setIsAdmin(userData.role === 'admin');
       
+      // Set client status
+      if (userData.clientId) {
+        setClientStatus(data.clientStatus || userData.clientStatus || 'pending');
+      }
+      
       return data;
     } catch (error) {
       logger.error('Login failed:', error);
@@ -121,6 +199,7 @@ export const AuthProvider = ({ children }) => {
     setIsAuthenticated(false);
     setUser(null);
     setIsAdmin(false);
+    setClientStatus('unknown');
     localStorage.removeItem('token');
     // Don't remove clientId so users can log back in easily
   };
@@ -144,6 +223,8 @@ export const AuthProvider = ({ children }) => {
     isLoading,
     user,
     isAdmin,
+    clientStatus,
+    refreshClientStatus,
     login,
     register,
     logout,

@@ -42,12 +42,21 @@ const authService = {
       // Generate client credentials
       const credentials = Client.generateCredentials();
       
-      // Create the client - status will be 'pending' by default now
+      // Calculate resetDate - the first day of next month
+      const resetDate = new Date();
+      resetDate.setMonth(resetDate.getMonth() + 1);
+      resetDate.setDate(1);
+      resetDate.setHours(0, 0, 0, 0);
+      
+      // Create the client - explicitly set resetDate
       const client = await Client.create({
         userId: user.id,
         clientId: credentials.clientId,
         clientSecret: credentials.clientSecret,
-        description: userData.description
+        description: userData.description,
+        resetDate: resetDate, // Explicitly set resetDate
+        usageQuota: 1000,     // Set default usage quota
+        usageCount: 0         // Initialize usage count
       }, { transaction });
       
       await transaction.commit();

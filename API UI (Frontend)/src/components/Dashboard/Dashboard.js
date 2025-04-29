@@ -8,10 +8,11 @@ import logger from '../../utils/logger';
 import './Dashboard.css';
 
 const Dashboard = () => {
-  const { user } = useAuth();
+  const { user, clientStatus, refreshClientStatus, isLoading } = useAuth();
   
-  // Add state to track client approval status
-  const [clientStatus, setClientStatus] = useState('unknown');
+  // State for UI
+  const [error, setError] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
   
   // Initialize with the token from auth context or localStorage
   const [apiKey, setApiKey] = useState(() => {
@@ -28,11 +29,21 @@ const Dashboard = () => {
   
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
   const [insightsData, setInsightsData] = useState(null);
   
   // Add a ref to track the latest request ID
   const latestRequestIdRef = useRef(null);
+  // Track last refresh time
+  const lastRefreshTime = useRef(0);
+  
+  // Only refresh status on initial mount, not on every render
+  useEffect(() => {
+    // Skip automatic refresh if refreshed recently (within last 15 seconds)
+    const now = Date.now();
+    if (now - lastRefreshTime.current > 15000) {
+      handleStatusRefresh();
+    }
+  }, []); // Empty dependency array means this runs once on mount
   
   // Update API key if user or token changes
   useEffect(() => {
@@ -50,28 +61,35 @@ const Dashboard = () => {
     if (storedSecret) {
       setClientSecret(storedSecret);
     }
-    
-    // Check client status from token
-    if (user) {
-      try {
-        // Check for client ID in user object
-        if (user.clientId) {
-          // Make an API call to check client status or extract from token
-          // For now, we'll use a mock status based on user role
-          if (user.role === 'admin') {
-            setClientStatus('active');
-          } else {
-            // In a real implementation, this would come from an API call or the token
-            // This is just a placeholder for the example
-            setClientStatus('pending'); 
-          }
-        }
-      } catch (err) {
-        logger.error('Error checking client status:', err);
-      }
-    }
   }, [user]);
 
+  // Handle manual status refresh with debounce
+  const handleStatusRefresh = async () => {
+    // Prevent rapid multiple refreshes
+    const now = Date.now();
+    if (now - lastRefreshTime.current < 5000) { // 5 second cooldown
+      logger.info('Skipping refresh, too soon after last refresh');
+      return;
+    }
+    
+    if (!refreshClientStatus) return;
+    
+    try {
+      setRefreshing(true);
+      lastRefreshTime.current = now;
+      
+      await refreshClientStatus();
+      logger.info(`Manual status refresh completed, status: ${clientStatus}`);
+      
+    } catch (error) {
+      logger.error('Error refreshing status:', error);
+    } finally {
+      setTimeout(() => {
+        setRefreshing(false);
+      }, 1000); // Ensure refresh indicator shows for at least 1 second for UX
+    }
+  };
+  
   // Generate a unique request ID
   const generateRequestId = () => {
     return `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -252,7 +270,7 @@ const Dashboard = () => {
       
       return finalText;
     } catch (formatError) {
-      logger.logError('Insight Formatting', formatError);
+      logger.error('Insight Formatting', formatError);
       return text;
     }
   };
@@ -296,7 +314,7 @@ const Dashboard = () => {
       
       handleDemoRequest(suggestion, requestId);
     } catch (error) {
-      logger.logError('Suggested Question Handling', error);
+      logger.error('Suggested Question Handling', error);
     }
   };
   
@@ -313,6 +331,20 @@ const Dashboard = () => {
               <div>
                 <h5 className="mb-1">Your API access is pending approval</h5>
                 <p className="mb-0">Your client account needs administrator approval before you can use the API. Please check back later or contact support.</p>
+                <Button 
+                  variant="outline-dark" 
+                  size="sm" 
+                  className="mt-2"
+                  onClick={handleStatusRefresh}
+                  disabled={refreshing || isLoading}
+                >
+                  {refreshing ? (
+                    <>
+                      <span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+                      Refreshing...
+                    </>
+                  ) : 'Refresh Status'}
+                </Button>
               </div>
             </div>
           </Alert>
@@ -322,11 +354,27 @@ const Dashboard = () => {
         <Card className="bg-white text-black border-secondary mb-4">
           <Card.Header className="bg-white d-flex justify-content-between align-items-center">
             <span>Client Credentials</span>
-            {clientStatus !== 'unknown' && (
-              <Badge bg={clientStatus === 'active' ? 'success' : 'warning'} className="text-capitalize">
-                {clientStatus}
-              </Badge>
-            )}
+            <div className="d-flex align-items-center gap-2">
+              {clientStatus !== 'unknown' && (
+                <Badge bg={clientStatus === 'active' ? 'success' : 'warning'} className="text-capitalize">
+                  {clientStatus}
+                </Badge>
+              )}
+              <Button 
+                variant="outline-secondary"
+                size="sm"
+                onClick={handleStatusRefresh}
+                disabled={refreshing || isLoading}
+              >
+                {refreshing ? (
+                  <>
+                    <span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+                  </>
+                ) : (
+                  <i className="bi bi-arrow-clockwise"></i>
+                )}
+              </Button>
+            </div>
           </Card.Header>
           <Card.Body>
             <Row>
@@ -423,7 +471,7 @@ const Dashboard = () => {
               </Card.Body>
             </Card>
             
-            {/* API Testing Console - Now using the same logic as InsightsPanel */}
+            {/* API Testing Console */}
             <Card className="bg-white text-black border-secondary mb-4">
               <Card.Header className="bg-white">API Testing Console</Card.Header>
               <Card.Body>
@@ -569,14 +617,27 @@ fetch('https://api.banking-intelligence.com/v1/insights/generate', {
                 Your client account has been registered and is awaiting administrator approval. 
                 You'll be able to access the API once your account is approved.
               </p>
-              <Button 
-                variant="outline-success" 
-                as={Link} 
-                to="/docs"
-                className="mt-3"
-              >
-                View API Documentation
-              </Button>
+              <div className="d-flex justify-content-center gap-3 mt-3">
+                <Button 
+                  variant="outline-success" 
+                  as={Link} 
+                  to="/docs"
+                >
+                  View API Documentation
+                </Button>
+                <Button 
+                  variant="outline-primary"
+                  onClick={handleStatusRefresh}
+                  disabled={refreshing || isLoading}
+                >
+                  {refreshing ? (
+                    <>
+                      <span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+                      Refreshing...
+                    </>
+                  ) : 'Refresh Status'}
+                </Button>
+              </div>
             </Card.Body>
           </Card>
         )}

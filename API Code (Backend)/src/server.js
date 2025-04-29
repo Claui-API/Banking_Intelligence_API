@@ -1,4 +1,4 @@
-// server.js
+// server.js - Update to include client routes
 const express = require('express');
 const path = require('path');
 const helmet = require('helmet');
@@ -8,7 +8,8 @@ const rateLimit = require('express-rate-limit');
 const notificationRoutes = require('./routes/notification.routes');
 const syncRoutes = require('./routes/sync.routes');
 const mobileInsightsRoutes = require('./routes/insights.mobile.routes');
-const adminRoutes = require('./routes/admin.routes'); // Add admin routes
+const adminRoutes = require('./routes/admin.routes');
+const clientRoutes = require('./routes/client.routes'); // Add client routes
 
 // Load .env variables
 dotenv.config();
@@ -66,7 +67,8 @@ app.use('/api/plaid', plaidRoutes);
 app.use('/api/webhooks', webhookRoutes);
 app.use('/api', healthRoutes);
 app.use('/api/diagnostics', diagnosticsRoutes);
-app.use('/api/admin', adminRoutes); // Add admin routes
+app.use('/api/admin', adminRoutes);
+app.use('/api/clients', clientRoutes); // Add client routes
 
 // Mobile v1 routes
 app.use('/api/v1/notifications', notificationRoutes);

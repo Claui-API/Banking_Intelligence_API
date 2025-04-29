@@ -2,8 +2,8 @@
 import axios from 'axios';
 import logger from '../utils/logger';
 
-// Determine API URL, with fallback
-const API_URL = process.env.REACT_APP_API_URL || 'http://https://localhost:3000/api';
+// Determine API URL, with fallback - FIX: Remove the double '/api'
+const API_URL = process.env.REACT_APP_API_URL || 'https://bankingintelligenceapi.com'; // Remove '/api'
 
 // Create axios instance with default config
 const api = axios.create({
@@ -12,13 +12,13 @@ const api = axios.create({
     'Content-Type': 'application/json',
   },
   // Add timeout to prevent hanging requests
-  timeout: 60000, // 10 seconds
+  timeout: 60000, // 60 seconds
 });
 
 // Log API configuration
 logger.info('API Configuration', {
   baseURL: API_URL,
-  timeout: '10 seconds'
+  timeout: '60 seconds'
 });
 
 // Add request interceptor to log outgoing requests
@@ -73,6 +73,9 @@ api.interceptors.response.use(
           break;
         case 404: // Not Found
           logger.error('Requested resource not found');
+          break;
+        case 429: // Too Many Requests
+          logger.warn('Rate limit exceeded - too many requests');
           break;
         case 500: // Internal Server Error
           logger.error('Server error occurred');
