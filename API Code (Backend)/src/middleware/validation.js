@@ -9,9 +9,25 @@ const logger = require('../utils/logger');
  */
 const validateInsightsRequest = (req, res, next) => {
   try {
+    // Log the entire request body to see what's coming in
+    console.log('Request Body:', JSON.stringify(req.body));
+    
+    // Log the specific query value
+    console.log('Query value:', req.body.query);
+    
+    // Log the type of req.body to ensure it's an object
+    console.log('Request body type:', typeof req.body);
+    
+    // Log the Content-Type header to verify proper JSON parsing
+    console.log('Content-Type header:', req.headers['content-type']);
+    
     const { query } = req.body;
     
+    console.log('Extracted query:', query);
+    console.log('Query type:', typeof query);
+    
     if (!query) {
+      console.log('Query validation failed: query is falsy');
       return res.status(400).json({
         success: false,
         message: 'Query is required to generate insights'
@@ -20,14 +36,17 @@ const validateInsightsRequest = (req, res, next) => {
     
     // Optional: validate query length
     if (query.length < 5 || query.length > 500) {
+      console.log(`Query length validation failed: ${query.length} characters`);
       return res.status(400).json({
         success: false,
         message: 'Query must be between 5 and 500 characters'
       });
     }
     
+    console.log('Query validation passed successfully');
     next();
   } catch (error) {
+    console.error('Validation error:', error);
     logger.error('Validation error:', error);
     return res.status(500).json({
       success: false,

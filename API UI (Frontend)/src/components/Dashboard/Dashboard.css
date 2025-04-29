@@ -36,6 +36,7 @@ pre {
 /* Ensure all content is properly contained */
 .container-fluid {
   overflow-x: hidden;
+  background-color: white;
 }
 
 /* Improve the readability of the code example */

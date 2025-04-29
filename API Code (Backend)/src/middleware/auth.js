@@ -42,8 +42,14 @@ const authMiddleware = async (req, res, next) => {
       role: decoded.role || 'user'
     };
     
-    // If this is not an admin, verify client approval status
-    if (req.auth.role !== 'admin' && req.auth.clientId) {
+    // Admin users bypass client status checks
+    if (req.auth.role === 'admin') {
+      logger.info(`Admin authenticated: ${req.auth.userId}`);
+      return next();
+    }
+    
+    // For regular users, verify client approval status
+    if (req.auth.clientId) {
       const client = await Client.findOne({
         where: { 
           clientId: req.auth.clientId
@@ -129,8 +135,15 @@ const apiTokenMiddleware = async (req, res, next) => {
     req.auth = {
       userId: decoded.userId,
       clientId: decoded.clientId,
+      role: decoded.role || 'user',
       isApiRequest: true
     };
+    
+    // Admin users bypass client status checks
+    if (req.auth.role === 'admin') {
+      logger.info(`Admin API authenticated: ${req.auth.userId}`);
+      return next();
+    }
     
     // Verify client approval status
     const client = await Client.findOne({

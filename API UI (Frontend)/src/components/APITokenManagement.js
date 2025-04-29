@@ -2,9 +2,11 @@
 import React, { useState, useEffect } from 'react';
 import { Container, Card, Button, Form, Alert } from 'react-bootstrap';
 import { authService } from '../services/auth';
+import { useAuth } from '../context/AuthContext';
 import logger from '../utils/logger';
 
 const APITokenManagement = () => {
+  const { isAdmin } = useAuth();
   const [token, setToken] = useState('');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -19,6 +21,14 @@ const APITokenManagement = () => {
       // You might want to get these from a form or context
       const clientId = localStorage.getItem('clientId');
       const clientSecret = localStorage.getItem('clientSecret');
+
+      // For admin users, proceed even without client credentials or with special handling
+      if (isAdmin && (!clientId || !clientSecret)) {
+        setSuccess('As an admin, you have direct API access without needing to generate a token');
+        setToken('Admin users have privileged access');
+        setLoading(false);
+        return;
+      }
 
       if (!clientId || !clientSecret) {
         throw new Error('Client credentials not found');

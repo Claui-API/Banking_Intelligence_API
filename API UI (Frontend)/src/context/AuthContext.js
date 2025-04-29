@@ -36,10 +36,15 @@ export const AuthProvider = ({ children }) => {
           });
           
           // Check if user is admin
-          setIsAdmin(userData.role === 'admin');
+          const isUserAdmin = userData.role === 'admin';
+          setIsAdmin(isUserAdmin);
           
-          // Set initial client status from token if available
-          if (userData.clientId && userData.clientStatus) {
+          // For admin users, don't worry about client status
+          if (isUserAdmin) {
+            setClientStatus('active'); // Always treat admin users as having active status
+          } 
+          // For regular users, set initial client status from token if available
+          else if (userData.clientId && userData.clientStatus) {
             setClientStatus(userData.clientStatus);
             
             // Only fetch fresh status if we haven't refreshed recently
@@ -78,6 +83,12 @@ export const AuthProvider = ({ children }) => {
   const refreshClientStatus = async () => {
     if (!user || !user.clientId) return;
     
+    // Admin users always have 'active' status
+    if (user.role === 'admin') {
+      setClientStatus('active');
+      return;
+    }
+    
     // Prevent multiple simultaneous refreshes
     if (refreshingStatus.current) {
       logger.info('Status refresh already in progress, skipping');
@@ -95,12 +106,9 @@ export const AuthProvider = ({ children }) => {
       refreshingStatus.current = true;
       lastRefreshTime.current = now;
       
-      // Do not set global loading state for status refresh
-      // setIsLoading(true);
-      
       // Make an API call to get the current client status
       const api = await import('../services/api').then(module => module.default);
-      const response = await api.get(`/api/clients/status/${user.clientId}`);
+      const response = await api.get(`/clients/status/${user.clientId}`);
       
       if (response.data && response.data.success) {
         logger.info(`Client status refreshed: ${response.data.data.status}`);
@@ -110,7 +118,6 @@ export const AuthProvider = ({ children }) => {
       logger.error('Failed to refresh client status:', error);
       // Don't change the status on error, keep the current value
     } finally {
-      // setIsLoading(false);
       refreshingStatus.current = false;
     }
   };

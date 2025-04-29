@@ -1,4 +1,4 @@
-// src/components/Dashboard/Dashboard.js
+// Modified Dashboard.js with improved API data handling
 import React, { useState, useEffect, useRef } from 'react';
 import { Row, Col, Card, Button, Form, InputGroup, Container, Alert, Badge } from 'react-bootstrap';
 import { insightsService } from '../../services/insights';
@@ -6,6 +6,7 @@ import { useAuth } from '../../context/AuthContext';
 import { Link } from 'react-router-dom';
 import logger from '../../utils/logger';
 import './Dashboard.css';
+import ApiDebugPanel from '../Debug/ApiDebugPanel';
 
 const Dashboard = () => {
   const { user, clientStatus, refreshClientStatus, isLoading } = useAuth();
@@ -13,6 +14,12 @@ const Dashboard = () => {
   // State for UI
   const [error, setError] = useState('');
   const [refreshing, setRefreshing] = useState(false);
+  const [showDebugPanel, setShowDebugPanel] = useState(process.env.NODE_ENV !== 'production');
+  
+  // Data state
+  const [financialData, setFinancialData] = useState(null);
+  const [dataLoading, setDataLoading] = useState(true);
+  const [dataError, setDataError] = useState(null);
   
   // Initialize with the token from auth context or localStorage
   const [apiKey, setApiKey] = useState(() => {
@@ -35,6 +42,11 @@ const Dashboard = () => {
   const latestRequestIdRef = useRef(null);
   // Track last refresh time
   const lastRefreshTime = useRef(0);
+  
+  // Load financial data on mount
+  useEffect(() => {
+    fetchFinancialData();
+  }, []);
   
   // Only refresh status on initial mount, not on every render
   useEffect(() => {
@@ -62,6 +74,52 @@ const Dashboard = () => {
       setClientSecret(storedSecret);
     }
   }, [user]);
+
+  // Fetch financial data
+  const fetchFinancialData = async () => {
+    setDataLoading(true);
+    setDataError(null);
+    
+    try {
+      const data = await insightsService.getFinancialSummary();
+      
+      // Log detailed information about the data
+      logger.info('Financial data fetched successfully', {
+        dataPresent: !!data,
+        hasAccounts: !!(data && data.accounts),
+        hasTransactions: !!(data && data.recentTransactions),
+        accountCount: data?.accounts?.length || 0,
+        transactionCount: data?.recentTransactions?.length || 0,
+        isMockData: checkIfMockData(data)
+      });
+      
+      setFinancialData(data);
+    } catch (err) {
+      logger.error('Error fetching financial data', err);
+      setDataError(err.message || 'Failed to load financial data');
+    } finally {
+      setDataLoading(false);
+    }
+  };
+  
+  // Check if the data appears to be mock data
+  const checkIfMockData = (data) => {
+    if (!data) return false;
+    
+    // Check if accounts have mock in their IDs
+    const hasMockAccounts = data.accounts && 
+      data.accounts.some(acc => 
+        acc.accountId && acc.accountId.includes('mock')
+      );
+    
+    // Check if transactions have mock in their IDs
+    const hasMockTransactions = data.recentTransactions && 
+      data.recentTransactions.some(tx => 
+        tx.transactionId && tx.transactionId.includes('mock')
+      );
+    
+    return hasMockAccounts || hasMockTransactions;
+  };
 
   // Handle manual status refresh with debounce
   const handleStatusRefresh = async () => {
@@ -321,7 +379,49 @@ const Dashboard = () => {
   return (
     <Container fluid className="py-4 px-md-4 px-2 bg-black">
       <div className="mx-auto" style={{ maxWidth: '1200px' }}>
-        <h1 className="mb-4 text-white">API Dashboard</h1>
+        <div className="d-flex justify-content-between align-items-center mb-4">
+          <h1 className="mb-0 text-white">API Dashboard</h1>
+          <Button 
+            variant={showDebugPanel ? "danger" : "success"} 
+            size="sm"
+            onClick={() => setShowDebugPanel(!showDebugPanel)}
+          >
+            {showDebugPanel ? "Hide Debug Panel" : "Show Debug Panel"}
+          </Button>
+        </div>
+        
+        {/* Show debug panel if enabled */}
+        {showDebugPanel && <ApiDebugPanel />}
+        
+        {/* Show data source alert */}
+        {financialData && !dataLoading && (
+          <Alert variant={checkIfMockData(financialData) ? "warning" : "success"} className="mb-4">
+            <div className="d-flex align-items-center">
+              <i className={`bi ${checkIfMockData(financialData) ? "bi-exclamation-triangle" : "bi-check-circle"} fs-4 me-3`}></i>
+              <div>
+                {checkIfMockData(financialData) ? (
+                  <>
+                    <h5 className="mb-1">Using Mock Data</h5>
+                    <p className="mb-0">Your application is currently using mock data instead of real data from the API.</p>
+                    <Button 
+                      variant="outline-dark" 
+                      size="sm" 
+                      className="mt-2"
+                      onClick={fetchFinancialData}
+                    >
+                      Retry Fetching Real Data
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <h5 className="mb-1">Using Real API Data</h5>
+                    <p className="mb-0">Your application is successfully retrieving real data from the API.</p>
+                  </>
+                )}
+              </div>
+            </div>
+          </Alert>
+        )}
         
         {/* Show approval status alert if pending */}
         {clientStatus === 'pending' && (
@@ -450,27 +550,6 @@ const Dashboard = () => {
         {/* Conditional rendering for the rest of the Dashboard */}
         {clientStatus === 'active' ? (
           <>
-            {/* Usage Stats - Simple version */}
-            <Card className="bg-white text-black border-secondary mb-4">
-              <Card.Header className="bg-white">API Usage Statistics</Card.Header>
-              <Card.Body>
-                <Row>
-                  <Col sm={4} className="text-center mb-3 mb-sm-0">
-                    <h3 className="text-success">152</h3>
-                    <div className="text-secondary">Requests Today</div>
-                  </Col>
-                  <Col sm={4} className="text-center mb-3 mb-sm-0">
-                    <h3 className="text-success">1,245</h3>
-                    <div className="text-secondary">Requests This Month</div>
-                  </Col>
-                  <Col sm={4} className="text-center">
-                    <h3 className="text-success">8,755</h3>
-                    <div className="text-secondary">Remaining Quota</div>
-                  </Col>
-                </Row>
-              </Card.Body>
-            </Card>
-            
             {/* API Testing Console */}
             <Card className="bg-white text-black border-secondary mb-4">
               <Card.Header className="bg-white">API Testing Console</Card.Header>
@@ -568,6 +647,130 @@ const Dashboard = () => {
                 </div>
               </Card.Body>
             </Card>
+            
+            {/* Financial Data Display */}
+            {financialData && (
+              <Card className="bg-white text-black border-secondary mb-4">
+                <Card.Header className="bg-white">Financial Summary</Card.Header>
+                <Card.Body>
+                  {dataLoading ? (
+                    <div className="text-center p-4">
+                      <div className="spinner-border text-success" role="status">
+                        <span className="visually-hidden">Loading...</span>
+                      </div>
+                      <p className="text-secondary mt-3">Loading financial data...</p>
+                    </div>
+                  ) : dataError ? (
+                    <Alert variant="danger">
+                      <i className="bi bi-exclamation-triangle me-2"></i>
+                      {dataError}
+                    </Alert>
+                  ) : (
+                    <>
+                      <Row className="mb-4">
+                        <Col md={6} lg={3} className="mb-3">
+                          <div className="bg-light p-3 rounded">
+                            <div className="text-muted small mb-2">Total Balance</div>
+                            <div className="h4">
+                              ${financialData.totalBalance?.toFixed(2) || '0.00'}
+                            </div>
+                          </div>
+                        </Col>
+                        <Col md={6} lg={3} className="mb-3">
+                          <div className="bg-light p-3 rounded">
+                            <div className="text-muted small mb-2">Net Worth</div>
+                            <div className="h4">
+                              ${financialData.netWorth?.toFixed(2) || '0.00'}
+                            </div>
+                          </div>
+                        </Col>
+                        <Col md={6} lg={3} className="mb-3">
+                          <div className="bg-light p-3 rounded">
+                            <div className="text-muted small mb-2">Accounts</div>
+                            <div className="h4">
+                              {financialData.accounts?.length || 0}
+                            </div>
+                          </div>
+                        </Col>
+                        <Col md={6} lg={3} className="mb-3">
+                          <div className="bg-light p-3 rounded">
+                            <div className="text-muted small mb-2">Data Source</div>
+                            <div className="h4 text-nowrap">
+                              {checkIfMockData(financialData) ? (
+                                <Badge bg="warning">Mock Data</Badge>
+                              ) : (
+                                <Badge bg="success">Real API</Badge>
+                              )}
+                            </div>
+                          </div>
+                        </Col>
+                      </Row>
+                      
+                      {/* Accounts Table */}
+                      {financialData.accounts && financialData.accounts.length > 0 && (
+                        <>
+                          <h5 className="mt-4 mb-3">Accounts</h5>
+                          <div className="table-responsive">
+                            <table className="table table-hover">
+                              <thead>
+                                <tr>
+                                  <th>Account</th>
+                                  <th>Type</th>
+                                  <th>Balance</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {financialData.accounts.map(account => (
+                                  <tr key={account.accountId}>
+                                    <td>{account.name || 'Account'}</td>
+                                    <td>{account.type || 'Other'}</td>
+                                    <td className={account.balance < 0 ? 'text-danger' : 'text-success'}>
+                                      ${account.balance?.toFixed(2) || '0.00'}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </>
+                      )}
+                      
+                      {/* Recent Transactions */}
+                      {financialData.recentTransactions && financialData.recentTransactions.length > 0 && (
+                        <>
+                          <h5 className="mt-4 mb-3">Recent Transactions</h5>
+                          <div className="table-responsive">
+                            <table className="table table-hover">
+                              <thead>
+                                <tr>
+                                  <th>Date</th>
+                                  <th>Description</th>
+                                  <th>Category</th>
+                                  <th>Amount</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {financialData.recentTransactions.map(tx => (
+                                  <tr key={tx.transactionId}>
+                                    <td>{new Date(tx.date).toLocaleDateString()}</td>
+                                    <td>{tx.description || 'Transaction'}</td>
+                                    <td>{tx.category || 'Other'}</td>
+                                    <td className={tx.amount < 0 ? 'text-danger' : 'text-success'}>
+                                      ${Math.abs(tx.amount).toFixed(2)}
+                                      {tx.amount < 0 ? ' (debit)' : ' (credit)'}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </>
+                      )}
+                    </>
+                  )}
+                </Card.Body>
+              </Card>
+            )}
             
             {/* Code Sample */}
             <Card className="bg-white text-black border-secondary">
