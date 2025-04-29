@@ -1,0 +1,102 @@
+/* src/components/Admin/ClientDetailPage.css */
+
+/* Security information styling */
+.security-info {
+	display: flex;
+	flex-direction: column;
+	gap: 1.25rem;
+  }
+  
+  .security-item {
+	display: flex;
+	align-items: center;
+	gap: 1rem;
+  }
+  
+  .security-icon {
+	background-color: #f8f9fa;
+	border-radius: 50%;
+	width: 48px;
+	height: 48px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+  }
+  
+  .security-icon i {
+	font-size: 1.5rem;
+	color: #198754; /* bootstrap success color */
+  }
+  
+  .security-content {
+	flex: 1;
+  }
+  
+  .security-title {
+	font-weight: 500;
+	margin-bottom: 0.25rem;
+  }
+  
+  .security-value {
+	color: #6c757d;
+  }
+  
+  /* Progress bar styling */
+  .progress {
+	height: 0.75rem;
+	border-radius: 1rem;
+	background-color: #e9ecef;
+  }
+  
+  .progress-bar {
+	border-radius: 1rem;
+  }
+  
+  /* Card styling */
+  .card {
+	box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+	border: none;
+	margin-bottom: 1.5rem;
+  }
+  
+  .card-header {
+	font-weight: 500;
+	border-bottom: 1px solid rgba(0, 0, 0, 0.125);
+  }
+  
+  /* Mobile responsiveness */
+  @media (max-width: 768px) {
+	.security-item {
+	  flex-direction: column;
+	  align-items: flex-start;
+	  gap: 0.5rem;
+	}
+	
+	.security-icon {
+	  width: 36px;
+	  height: 36px;
+	}
+	
+	.security-icon i {
+	  font-size: 1.25rem;
+	}
+  }
+  
+  /* Button group mobile styling */
+  @media (max-width: 576px) {
+	.d-flex.flex-wrap.gap-2 {
+	  justify-content: center;
+	}
+	
+	.d-flex.flex-wrap.gap-2 .btn {
+	  width: 100%;
+	  margin-bottom: 0.5rem;
+	}
+  }
+  
+  /* Badge styling */
+  .badge {
+	padding: 0.5em 0.75em;
+	font-weight: 500;
+	font-size: 0.85rem;
+  }
