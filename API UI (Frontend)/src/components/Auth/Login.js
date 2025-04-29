@@ -1,8 +1,8 @@
 // src/components/Auth/Login.js
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { Container, Form, Button, Alert, Card, Modal, Tabs, Tab } from 'react-bootstrap';
+import { Container, Form, Button, Alert, Card, Modal } from 'react-bootstrap';
 import logger from '../../utils/logger';
 
 const Login = () => {
@@ -95,7 +95,10 @@ const Login = () => {
                 <li className="nav-item">
                   <button
                     className={`nav-link ${loginMethod === 'user' ? 'active' : ''}`}
-                    onClick={() => setLoginMethod('user')}
+                    onClick={() => {
+                      setLoginMethod('user');
+                      setError(''); // Clear error when switching tabs
+                    }}
                   >
                     Email & Password
                   </button>
@@ -103,7 +106,10 @@ const Login = () => {
                 <li className="nav-item ms-auto">
                   <button
                     className={`nav-link ${loginMethod === 'api' ? 'active' : ''}`}
-                    onClick={() => setLoginMethod('api')}
+                    onClick={() => {
+                      setLoginMethod('api');
+                      setError(''); // Clear error when switching tabs
+                    }}
                   >
                     API Credentials
                   </button>
@@ -114,13 +120,15 @@ const Login = () => {
                 <div className={`tab-pane fade ${loginMethod === 'user' ? 'show active' : ''}`}>
                   {/* Email & Password Form */}
                   <Form onSubmit={handleSubmit} className="mt-4">
-                    {/* Your existing Email & Password form code */}
                     <Form.Group className="mb-3">
                       <Form.Label>Email</Form.Label>
                       <Form.Control
                         type="email"
                         value={email}
-                        onChange={(e) => setEmail(e.target.value)}
+                        onChange={(e) => {
+                          setEmail(e.target.value);
+                          if (error) setError(''); // Clear error when user changes input
+                        }}
                         placeholder="Enter your email"
                         required={loginMethod === 'user'}
                       />
@@ -131,7 +139,10 @@ const Login = () => {
                       <Form.Control
                         type="password"
                         value={password}
-                        onChange={(e) => setPassword(e.target.value)}
+                        onChange={(e) => {
+                          setPassword(e.target.value);
+                          if (error) setError(''); // Clear error when user changes input
+                        }}
                         placeholder="Enter your password"
                         required={loginMethod === 'user'}
                       />
@@ -151,13 +162,15 @@ const Login = () => {
                 <div className={`tab-pane fade ${loginMethod === 'api' ? 'show active' : ''}`}>
                   {/* API Credentials Form */}
                   <Form onSubmit={handleSubmit} className="mt-4">
-                    {/* Your existing API Credentials form code */}
                     <Form.Group className="mb-3">
                       <Form.Label>Client ID</Form.Label>
                       <Form.Control
                         type="text"
                         value={clientId}
-                        onChange={(e) => setClientId(e.target.value)}
+                        onChange={(e) => {
+                          setClientId(e.target.value);
+                          if (error) setError(''); // Clear error when user changes input
+                        }}
                         placeholder="Enter Client ID"
                         required={loginMethod === 'api'}
                       />
@@ -168,7 +181,10 @@ const Login = () => {
                       <Form.Control
                         type="password"
                         value={clientSecret}
-                        onChange={(e) => setClientSecret(e.target.value)}
+                        onChange={(e) => {
+                          setClientSecret(e.target.value);
+                          if (error) setError(''); // Clear error when user changes input
+                        }}
                         placeholder="Enter Client Secret"
                         required={loginMethod === 'api'}
                       />
@@ -188,9 +204,9 @@ const Login = () => {
             </div>
 
             <div className="text-center mt-3">
-              <a href="/register" className="text-decoration-none">
+              <Link to="/register" className="text-decoration-none">
                 Don't have an account? <span className="register-link">Register here</span>
-              </a>
+              </Link>
             </div>
           </Card.Body>
         </Card>

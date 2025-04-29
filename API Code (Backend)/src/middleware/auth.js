@@ -1,5 +1,6 @@
 // src/middleware/auth.js
 const authService = require('../services/auth');
+const { Client } = require('../models/User');
 const logger = require('../utils/logger');
 
 /**
@@ -40,6 +41,46 @@ const authMiddleware = async (req, res, next) => {
       clientId: decoded.clientId,
       role: decoded.role || 'user'
     };
+    
+    // If this is not an admin, verify client approval status
+    if (req.auth.role !== 'admin' && req.auth.clientId) {
+      const client = await Client.findOne({
+        where: { 
+          clientId: req.auth.clientId
+        }
+      });
+      
+      if (!client) {
+        return res.status(401).json({
+          success: false,
+          message: 'Invalid client credentials.'
+        });
+      }
+      
+      if (client.status !== 'active') {
+        return res.status(403).json({
+          success: false,
+          message: `Client access is ${client.status}. Please contact the administrator for approval.`
+        });
+      }
+      
+      // Check usage quota
+      if (client.usageCount >= client.usageQuota) {
+        return res.status(429).json({
+          success: false,
+          message: 'Usage quota exceeded. Please contact the administrator for an increase.',
+          resetDate: client.resetDate
+        });
+      }
+      
+      // Increment usage count
+      client.usageCount += 1;
+      client.lastUsedAt = new Date();
+      await client.save();
+      
+      // Add client details to request
+      req.client = client;
+    }
     
     logger.info(`Authenticated request for user: ${req.auth.userId}`);
     
@@ -90,6 +131,44 @@ const apiTokenMiddleware = async (req, res, next) => {
       clientId: decoded.clientId,
       isApiRequest: true
     };
+    
+    // Verify client approval status
+    const client = await Client.findOne({
+      where: { 
+        clientId: req.auth.clientId
+      }
+    });
+    
+    if (!client) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid client credentials.'
+      });
+    }
+    
+    if (client.status !== 'active') {
+      return res.status(403).json({
+        success: false,
+        message: `Client access is ${client.status}. Please contact the administrator for approval.`
+      });
+    }
+    
+    // Check usage quota
+    if (client.usageCount >= client.usageQuota) {
+      return res.status(429).json({
+        success: false,
+        message: 'Usage quota exceeded. Please contact the administrator for an increase.',
+        resetDate: client.resetDate
+      });
+    }
+    
+    // Increment usage count
+    client.usageCount += 1;
+    client.lastUsedAt = new Date();
+    await client.save();
+    
+    // Add client details to request
+    req.client = client;
     
     logger.info(`API request authenticated for client: ${req.auth.clientId}`);
     

@@ -1,13 +1,17 @@
-// Updated Dashboard.js to include client credentials in the dashboard
+// src/components/Dashboard/Dashboard.js
 import React, { useState, useEffect, useRef } from 'react';
-import { Row, Col, Card, Button, Form, InputGroup, Container, Alert } from 'react-bootstrap';
+import { Row, Col, Card, Button, Form, InputGroup, Container, Alert, Badge } from 'react-bootstrap';
 import { insightsService } from '../../services/insights';
 import { useAuth } from '../../context/AuthContext';
+import { Link } from 'react-router-dom';
 import logger from '../../utils/logger';
 import './Dashboard.css';
 
 const Dashboard = () => {
   const { user } = useAuth();
+  
+  // Add state to track client approval status
+  const [clientStatus, setClientStatus] = useState('unknown');
   
   // Initialize with the token from auth context or localStorage
   const [apiKey, setApiKey] = useState(() => {
@@ -46,8 +50,28 @@ const Dashboard = () => {
     if (storedSecret) {
       setClientSecret(storedSecret);
     }
+    
+    // Check client status from token
+    if (user) {
+      try {
+        // Check for client ID in user object
+        if (user.clientId) {
+          // Make an API call to check client status or extract from token
+          // For now, we'll use a mock status based on user role
+          if (user.role === 'admin') {
+            setClientStatus('active');
+          } else {
+            // In a real implementation, this would come from an API call or the token
+            // This is just a placeholder for the example
+            setClientStatus('pending'); 
+          }
+        }
+      } catch (err) {
+        logger.error('Error checking client status:', err);
+      }
+    }
   }, [user]);
-  
+
   // Generate a unique request ID
   const generateRequestId = () => {
     return `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -281,9 +305,29 @@ const Dashboard = () => {
       <div className="mx-auto" style={{ maxWidth: '1200px' }}>
         <h1 className="mb-4 text-white">API Dashboard</h1>
         
+        {/* Show approval status alert if pending */}
+        {clientStatus === 'pending' && (
+          <Alert variant="warning" className="mb-4">
+            <div className="d-flex align-items-center">
+              <i className="bi bi-exclamation-triangle-fill fs-4 me-3"></i>
+              <div>
+                <h5 className="mb-1">Your API access is pending approval</h5>
+                <p className="mb-0">Your client account needs administrator approval before you can use the API. Please check back later or contact support.</p>
+              </div>
+            </div>
+          </Alert>
+        )}
+        
         {/* Client Credentials section */}
         <Card className="bg-white text-black border-secondary mb-4">
-          <Card.Header className="bg-white">Client Credentials</Card.Header>
+          <Card.Header className="bg-white d-flex justify-content-between align-items-center">
+            <span>Client Credentials</span>
+            {clientStatus !== 'unknown' && (
+              <Badge bg={clientStatus === 'active' ? 'success' : 'warning'} className="text-capitalize">
+                {clientStatus}
+              </Badge>
+            )}
+          </Card.Header>
           <Card.Body>
             <Row>
               <Col md={6}>
@@ -355,134 +399,137 @@ const Dashboard = () => {
           </Card.Body>
         </Card>
         
-        {/* Usage Stats - Simple version */}
-        <Card className="bg-white text-black border-secondary mb-4">
-          <Card.Header className="bg-white">API Usage Statistics</Card.Header>
-          <Card.Body>
-            <Row>
-              <Col sm={4} className="text-center mb-3 mb-sm-0">
-                <h3 className="text-success">152</h3>
-                <div className="text-secondary">Requests Today</div>
-              </Col>
-              <Col sm={4} className="text-center mb-3 mb-sm-0">
-                <h3 className="text-success">1,245</h3>
-                <div className="text-secondary">Requests This Month</div>
-              </Col>
-              <Col sm={4} className="text-center">
-                <h3 className="text-success">8,755</h3>
-                <div className="text-secondary">Remaining Quota</div>
-              </Col>
-            </Row>
-          </Card.Body>
-        </Card>
-        
-        {/* API Testing Console - Now using the same logic as InsightsPanel */}
-        <Card className="bg-white text-black border-secondary mb-4">
-          <Card.Header className="bg-white">API Testing Console</Card.Header>
-          <Card.Body>
-            <Card.Text>
-              Test the Banking Intelligence API with sample queries to see how it generates insights.
-            </Card.Text>
-            
-            <Form onSubmit={(e) => {
-              e.preventDefault();
-              if (query.trim()) {
-                const requestId = generateRequestId();
-                handleDemoRequest(query, requestId);
-              }
-            }} className="mb-4 text-black">
-              <Form.Label>Sample Financial Query:</Form.Label>
-              <InputGroup>
-                <Form.Control
-                  type="text"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="E.g., How can I save more money?"
-                  className="bg-white text-success border-secondary input-white-placeholder"
-                />
-                <Button 
-                  variant="success" 
-                  type="submit"
-                  disabled={loading || !query.trim()}
-                >
-                  {loading ? (
-                    <>
-                      <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
-                      <span>Loading...</span>
-                    </>
-                  ) : 'Send'}
-                </Button>
-              </InputGroup>
-              <Form.Text className="text-secondary">
-                This uses real API calls to generate insights based on your query.
-              </Form.Text>
-            </Form>
-            
-            <Card className="bg-white border-secondary">
-              <Card.Header className="bg-white text-black">Response</Card.Header>
+        {/* Conditional rendering for the rest of the Dashboard */}
+        {clientStatus === 'active' ? (
+          <>
+            {/* Usage Stats - Simple version */}
+            <Card className="bg-white text-black border-secondary mb-4">
+              <Card.Header className="bg-white">API Usage Statistics</Card.Header>
               <Card.Body>
-                {(loading && !insightsData) ? (
-                  <div className="text-center p-4">
-                    <div className="spinner-border text-success" role="status">
-                      <span className="visually-hidden">Loading...</span>
-                    </div>
-                    <p className="text-secondary mt-3">Analyzing your financial data...</p>
-                  </div>
-                ) : error ? (
-                  <div className="alert alert-danger">
-                    <i className="bi bi-exclamation-triangle me-2"></i>
-                    {error}
-                  </div>
-                ) : insightsData ? (
-                  <>
-                    <div className="text-muted small mb-2">
-                      {new Date(insightsData.timestamp).toLocaleString()}
-                    </div>
-                    <div className="insights-content text-success">
-                      <div dangerouslySetInnerHTML={{ __html: formatInsight(getInsightText()) }} />
-                      {insightsData.isStreaming && (
-                        <span className="cursor-blink">|</span>
-                      )}
-                    </div>
-                  </>
-                ) : (
-                  <div className="text-center text-secondary p-4">
-                    <i className="bi bi-lightbulb me-2"></i>
-                    Submit a query to see AI-generated financial insights.
-                  </div>
-                )}
+                <Row>
+                  <Col sm={4} className="text-center mb-3 mb-sm-0">
+                    <h3 className="text-success">152</h3>
+                    <div className="text-secondary">Requests Today</div>
+                  </Col>
+                  <Col sm={4} className="text-center mb-3 mb-sm-0">
+                    <h3 className="text-success">1,245</h3>
+                    <div className="text-secondary">Requests This Month</div>
+                  </Col>
+                  <Col sm={4} className="text-center">
+                    <h3 className="text-success">8,755</h3>
+                    <div className="text-secondary">Remaining Quota</div>
+                  </Col>
+                </Row>
               </Card.Body>
             </Card>
             
-            <div className="mt-4">
-              <h6 className="text-secondary mb-3">Try these sample questions:</h6>
-              <div className="d-grid gap-2">
-                {suggestedQuestions.map((suggestion, index) => (
-                  <Button
-                    key={index}
-                    variant="outline-secondary"
-                    size="sm"
-                    className="bg-success bg-opacity-50 text-black text-start"
-                    onClick={() => handleSuggestedQuestion(suggestion)}
-                    disabled={loading}
-                  >
-                    {suggestion}
-                  </Button>
-                ))}
-              </div>
-            </div>
-          </Card.Body>
-        </Card>
-        
-        {/* Code Sample */}
-        <Card className="bg-white text-black border-secondary">
-          <Card.Header className="bg-white">Integration Example</Card.Header>
-          <Card.Body>
-            <Card.Text className="mb-3">
-              Here's how to call the API in your application:
-            </Card.Text>
-            <div className="bg-black p-3 rounded" style={{ overflowX: 'auto' }}>
-              <pre className="text-success mb-0" style={{ fontSize: '0.9rem' }}>
+            {/* API Testing Console - Now using the same logic as InsightsPanel */}
+            <Card className="bg-white text-black border-secondary mb-4">
+              <Card.Header className="bg-white">API Testing Console</Card.Header>
+              <Card.Body>
+                <Card.Text>
+                  Test the Banking Intelligence API with sample queries to see how it generates insights.
+                </Card.Text>
+                
+                <Form onSubmit={(e) => {
+                  e.preventDefault();
+                  if (query.trim()) {
+                    const requestId = generateRequestId();
+                    handleDemoRequest(query, requestId);
+                  }
+                }} className="mb-4 text-black">
+                  <Form.Label>Sample Financial Query:</Form.Label>
+                  <InputGroup>
+                    <Form.Control
+                      type="text"
+                      value={query}
+                      onChange={(e) => setQuery(e.target.value)}
+                      placeholder="E.g., How can I save more money?"
+                      className="bg-white text-success border-secondary input-white-placeholder"
+                    />
+                    <Button 
+                      variant="success" 
+                      type="submit"
+                      disabled={loading || !query.trim()}
+                    >
+                      {loading ? (
+                        <>
+                          <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                          <span>Loading...</span>
+                        </>
+                      ) : 'Send'}
+                    </Button>
+                  </InputGroup>
+                  <Form.Text className="text-secondary">
+                    This uses real API calls to generate insights based on your query.
+                  </Form.Text>
+                </Form>
+                
+                <Card className="bg-white border-secondary">
+                  <Card.Header className="bg-white text-black">Response</Card.Header>
+                  <Card.Body>
+                    {(loading && !insightsData) ? (
+                      <div className="text-center p-4">
+                        <div className="spinner-border text-success" role="status">
+                          <span className="visually-hidden">Loading...</span>
+                        </div>
+                        <p className="text-secondary mt-3">Analyzing your financial data...</p>
+                      </div>
+                    ) : error ? (
+                      <div className="alert alert-danger">
+                        <i className="bi bi-exclamation-triangle me-2"></i>
+                        {error}
+                      </div>
+                    ) : insightsData ? (
+                      <>
+                        <div className="text-muted small mb-2">
+                          {new Date(insightsData.timestamp).toLocaleString()}
+                        </div>
+                        <div className="insights-content text-success">
+                          <div dangerouslySetInnerHTML={{ __html: formatInsight(getInsightText()) }} />
+                          {insightsData.isStreaming && (
+                            <span className="cursor-blink">|</span>
+                          )}
+                        </div>
+                      </>
+                    ) : (
+                      <div className="text-center text-secondary p-4">
+                        <i className="bi bi-lightbulb me-2"></i>
+                        Submit a query to see AI-generated financial insights.
+                      </div>
+                    )}
+                  </Card.Body>
+                </Card>
+                
+                <div className="mt-4">
+                  <h6 className="text-secondary mb-3">Try these sample questions:</h6>
+                  <div className="d-grid gap-2">
+                    {suggestedQuestions.map((suggestion, index) => (
+                      <Button
+                        key={index}
+                        variant="outline-secondary"
+                        size="sm"
+                        className="bg-success bg-opacity-50 text-black text-start"
+                        onClick={() => handleSuggestedQuestion(suggestion)}
+                        disabled={loading}
+                      >
+                        {suggestion}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+              </Card.Body>
+            </Card>
+            
+            {/* Code Sample */}
+            <Card className="bg-white text-black border-secondary">
+              <Card.Header className="bg-white">Integration Example</Card.Header>
+              <Card.Body>
+                <Card.Text className="mb-3">
+                  Here's how to call the API in your application:
+                </Card.Text>
+                <div className="bg-black p-3 rounded" style={{ overflowX: 'auto' }}>
+                  <pre className="text-success mb-0" style={{ fontSize: '0.9rem' }}>
 {`// Example: Generate financial insights
 fetch('https://api.banking-intelligence.com/v1/insights/generate', {
   method: 'POST',
@@ -504,13 +551,35 @@ fetch('https://api.banking-intelligence.com/v1/insights/generate', {
     }
   })
 })`}
-              </pre>
-            </div>
-            <div className="text-end mt-3">
-              <Button variant="link" className="text-success" href="/docs">View Full Documentation →</Button>
-            </div>
-          </Card.Body>
-        </Card>
+                  </pre>
+                </div>
+                <div className="text-end mt-3">
+                  <Button variant="link" className="text-success" href="/docs">View Full Documentation →</Button>
+                </div>
+              </Card.Body>
+            </Card>
+          </>
+        ) : (
+          <Card className="bg-white text-black border-secondary mb-4">
+            <Card.Header className="bg-white">API Access Pending</Card.Header>
+            <Card.Body className="text-center py-5">
+              <i className="bi bi-hourglass-split text-warning" style={{ fontSize: '4rem' }}></i>
+              <h3 className="mt-4">Your API Access is Pending Approval</h3>
+              <p className="text-muted mx-auto" style={{ maxWidth: '600px' }}>
+                Your client account has been registered and is awaiting administrator approval. 
+                You'll be able to access the API once your account is approved.
+              </p>
+              <Button 
+                variant="outline-success" 
+                as={Link} 
+                to="/docs"
+                className="mt-3"
+              >
+                View API Documentation
+              </Button>
+            </Card.Body>
+          </Card>
+        )}
       </div>
     </Container>
   );

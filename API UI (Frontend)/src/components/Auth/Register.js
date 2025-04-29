@@ -1,6 +1,6 @@
 // src/components/Auth/Register.js
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { Container, Form, Button, Alert, Card, InputGroup } from 'react-bootstrap';
 import logger from '../../utils/logger';

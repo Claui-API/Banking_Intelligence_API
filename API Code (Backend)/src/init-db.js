@@ -19,10 +19,11 @@ async function initDB() {
     logger.info('👤 Seeding admin user…');
     const admin = await User.create({
       clientName: 'Admin',
-      email: 'admin@example.com',
-      passwordHash: '$2b$10$qaF59JPNNnT6VPkzNzHZ/e1tH41WJ/jL19d5xXCyD6D6u7Vox.NKG',
+      email: 'sreenivas@vivytech.com',
+      passwordHash: 'Admin123!',
       description: 'System administrator',
-      status: 'active'
+      status: 'active',
+      role: 'admin'
     });
 
     logger.info('🔑 Seeding admin client credentials…');

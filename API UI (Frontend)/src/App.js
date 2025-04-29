@@ -7,12 +7,17 @@ import logger from './utils/logger';
 // Components
 import Layout from './components/Layout/Layout';
 import PrivateRoute from './components/Layout/PrivateRoute';
+import AdminRoute from './components/Layout/AdminRoute'; // We'll create this
 import Login from './components/Auth/Login';
 import Register from './components/Auth/Register';
 import Dashboard from './components/Dashboard/Dashboard';
 import HomePage from './components/HomePage';
 import APITokenManagement from './components/APITokenManagement';
 import Documentation from './components/Documentation/Documentation';
+
+// Admin Components
+import AdminDashboard from './components/Admin/AdminDashboard';
+import ClientDetailPage from './components/Admin/ClientDetailPage';
 
 // Error Page Component
 const ErrorPage = () => {
@@ -50,8 +55,14 @@ const App = () => {
             <Route path="/insights" element={<Layout><div>Insights Page</div></Layout>} />
             <Route path="/docs" element={<Layout><Documentation /></Layout>} />
             
-            {/* New API Token Management Route */}
+            {/* API Token Management Route */}
             <Route path="/api-tokens" element={<Layout><APITokenManagement /></Layout>} />
+          </Route>
+          
+          {/* Admin routes */}
+          <Route element={<AdminRoute />}>
+            <Route path="/admin" element={<Layout><AdminDashboard /></Layout>} />
+            <Route path="/admin/clients/:clientId" element={<Layout><ClientDetailPage /></Layout>} />
           </Route>
           
           {/* Catch-all route for undefined paths */}

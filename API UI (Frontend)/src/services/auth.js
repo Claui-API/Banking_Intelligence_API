@@ -1,4 +1,4 @@
-// src/services/auth.js (Frontend)
+// src/services/auth.js (Frontend) - continued
 import api from './api';
 import logger from '../utils/logger';
 import { jwtDecode } from 'jwt-decode';
@@ -18,13 +18,15 @@ export const authService = {
       
       logger.info('Token decoded', {
         userId: decoded.userId,
-        email: decoded.email
+        email: decoded.email,
+        role: decoded.role
       });
 
       return {
         id: decoded.userId,
         email: decoded.email,
-        clientId: decoded.clientId
+        clientId: decoded.clientId,
+        role: decoded.role || 'user'
       };
     } catch (error) {
       logger.logError('Token Decoding Failed', error);
@@ -103,7 +105,8 @@ export const authService = {
       logger.info('Login successful', {
         userId: data.userId,
         clientId: data.clientId,
-        email: credentials.email
+        email: credentials.email,
+        role: data.role
       });
 
       return data;
@@ -121,6 +124,9 @@ export const authService = {
           } else {
             throw new Error('Invalid credentials. Please check your Client ID and Secret.');
           }
+        } else if (error.response.status === 403) {
+          // This is for pending approval or suspended clients
+          throw new Error(error.response.data?.message || 'Your account requires approval. Please contact the administrator.');
         } else {
           const errorMessage = error.response.data?.message || 'Login failed';
           throw new Error(errorMessage);
@@ -155,6 +161,11 @@ export const authService = {
       
       // Enhanced error handling
       if (error.response) {
+        // Check for approval-related errors
+        if (error.response.status === 403) {
+          throw new Error(error.response.data?.message || 'Your account requires approval to generate tokens.');
+        }
+        
         const errorMessage = error.response.data?.message || 'Token generation failed';
         throw new Error(errorMessage);
       } else if (error.request) {
@@ -227,7 +238,6 @@ export const authService = {
       if (isExpired) {
         logger.warn('Token has expired');
         localStorage.removeItem('token');
-        localStorage.removeItem('refreshToken');
         return false;
       }
       

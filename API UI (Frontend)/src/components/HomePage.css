@@ -1,18 +1,47 @@
-
 /* src/components/HomePage.css */
-
-/* Target the homepage container specifically */
-.home-page-container {
-  background-color: #111111 !important; /* Dark background for homepage */
-  color: white;
-  min-height: 100vh; /* Make sure it covers the full height */
-}
-
-/* Additional styling for homepage elements if needed */
+/* Make sure background colors override Bootstrap defaults */
 .home-page-container .card {
-  background-color: #222222 !important;
+  background-color: #1a1a1a !important;
+  border-color: #000000 !important;
+  color: white !important;
 }
 
+/* Fix pre/code blocks */
 .home-page-container pre {
   background-color: #000000 !important;
+  color: #66ff66 !important;
+}
+
+.container-fluid {
+  background-color: #000000 !important;
+  max-width: 100% !important;
+}
+
+/* Fix heading colors */
+.home-page-container h1, 
+.home-page-container h2, 
+.home-page-container h3 {
+  color: #4CAF50 !important; /* Green color for headings */
+}
+
+/* Fix the "How It Works" section */
+.home-page-container .row {
+  margin-bottom: 40px;
+}
+
+/* Add better styling for the steps */
+.home-page-container .bg-success {
+  background-color: #4CAF50 !important;
+  color: white !important;
+}
+
+/* Style the code blocks to match your screenshot */
+.home-page-container .bg-black {
+  background-color: #000000 !important;
+  color: #66ff66 !important; /* Light green text */
+}
+
+/* Make sure Bootstrap's text-white class works */
+.home-page-container .text-white {
+  color: white !important;
 }

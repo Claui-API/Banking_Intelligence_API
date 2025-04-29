@@ -11,6 +11,7 @@ export const AuthProvider = ({ children }) => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [user, setUser] = useState(null);
+  const [isAdmin, setIsAdmin] = useState(false); // Add admin state
 
   useEffect(() => {
     // Check authentication status on initial load
@@ -25,6 +26,9 @@ export const AuthProvider = ({ children }) => {
             ...userData,
             token: localStorage.getItem('token')
           });
+          
+          // Check if user is admin
+          setIsAdmin(userData.role === 'admin');
         }
         
         setIsAuthenticated(auth);
@@ -73,12 +77,17 @@ export const AuthProvider = ({ children }) => {
       
       // Set user data
       const userData = authService.getUserFromToken();
-      setUser({
+      const userInfo = {
         ...userData,
         token: data.accessToken,
         // Store email if email login was used
         email: isEmailLogin ? credentials.email : null
-      });
+      };
+      
+      setUser(userInfo);
+      
+      // Check if user is admin
+      setIsAdmin(userData.role === 'admin');
       
       return data;
     } catch (error) {
@@ -111,6 +120,7 @@ export const AuthProvider = ({ children }) => {
     authService.logout();
     setIsAuthenticated(false);
     setUser(null);
+    setIsAdmin(false);
     localStorage.removeItem('token');
     // Don't remove clientId so users can log back in easily
   };
@@ -123,6 +133,9 @@ export const AuthProvider = ({ children }) => {
         ...userData,
         token
       });
+      
+      // Update admin status if needed
+      setIsAdmin(userData.role === 'admin');
     }
   };
 
@@ -130,6 +143,7 @@ export const AuthProvider = ({ children }) => {
     isAuthenticated,
     isLoading,
     user,
+    isAdmin,
     login,
     register,
     logout,

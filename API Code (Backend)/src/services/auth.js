@@ -42,7 +42,7 @@ const authService = {
       // Generate client credentials
       const credentials = Client.generateCredentials();
       
-      // Create the client
+      // Create the client - status will be 'pending' by default now
       const client = await Client.create({
         userId: user.id,
         clientId: credentials.clientId,
@@ -60,7 +60,8 @@ const authService = {
         data: {
           clientId: client.clientId,
           clientSecret: client.clientSecret,
-          userId: user.id
+          userId: user.id,
+          status: client.status // Include status so client knows they need approval
         }
       };
     } catch (error) {
@@ -98,25 +99,42 @@ const authService = {
         // Get the first active client for this user
         client = user.Clients?.[0];
         
-        // If user doesn't have any clients, create one
+        // If user doesn't have any active clients, check for pending ones
         if (!client) {
+          const pendingClient = await Client.findOne({
+            where: { userId: user.id, status: 'pending' }
+          });
+          
+          if (pendingClient) {
+            throw new Error('Your API access is pending approval. Please contact the administrator.');
+          }
+          
+          // If no pending clients either, create one that will need approval
           const credentials = Client.generateCredentials();
           client = await Client.create({
             userId: user.id,
             clientId: credentials.clientId,
             clientSecret: credentials.clientSecret,
-            description: 'Auto-generated client'
+            description: 'Auto-generated client',
+            status: 'pending' // Will need admin approval
           });
+          
+          throw new Error('A new API client has been created for you, but it requires administrator approval.');
         }
       } else if (clientId && clientSecret) {
         // Client credentials login
         client = await Client.findOne({ 
-          where: { clientId, clientSecret, status: 'active' },
+          where: { clientId, clientSecret },
           include: [{ model: User, where: { status: 'active' }, required: true }]
         });
         
         if (!client) {
           throw new Error('Invalid client credentials');
+        }
+        
+        // Check client status
+        if (client.status !== 'active') {
+          throw new Error(`Your API access is ${client.status}. Please contact the administrator for approval.`);
         }
         
         user = client.User;
@@ -140,6 +158,7 @@ const authService = {
         refreshToken,
         userId: user.id,
         clientId: client.clientId,
+        role: user.role, // Include user role in response
         expiresIn: parseInt(JWT_EXPIRY) || 3600
       };
     } catch (error) {
@@ -159,6 +178,7 @@ const authService = {
       userId: user.id,
       email: user.email,
       clientId: client.clientId,
+      role: user.role, // Include user role in token
       type
     };
     
@@ -269,12 +289,17 @@ const authService = {
     try {
       // Find client with the provided credentials
       const client = await Client.findOne({
-        where: { clientId, clientSecret, status: 'active' },
+        where: { clientId, clientSecret },
         include: [{ model: User, where: { status: 'active' }, required: true }]
       });
       
       if (!client) {
         throw new Error('Invalid client credentials');
+      }
+      
+      // Check if client is approved
+      if (client.status !== 'active') {
+        throw new Error(`Client status is ${client.status}. Cannot generate API token until approved.`);
       }
       
       const user = client.User;
@@ -283,6 +308,7 @@ const authService = {
       const payload = {
         userId: user.id,
         clientId: client.clientId,
+        role: user.role,
         type: 'api'
       };
       

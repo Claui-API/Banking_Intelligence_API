@@ -34,6 +34,10 @@ const User = sequelize.define('User', {
     type: DataTypes.ENUM('active', 'inactive', 'suspended'),
     defaultValue: 'active'
   },
+  role: {
+    type: DataTypes.ENUM('user', 'admin'),
+    defaultValue: 'user'
+  },
   lastLoginAt: {
     type: DataTypes.DATE,
     allowNull: true
@@ -91,12 +95,46 @@ const Client = sequelize.define('Client', {
     allowNull: true
   },
   status: {
-    type: DataTypes.ENUM('active', 'inactive', 'revoked'),
-    defaultValue: 'active'
+    type: DataTypes.ENUM('pending', 'active', 'suspended', 'revoked'),
+    defaultValue: 'pending' // Changed default to pending
+  },
+  approvedBy: {
+    type: DataTypes.UUID,
+    allowNull: true,
+    references: {
+      model: 'Users',
+      key: 'id'
+    }
+  },
+  approvedAt: {
+    type: DataTypes.DATE,
+    allowNull: true
   },
   lastUsedAt: {
     type: DataTypes.DATE,
     allowNull: true
+  },
+  usageQuota: {
+    type: DataTypes.INTEGER,
+    defaultValue: 1000, // Default monthly quota
+    allowNull: false
+  },
+  usageCount: {
+    type: DataTypes.INTEGER,
+    defaultValue: 0,
+    allowNull: false
+  },
+  resetDate: {
+    type: DataTypes.DATE,
+    defaultValue: () => {
+      // Set to the first day of next month
+      const date = new Date();
+      date.setMonth(date.getMonth() + 1);
+      date.setDate(1);
+      date.setHours(0, 0, 0, 0);
+      return date;
+    },
+    allowNull: false
   }
 }, {
   timestamps: true,
@@ -106,6 +144,10 @@ const Client = sequelize.define('Client', {
 // Create associations
 User.hasMany(Client, { foreignKey: 'userId' });
 Client.belongsTo(User, { foreignKey: 'userId' });
+
+// Create associations for approvals
+User.hasMany(Client, { foreignKey: 'approvedBy', as: 'ApprovedClients' });
+Client.belongsTo(User, { foreignKey: 'approvedBy', as: 'Approver' });
 
 // Generate client credentials
 Client.generateCredentials = function() {

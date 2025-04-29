@@ -8,6 +8,7 @@ const rateLimit = require('express-rate-limit');
 const notificationRoutes = require('./routes/notification.routes');
 const syncRoutes = require('./routes/sync.routes');
 const mobileInsightsRoutes = require('./routes/insights.mobile.routes');
+const adminRoutes = require('./routes/admin.routes'); // Add admin routes
 
 // Load .env variables
 dotenv.config();
@@ -65,6 +66,7 @@ app.use('/api/plaid', plaidRoutes);
 app.use('/api/webhooks', webhookRoutes);
 app.use('/api', healthRoutes);
 app.use('/api/diagnostics', diagnosticsRoutes);
+app.use('/api/admin', adminRoutes); // Add admin routes
 
 // Mobile v1 routes
 app.use('/api/v1/notifications', notificationRoutes);
@@ -105,7 +107,7 @@ app.use('/api/v1', mobileRateLimiter);
 if (process.env.NODE_ENV === 'production') {
   const clientBuildPath = path.resolve(
     __dirname,
-    '..',                   // up from “API Code (Backend)”
+    '..',                   // up from "API Code (Backend)"
     'API UI (Frontend)',    // your front-end folder
     'build'
   );
