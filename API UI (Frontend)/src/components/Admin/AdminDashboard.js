@@ -5,6 +5,9 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { adminService } from '../../services/admin';
 import ClientStatusBadge from './ClientStatusBadge';
+import RagMetricsPanel from './RagMetricsPanel';
+import UserRagMetrics from './UserRagMetrics';
+import AiInsightsTab from './AiInsightsTab';
 import logger from '../../utils/logger';
 import './AdminDashboard.css';
 
@@ -124,153 +127,162 @@ const AdminDashboard = () => {
   
   // Render dashboard overview
   const renderOverview = () => (
-    <Row className="mt-4">
-      <Col md={12} lg={8}>
-        <Card className="mb-4">
-          <Card.Header className="bg-white">System Overview</Card.Header>
-          <Card.Body>
-            {loadingStats ? (
-              <div className="text-center p-4">
-                <Spinner animation="border" variant="success" />
-                <p className="mt-2">Loading statistics...</p>
-              </div>
-            ) : stats ? (
-              <Row>
-                <Col sm={4} className="mb-3">
-                  <div className="stats-card">
-                    <h2 className="text-success">{stats.clients.total}</h2>
-                    <p className="text-muted">Total Clients</p>
-                  </div>
-                </Col>
-                <Col sm={4} className="mb-3">
-                  <div className="stats-card">
-                    <h2 className="text-success">{stats.users.total}</h2>
-                    <p className="text-muted">Registered Users</p>
-                  </div>
-                </Col>
-                <Col sm={4} className="mb-3">
-                  <div className="stats-card">
-                    <h2 className="text-success">{stats.usage?.total || 0}</h2>
-                    <p className="text-muted">Total API Calls</p>
-                  </div>
-                </Col>
-                
-                <Col xs={12}>
-                  <h5 className="mt-4 mb-3">Client Status Breakdown</h5>
-                  <Row>
-                    <Col sm={3} xs={6} className="mb-3">
-                      <div className="status-card text-white bg-success">
-                        <h4>{stats.clients.byStatus?.active || 0}</h4>
-                        <p className="mb-0">Active</p>
-                      </div>
-                    </Col>
-                    <Col sm={3} xs={6} className="mb-3">
-                      <div className="status-card text-white bg-warning">
-                        <h4>{stats.clients.byStatus?.pending || 0}</h4>
-                        <p className="mb-0">Pending</p>
-                      </div>
-                    </Col>
-                    <Col sm={3} xs={6} className="mb-3">
-                      <div className="status-card text-white bg-danger">
-                        <h4>{stats.clients.byStatus?.suspended || 0}</h4>
-                        <p className="mb-0">Suspended</p>
-                      </div>
-                    </Col>
-                    <Col sm={3} xs={6} className="mb-3">
-                      <div className="status-card text-white bg-dark">
-                        <h4>{stats.clients.byStatus?.revoked || 0}</h4>
-                        <p className="mb-0">Revoked</p>
-                      </div>
-                    </Col>
-                  </Row>
-                </Col>
-              </Row>
-            ) : (
-              <Alert variant="warning">Failed to load system statistics</Alert>
-            )}
-          </Card.Body>
-        </Card>
-      </Col>
-      
-      <Col md={12} lg={4}>
-        <Card className="mb-4">
-          <Card.Header className="bg-white">
-            <div className="d-flex justify-content-between align-items-center">
-              <span>Pending Approvals</span>
-              {pendingClients.length > 0 && (
-                <Badge bg="warning" pill>{pendingClients.length}</Badge>
-              )}
-            </div>
-          </Card.Header>
-          <Card.Body className="p-0">
-            {loadingClients ? (
-              <div className="text-center p-4">
-                <Spinner animation="border" variant="success" size="sm" />
-                <p className="mt-2">Loading clients...</p>
-              </div>
-            ) : pendingClients.length > 0 ? (
-              <Table responsive borderless className="mb-0">
-                <tbody>
-                  {pendingClients.map(client => (
-                    <tr key={client.clientId}>
-                      <td>
-                        <div className="d-flex flex-column">
-                          <small className="text-success">{client.clientId}</small>
-                          <span>{client.user.name}</span>
-                          <small className="text-muted">{client.user.email}</small>
+    <>
+      <Row className="mt-4">
+        <Col md={12} lg={8}>
+          <Card className="mb-4">
+            <Card.Header className="bg-white">System Overview</Card.Header>
+            <Card.Body>
+              {loadingStats ? (
+                <div className="text-center p-4">
+                  <Spinner animation="border" variant="success" />
+                  <p className="mt-2">Loading statistics...</p>
+                </div>
+              ) : stats ? (
+                <Row>
+                  <Col sm={4} className="mb-3">
+                    <div className="stats-card">
+                      <h2 className="text-success">{stats.clients.total}</h2>
+                      <p className="text-muted">Total Clients</p>
+                    </div>
+                  </Col>
+                  <Col sm={4} className="mb-3">
+                    <div className="stats-card">
+                      <h2 className="text-success">{stats.users.total}</h2>
+                      <p className="text-muted">Registered Users</p>
+                    </div>
+                  </Col>
+                  <Col sm={4} className="mb-3">
+                    <div className="stats-card">
+                      <h2 className="text-success">{stats.usage?.total || 0}</h2>
+                      <p className="text-muted">Total API Calls</p>
+                    </div>
+                  </Col>
+                  
+                  <Col xs={12}>
+                    <h5 className="mt-4 mb-3">Client Status Breakdown</h5>
+                    <Row>
+                      <Col sm={3} xs={6} className="mb-3">
+                        <div className="status-card text-white bg-success">
+                          <h4>{stats.clients.byStatus?.active || 0}</h4>
+                          <p className="mb-0">Active</p>
                         </div>
-                      </td>
-                      <td className="text-end">
-                        <Button 
-                          size="sm" 
-                          variant="success"
-                          onClick={() => handleApproveClient(client.clientId)}
-                        >
-                          Approve
-                        </Button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </Table>
-            ) : (
-              <div className="text-center p-4 text-muted">
-                <i className="bi bi-check-circle-fill mb-2" style={{ fontSize: '2rem' }}></i>
-                <p>No pending approvals</p>
-              </div>
-            )}
-          </Card.Body>
-        </Card>
+                      </Col>
+                      <Col sm={3} xs={6} className="mb-3">
+                        <div className="status-card text-white bg-warning">
+                          <h4>{stats.clients.byStatus?.pending || 0}</h4>
+                          <p className="mb-0">Pending</p>
+                        </div>
+                      </Col>
+                      <Col sm={3} xs={6} className="mb-3">
+                        <div className="status-card text-white bg-danger">
+                          <h4>{stats.clients.byStatus?.suspended || 0}</h4>
+                          <p className="mb-0">Suspended</p>
+                        </div>
+                      </Col>
+                      <Col sm={3} xs={6} className="mb-3">
+                        <div className="status-card text-white bg-dark">
+                          <h4>{stats.clients.byStatus?.revoked || 0}</h4>
+                          <p className="mb-0">Revoked</p>
+                        </div>
+                      </Col>
+                    </Row>
+                  </Col>
+                </Row>
+              ) : (
+                <Alert variant="warning">Failed to load system statistics</Alert>
+              )}
+            </Card.Body>
+          </Card>
+        </Col>
         
-        <Card>
-          <Card.Header className="bg-white">Recent Activity</Card.Header>
-          <Card.Body>
-            {loadingStats ? (
-              <div className="text-center p-4">
-                <Spinner animation="border" variant="success" size="sm" />
-                <p className="mt-2">Loading activity...</p>
+        <Col md={12} lg={4}>
+          <Card className="mb-4">
+            <Card.Header className="bg-white">
+              <div className="d-flex justify-content-between align-items-center">
+                <span>Pending Approvals</span>
+                {pendingClients.length > 0 && (
+                  <Badge bg="warning" pill>{pendingClients.length}</Badge>
+                )}
               </div>
-            ) : stats?.recentActivity?.clients ? (
-              <div className="activity-list">
-                {stats.recentActivity.clients.map((client, index) => (
-                  <div key={index} className="activity-item">
-                    <div className="activity-icon">
-                      <i className="bi bi-person-plus-fill"></i>
+            </Card.Header>
+            <Card.Body className="p-0">
+              {loadingClients ? (
+                <div className="text-center p-4">
+                  <Spinner animation="border" variant="success" size="sm" />
+                  <p className="mt-2">Loading clients...</p>
+                </div>
+              ) : pendingClients.length > 0 ? (
+                <Table responsive borderless className="mb-0">
+                  <tbody>
+                    {pendingClients.map(client => (
+                      <tr key={client.clientId}>
+                        <td>
+                          <div className="d-flex flex-column">
+                            <small className="text-success">{client.clientId}</small>
+                            <span>{client.user.name}</span>
+                            <small className="text-muted">{client.user.email}</small>
+                          </div>
+                        </td>
+                        <td className="text-end">
+                          <Button 
+                            size="sm" 
+                            variant="success"
+                            onClick={() => handleApproveClient(client.clientId)}
+                          >
+                            Approve
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </Table>
+              ) : (
+                <div className="text-center p-4 text-muted">
+                  <i className="bi bi-check-circle-fill mb-2" style={{ fontSize: '2rem' }}></i>
+                  <p>No pending approvals</p>
+                </div>
+              )}
+            </Card.Body>
+          </Card>
+          
+          <Card>
+            <Card.Header className="bg-white">Recent Activity</Card.Header>
+            <Card.Body>
+              {loadingStats ? (
+                <div className="text-center p-4">
+                  <Spinner animation="border" variant="success" size="sm" />
+                  <p className="mt-2">Loading activity...</p>
+                </div>
+              ) : stats?.recentActivity?.clients ? (
+                <div className="activity-list">
+                  {stats.recentActivity.clients.map((client, index) => (
+                    <div key={index} className="activity-item">
+                      <div className="activity-icon">
+                        <i className="bi bi-person-plus-fill"></i>
+                      </div>
+                      <div className="activity-content">
+                        <div>New client registration: <strong>{client.userName}</strong></div>
+                        <small className="text-muted">{formatDate(client.createdAt)}</small>
+                      </div>
                     </div>
-                    <div className="activity-content">
-                      <div>New client registration: <strong>{client.userName}</strong></div>
-                      <small className="text-muted">{formatDate(client.createdAt)}</small>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-muted">No recent activity to display</p>
-            )}
-          </Card.Body>
-        </Card>
-      </Col>
-    </Row>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-muted">No recent activity to display</p>
+              )}
+            </Card.Body>
+          </Card>
+        </Col>
+      </Row>
+      
+      {/* RAG Metrics Panel - Added to the overview tab */}
+      <Row className="mt-4">
+        <Col xs={12}>
+          <RagMetricsPanel />
+        </Col>
+      </Row>
+    </>
   );
   
   // Render client management tab
@@ -362,6 +374,11 @@ const AdminDashboard = () => {
     </Row>
   );
   
+  // New tab for AI Insights Analytics
+  const renderAiAnalytics = () => (
+    <AiInsightsTab />
+  );
+  
   return (
     <Container fluid className="py-4 px-md-4 admin-dashboard-container">
       <h1 className="mb-4 text-white">Admin Dashboard</h1>
@@ -383,6 +400,9 @@ const AdminDashboard = () => {
         </Tab>
         <Tab eventKey="clients" title="Client Management">
           {renderClientManagement()}
+        </Tab>
+        <Tab eventKey="ai-analytics" title="AI Insights Analytics">
+          {renderAiAnalytics()}
         </Tab>
       </Tabs>
     </Container>

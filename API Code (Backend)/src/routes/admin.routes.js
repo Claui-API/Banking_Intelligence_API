@@ -64,4 +64,18 @@ router.post('/clients/:clientId/reset-usage', adminController.resetClientUsage);
  */
 router.get('/stats', adminController.getSystemStats);
 
+/**
+ * @route POST /api/admin/clients/:clientId/reinstate
+ * @desc Reinstate a suspended or revoked client
+ * @access Private (Admin only)
+ */
+router.post('/clients/:clientId/reinstate', adminController.reinstateClient);
+
+/**
+ * @route DELETE /api/admin/clients/:clientId
+ * @desc Delete a revoked client
+ * @access Private (Admin only)
+ */
+router.delete('/clients/:clientId', adminController.deleteClient);
+
 module.exports = router;

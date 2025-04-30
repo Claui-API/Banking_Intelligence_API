@@ -123,19 +123,28 @@ class InsightsController {
         }
       }
       
-      // Process financial data for RAG (don't await, do this in background)
+      // CHANGE: Process financial data for RAG and wait for it to complete
       try {
-        // Don't block response, fire this in background with no await
-        cohereRagService.processFinancialData(userId, userData)
-          .catch(err => logger.error(`Background financial data processing error: ${err.message}`, { requestId }));
+        // Check if documents already exist for this user
+        const existingDocuments = await cohereRagService.FinancialDocuments.findAll({
+          where: { userId },
+          attributes: ['id']
+        });
         
-        logger.info(`Started background financial data processing for RAG, user ${userId}`, { requestId });
+        // Only process data if no documents exist or force refresh is requested
+        if (!existingDocuments || existingDocuments.length === 0 || req.query.refreshData === 'true') {
+          logger.info(`Processing financial data for RAG, user ${userId}`, { requestId });
+          // AWAIT the processing now instead of running in background
+          await cohereRagService.processFinancialData(userId, userData);
+          logger.info(`Completed financial data processing for RAG, user ${userId}`, { requestId });
+        } else {
+          logger.info(`Found ${existingDocuments.length} existing documents for user ${userId}`, { requestId });
+        }
       } catch (error) {
-        logger.error(`Error initiating financial data processing for RAG: ${error.message}`, { requestId });
+        logger.error(`Error processing financial data for RAG: ${error.message}`, { requestId });
         // Continue execution - will fall back to direct API call if document processing fails
       }
       
-      // =================== COHERE RAG IMPLEMENTATION ===================
       // Generate insights using Cohere's built-in RAG capabilities
       let insights;
       try {
@@ -155,14 +164,13 @@ class InsightsController {
         
         // Fall back to traditional Cohere API if RAG fails
         try {
+          logger.info(`Falling back to traditional Cohere API`, { requestId });
           insights = await cohereService.generateInsights({
             ...userData,
             query,
             queryType,
             requestId
           });
-          
-          logger.info(`Fell back to traditional Cohere API`, { requestId });
         } catch (cohereError) {
           logger.error('Error falling back to traditional Cohere API:', cohereError, { requestId });
           
@@ -180,7 +188,6 @@ class InsightsController {
           }
         }
       }
-      // ============================================================
       
       // Return the insights
       return res.status(200).json({
@@ -245,15 +252,24 @@ class InsightsController {
         userData = await databaseService.getUserFinancialData(userId);
         logger.info(`Retrieved financial data for financial summary - user ${userId}`);
         
-        // Process the data for RAG while we're at it (async, won't block response)
+        // CHANGE: Process the data for RAG synchronously
         try {
-          // Don't block response, fire this in background with no await
-          cohereRagService.processFinancialData(userId, userData)
-            .catch(err => logger.error(`Background financial data processing error: ${err.message}`));
+          // Check if documents already exist for this user
+          const existingDocuments = await cohereRagService.FinancialDocuments.findAll({
+            where: { userId },
+            attributes: ['id']
+          });
           
-          logger.info(`Started background financial data processing for RAG, user ${userId}`);
+          // Only process data if no documents exist
+          if (!existingDocuments || existingDocuments.length === 0) {
+            logger.info(`Processing financial data for RAG during summary, user ${userId}`);
+            await cohereRagService.processFinancialData(userId, userData);
+            logger.info(`Completed financial data processing during summary, user ${userId}`);
+          } else {
+            logger.info(`Found ${existingDocuments.length} existing documents for user ${userId}`);
+          }
         } catch (processingError) {
-          logger.error(`Error initiating financial data processing for RAG: ${processingError.message}`);
+          logger.error(`Error processing financial data for RAG: ${processingError.message}`);
         }
       } catch (error) {
         // If we can't find the user data, return mock data for development

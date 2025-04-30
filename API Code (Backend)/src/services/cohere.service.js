@@ -431,3 +431,11 @@ class CohereService {
 }
 
 module.exports = new CohereService();
+module.exports._createGreetingPrompt = CohereService.prototype._createGreetingPrompt;
+module.exports._createJokePrompt = CohereService.prototype._createJokePrompt;
+module.exports._createBudgetingPrompt = CohereService.prototype._createBudgetingPrompt;
+module.exports._createSpendingPrompt = CohereService.prototype._createSpendingPrompt;
+module.exports._createSavingPrompt = CohereService.prototype._createSavingPrompt;
+module.exports._createInvestingPrompt = CohereService.prototype._createInvestingPrompt;
+module.exports._createDebtPrompt = CohereService.prototype._createDebtPrompt;
+module.exports._createInsightsPrompt = CohereService.prototype._createInsightsPrompt;

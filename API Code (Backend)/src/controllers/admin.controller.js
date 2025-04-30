@@ -488,6 +488,130 @@ class AdminController {
       });
     }
   }
+      /**
+   * Reinstate a suspended client
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   */
+  async reinstateClient(req, res) {
+    try {
+      const { clientId } = req.params;
+      const adminId = req.auth.userId;
+      
+      const client = await Client.findOne({
+        where: { clientId }
+      });
+      
+      if (!client) {
+        return res.status(404).json({
+          success: false,
+          message: 'Client not found'
+        });
+      }
+      
+      if (client.status !== 'suspended' && client.status !== 'revoked') {
+        return res.status(400).json({
+          success: false,
+          message: `Client status is ${client.status} not suspended or revoked`
+        });
+      }
+      
+      // Update client status to active
+      client.status = 'active';
+      client.approvedBy = adminId;
+      client.approvedAt = new Date();
+      await client.save();
+      
+      logger.info(`Client ${clientId} reinstated by admin ${adminId}`);
+      
+      return res.status(200).json({
+        success: true,
+        message: 'Client reinstated successfully',
+        data: {
+          clientId: client.clientId,
+          status: client.status,
+          approvedAt: client.approvedAt
+        }
+      });
+    } catch (error) {
+      logger.error('Error reinstating client:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to reinstate client',
+        error: error.message
+      });
+    }
+  }
+
+  /**
+   * Delete a client from the database
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   */
+  async deleteClient(req, res) {
+    try {
+      const { clientId } = req.params;
+      const adminId = req.auth.userId;
+      
+      const client = await Client.findOne({
+        where: { clientId }
+      });
+      
+      if (!client) {
+        return res.status(404).json({
+          success: false,
+          message: 'Client not found'
+        });
+      }
+      
+      // Only allow deletion of revoked clients for safety
+      if (client.status !== 'revoked') {
+        return res.status(400).json({
+          success: false,
+          message: 'Only revoked clients can be deleted. Please revoke the client first.'
+        });
+      }
+      
+      // Get client for logging purposes before deletion
+      const clientInfo = {
+        clientId: client.clientId,
+        userId: client.userId
+      };
+      
+      // Start a transaction
+      const transaction = await sequelize.transaction();
+      
+      try {
+        // Delete any associated tokens first
+        await Token.destroy({
+          where: { clientId: client.clientId },
+          transaction
+        });
+        
+        // Delete the client
+        await client.destroy({ transaction });
+        
+        await transaction.commit();
+        
+        logger.info(`Client ${clientId} deleted by admin ${adminId}`, clientInfo);
+        
+        return res.status(200).json({
+          success: true,
+          message: 'Client deleted successfully'
+        });
+      } catch (error) {
+        await transaction.rollback();
+        throw error;
+      }
+    } catch (error) {
+      logger.error('Error deleting client:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to delete client',
+        error: error.message
+      });
+    }
+  }
 }
 
 module.exports = new AdminController();
