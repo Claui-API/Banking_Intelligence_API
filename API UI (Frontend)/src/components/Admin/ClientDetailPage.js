@@ -18,6 +18,7 @@ const ClientDetailPage = () => {
   const [newQuota, setNewQuota] = useState('');
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [confirmAction, setConfirmAction] = useState({ type: '', reason: '' });
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
   
   // Fetch client details
   useEffect(() => {
@@ -62,6 +63,20 @@ const ClientDetailPage = () => {
     }
   };
   
+  // Handle client deletion
+  const handleClientDelete = async () => {
+    try {
+      await adminService.deleteClient(clientId);
+      
+      // Show success message and navigate back to admin dashboard
+      alert('Client deleted successfully');
+      navigate('/admin');
+    } catch (error) {
+      setError(`Error deleting client: ${error.message}`);
+      logger.error(`Failed to delete client ${clientId}:`, error);
+    }
+  };
+
   // Handle client status change
   const handleStatusChange = async () => {
     try {
@@ -90,6 +105,15 @@ const ClientDetailPage = () => {
           setClient(prev => ({
             ...prev,
             status: 'revoked'
+          }));
+          break;
+        case 'reinstate':
+          result = await adminService.reinstateClient(clientId);
+          setClient(prev => ({
+            ...prev,
+            status: 'active',
+            approvedAt: new Date().toISOString(),
+            approvedBy: 'You'
           }));
           break;
         case 'reset':
@@ -176,7 +200,7 @@ const ClientDetailPage = () => {
           >
             <i className="bi bi-arrow-left me-1"></i> Back to Dashboard
           </Button>
-          <h1 className="mb-0">Client Details</h1>
+          <h1 className="mb-0 text-white">Client Details</h1>
         </div>
         <ClientStatusBadge status={client.status} />
       </div>
@@ -295,39 +319,90 @@ const ClientDetailPage = () => {
         </Col>
         
         <Col lg={4}>
-          <Card className="mb-4">
-            <Card.Header className="bg-white">Actions</Card.Header>
-            <Card.Body>
-              <div className="d-grid gap-3">
-                {client.status === 'pending' && (
-                  <Button 
-                    variant="success" 
-                    onClick={() => prepareConfirmation('approve')}
-                  >
-                    <i className="bi bi-check-circle-fill me-1"></i> Approve Client
-                  </Button>
-                )}
-                
-                {client.status === 'active' && (
-                  <Button 
-                    variant="warning" 
-                    onClick={() => prepareConfirmation('suspend')}
-                  >
-                    <i className="bi bi-pause-circle-fill me-1"></i> Suspend Client
-                  </Button>
-                )}
-                
-                {(client.status === 'active' || client.status === 'suspended') && (
-                  <Button 
-                    variant="danger" 
-                    onClick={() => prepareConfirmation('revoke')}
-                  >
-                    <i className="bi bi-x-circle-fill me-1"></i> Revoke Client
-                  </Button>
-                )}
-              </div>
-            </Card.Body>
-          </Card>
+        <Card className="mb-4">
+          <Card.Header className="bg-white">Actions</Card.Header>
+          <Card.Body>
+            <div className="d-grid gap-3">
+              {client.status === 'pending' && (
+                <Button 
+                  variant="success" 
+                  onClick={() => prepareConfirmation('approve')}
+                >
+                  <i className="bi bi-check-circle-fill me-1"></i> Approve Client
+                </Button>
+              )}
+              
+              {client.status === 'active' && (
+                <Button 
+                  variant="warning" 
+                  onClick={() => prepareConfirmation('suspend')}
+                >
+                  <i className="bi bi-pause-circle-fill me-1"></i> Suspend Client
+                </Button>
+              )}
+              
+              {(client.status === 'active' || client.status === 'suspended') && (
+                <Button 
+                  variant="danger" 
+                  onClick={() => prepareConfirmation('revoke')}
+                >
+                  <i className="bi bi-x-circle-fill me-1"></i> Revoke Client
+                </Button>
+              )}
+              
+              {/* Add reinstate button for suspended or revoked clients */}
+              {(client.status === 'suspended' || client.status === 'revoked') && (
+                <Button 
+                  variant="success" 
+                  onClick={() => prepareConfirmation('reinstate')}
+                >
+                  <i className="bi bi-arrow-counterclockwise me-1"></i> Reinstate Client
+                </Button>
+              )}
+              
+              {/* Add delete button for revoked clients */}
+              {client.status === 'revoked' && (
+                <Button 
+                  variant="outline-danger" 
+                  onClick={() => setShowDeleteModal(true)}
+                >
+                  <i className="bi bi-trash-fill me-1"></i> Delete Client
+                </Button>
+              )}
+            </div>
+          </Card.Body>
+        </Card>
+
+        {/* Add this new Delete Confirmation Modal */}
+        <Modal show={showDeleteModal} onHide={() => setShowDeleteModal(false)}>
+          <Modal.Header closeButton>
+            <Modal.Title className="text-danger">Delete Client</Modal.Title>
+          </Modal.Header>
+          <Modal.Body>
+            <Alert variant="danger">
+              <i className="bi bi-exclamation-triangle-fill me-2"></i>
+              <strong>Warning:</strong> This action cannot be undone!
+            </Alert>
+            <p>
+              Are you sure you want to permanently delete this client and all associated data?
+              This will remove the client completely from the database.
+            </p>
+          </Modal.Body>
+          <Modal.Footer>
+            <Button variant="secondary" onClick={() => setShowDeleteModal(false)}>
+              Cancel
+            </Button>
+            <Button 
+              variant="danger" 
+              onClick={() => {
+                setShowDeleteModal(false);
+                handleClientDelete();
+              }}
+            >
+              Permanently Delete
+            </Button>
+          </Modal.Footer>
+        </Modal>
           
           <Card>
             <Card.Header className="bg-white">Security Information</Card.Header>

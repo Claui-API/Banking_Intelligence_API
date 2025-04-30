@@ -266,6 +266,72 @@ export const adminService = {
         throw new Error('Error setting up system statistics request');
       }
     }
+  },
+
+  // Reinstate a client (after suspension or revocation)
+  reinstateClient: async (clientId) => {
+    try {
+      const response = await api.post(`/admin/clients/${clientId}/reinstate`);
+      
+      if (!response.data.success) {
+        throw new Error(response.data.message || 'Failed to reinstate client');
+      }
+      
+      logger.info('Client reinstated successfully', { clientId });
+      
+      return response.data.data;
+    } catch (error) {
+      logger.logError('Reinstate Client Error', error);
+      
+      if (error.response) {
+        if (error.response.status === 404) {
+          throw new Error('Client not found');
+        } else if (error.response.status === 403) {
+          throw new Error('You do not have permission to reinstate clients');
+        }
+        
+        const errorMessage = error.response.data?.message || 'Failed to reinstate client';
+        throw new Error(errorMessage);
+      } else if (error.request) {
+        throw new Error('No response from server. Please check your network connection.');
+      } else {
+        throw new Error('Error setting up client reinstatement request');
+      }
+    }
+  },
+
+  // Delete a client from the database
+  deleteClient: async (clientId) => {
+    try {
+      const response = await api.delete(`/admin/clients/${clientId}`);
+      
+      if (!response.data.success) {
+        throw new Error(response.data.message || 'Failed to delete client');
+      }
+      
+      logger.info('Client deleted successfully', { clientId });
+      
+      return response.data.data;
+    } catch (error) {
+      logger.logError('Delete Client Error', error);
+      
+      if (error.response) {
+        if (error.response.status === 404) {
+          throw new Error('Client not found');
+        } else if (error.response.status === 403) {
+          throw new Error('You do not have permission to delete clients');
+        } else if (error.response.status === 400) {
+          throw new Error(error.response.data?.message || 'Client must be revoked before deletion');
+        }
+        
+        const errorMessage = error.response.data?.message || 'Failed to delete client';
+        throw new Error(errorMessage);
+      } else if (error.request) {
+        throw new Error('No response from server. Please check your network connection.');
+      } else {
+        throw new Error('Error setting up client deletion request');
+      }
+    }
   }
 };
 

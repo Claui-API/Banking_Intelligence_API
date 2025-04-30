@@ -529,11 +529,58 @@ class CohereRagService {
     try {
       const startTime = Date.now();
       
+      // CHANGE: Import the cohereService to use its prompt generation
+      const cohereService = require('./cohere.service');
+      
+      // Create a mock userData object with the query and queryType
+      const userData = {
+        query,
+        queryType,
+        // We don't have real user data here, but we'll create a minimal structure
+        accounts: [],
+        transactions: [],
+        userProfile: { name: 'User' }
+      };
+      
+      // Use the corresponding prompt from cohereService based on queryType
+      let prompt;
+      switch(queryType) {
+        case 'greeting':
+          prompt = cohereService._createGreetingPrompt(userData);
+          break;
+        case 'joke':
+          prompt = cohereService._createJokePrompt(userData);
+          break;
+        case 'budgeting':
+          prompt = cohereService._createBudgetingPrompt(userData);
+          break;
+        case 'spending':
+          prompt = cohereService._createSpendingPrompt(userData);
+          break;
+        case 'saving':
+          prompt = cohereService._createSavingPrompt(userData);
+          break;
+        case 'investing':
+          prompt = cohereService._createInvestingPrompt(userData);
+          break;
+        case 'debt':
+          prompt = cohereService._createDebtPrompt(userData);
+          break;
+        default:
+          prompt = cohereService._createInsightsPrompt(userData);
+      }
+      
+      // Set appropriate temperature based on query type (same as in cohereService)
+      const temperature = this._getTemperatureForQueryType(queryType);
+      
+      logger.info(`Calling Cohere without RAG for query "${query}" using ${queryType} prompt`);
+      
       const cohereResponse = await this.cohere.chat({
         message: query,
         model: process.env.COHERE_MODEL || 'command-r-plus',
-        preamble: this._generatePreamble(queryType),
-        temperature: this._getTemperatureForQueryType(queryType)
+        // CHANGE: Use the prompt from cohereService instead of the preamble
+        preamble: prompt, 
+        temperature: temperature
       });
       
       const endTime = Date.now();

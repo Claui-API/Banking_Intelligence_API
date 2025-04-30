@@ -10,6 +10,8 @@ const syncRoutes = require('./routes/sync.routes');
 const mobileInsightsRoutes = require('./routes/insights.mobile.routes');
 const adminRoutes = require('./routes/admin.routes');
 const clientRoutes = require('./routes/client.routes'); // Add client routes
+const ragMetricsRoutes = require('./routes/rag-metrics.routes');
+const { ragMetricsMiddleware } = require('./middleware/rag-metrics.middleware');
 
 // Load .env variables
 dotenv.config();
@@ -53,6 +55,7 @@ app.use(cors({
 }));
 app.use(express.json());
 app.use(requestLogger(logger));
+app.use(ragMetricsMiddleware);
 
 // Apply rate limiting to /api except webhooks
 app.use('/api', (req, res, next) => {
@@ -69,6 +72,7 @@ app.use('/api', healthRoutes);
 app.use('/api/diagnostics', diagnosticsRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/clients', clientRoutes); // Add client routes
+app.use('/api/rag-metrics', ragMetricsRoutes);
 
 // Mobile v1 routes
 app.use('/api/v1/notifications', notificationRoutes);
