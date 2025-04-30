@@ -1,5 +1,10 @@
 /* src/components/Admin/AdminDashboard.css */
-
+.admin-dashboard-container,
+.admin-dashboard-container.container-fluid,
+.container-fluid .admin-dashboard-container,
+main.bg-light {
+  background-color: #000000 !important; /* or any color you prefer */
+}
 /* Stats card styles */
 .stats-card {
 	text-align: center;

@@ -3,7 +3,9 @@ import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import logger from './utils/logger';
-
+import 'bootstrap/dist/css/bootstrap.min.css';
+// Import your custom styles after Bootstrap
+import './index.css';
 // Components
 import Layout from './components/Layout/Layout';
 import PrivateRoute from './components/Layout/PrivateRoute';

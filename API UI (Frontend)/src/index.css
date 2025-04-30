@@ -54,17 +54,6 @@ body {
   }
 
 /* Sidebar styles */
-.sidebar {
-  position: sticky;
-  height: 100vh;
-  top: 0;
-  left: 0;
-  bottom: 0;
-  background-color: #000000;
-  z-index: 1000;
-  width: 180px;
-  transition: width 0.3s ease;
-}
 
 .nav-tabs .nav-link.active {
   background-color: #ffffff;
@@ -192,4 +181,22 @@ a .register-link {
 a .register-link:hover {
   color: #218838;
   text-decoration: underline;
+}
+
+/* ────────── Dropdown menu white text override ────────── */
+.dropdown-menu {
+  /* optional: ensure the menu itself is dark */
+  background-color: #111 !important;
+}
+
+/* force all items to white */
+.dropdown-menu .dropdown-item {
+  color: #fff !important;
+}
+
+/* hover/focus state for visibility */
+.dropdown-menu .dropdown-item:hover,
+.dropdown-menu .dropdown-item:focus {
+  background-color: rgba(255,255,255,0.1) !important;
+  color: #fff !important;
 }

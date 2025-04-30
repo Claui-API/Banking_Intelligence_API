@@ -1,15 +1,86 @@
 /* src/components/HomePage.css */
+/* Base styles */
+.home-page-container {
+  position: relative;
+  overflow-x: hidden;
+  background-color: #000000;
+}
+
 /* Make sure background colors override Bootstrap defaults */
 .home-page-container .card {
   background-color: #1a1a1a !important;
   border-color: #000000 !important;
   color: white !important;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+/* Feature card hover effects */
+.feature-card {
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.feature-card:hover {
+  transform: translateY(-10px);
+  box-shadow: 0 10px 20px rgba(40, 167, 69, 0.2);
+}
+
+.feature-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 70px;
+  height: 70px;
+  border-radius: 50%;
+  background: rgba(40, 167, 69, 0.1);
+  margin-bottom: 1.5rem;
+  transition: all 0.3s ease;
+}
+
+.feature-card:hover .feature-icon {
+  background: rgba(40, 167, 69, 0.2);
+  transform: scale(1.1);
 }
 
 /* Fix pre/code blocks */
 .home-page-container pre {
   background-color: #000000 !important;
   color: #66ff66 !important;
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Adding a glowing effect to code blocks */
+.code-block {
+  position: relative;
+  overflow: hidden;
+}
+
+.code-block::after {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: linear-gradient(
+    to bottom right,
+    rgba(40, 167, 69, 0) 0%,
+    rgba(40, 167, 69, 0.1) 50%,
+    rgba(40, 167, 69, 0) 100%
+  );
+  transform: rotate(30deg);
+  animation: codeSweep 3s linear infinite;
+}
+
+@keyframes codeSweep {
+  0% {
+    transform: translateX(-100%) translateY(-100%) rotate(30deg);
+  }
+  100% {
+    transform: translateX(100%) translateY(100%) rotate(30deg);
+  }
 }
 
 .container-fluid {
@@ -33,15 +104,223 @@
 .home-page-container .bg-success {
   background-color: #4CAF50 !important;
   color: white !important;
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.home-page-container .bg-success::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.1) 50%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  transition: all 0.7s ease;
+}
+
+.home-page-container .bg-success:hover::before {
+  left: 100%;
 }
 
 /* Style the code blocks to match your screenshot */
 .home-page-container .bg-black {
   background-color: #000000 !important;
   color: #66ff66 !important; /* Light green text */
+  border: 1px solid #333;
 }
 
 /* Make sure Bootstrap's text-white class works */
 .home-page-container .text-white {
   color: white !important;
+}
+
+/* Stats section styling */
+.stats-container {
+  padding: 2rem 0;
+}
+
+.stat-card {
+  padding: 1.5rem;
+  border-radius: 8px;
+  background-color: #1a1a1a;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+  transition: all 0.3s ease;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.stat-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
+}
+
+.stat-icon {
+  font-size: 2.5rem;
+  margin-bottom: 1rem;
+}
+
+.stat-card h2 {
+  font-size: 2.5rem;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+}
+
+/* CTA section styling */
+.cta-section {
+  position: relative;
+  padding: 4rem 0;
+  background: linear-gradient(180deg, #000000 0%, #0f1a0f 100%);
+}
+
+.cta-section::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent 0%, #28a745 50%, transparent 100%);
+}
+
+/* Particle background container */
+#tsparticles {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: -1;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .home-page-container h1 {
+    font-size: 2.5rem !important;
+  }
+  
+  .stat-card h2 {
+    font-size: 2rem;
+  }
+}
+
+/* Scroll animation helper */
+.scroll-animate {
+  opacity: 0;
+  transform: translateY(20px);
+  transition: opacity 0.6s ease, transform 0.6s ease;
+}
+
+.scroll-animate.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Fancy underline animation for links */
+.home-page-container a:not(.btn) {
+  position: relative;
+  text-decoration: none;
+}
+
+.home-page-container a:not(.btn)::after {
+  content: '';
+  position: absolute;
+  width: 100%;
+  height: 2px;
+  bottom: 0;
+  left: 0;
+  background-color: #28a745;
+  transform: scaleX(0);
+  transform-origin: bottom right;
+  transition: transform 0.3s;
+}
+
+.home-page-container a:not(.btn):hover::after {
+  transform-origin: bottom left;
+  transform: scaleX(1);
+}
+
+/* Button animation enhancements */
+.btn-success {
+  position: relative;
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+
+.btn-success::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.2) 50%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  transition: all 0.5s ease;
+}
+
+.btn-success:hover::after {
+  left: 100%;
+}
+
+/* ScrollDown indicator animation */
+.scroll-down-indicator {
+  position: absolute;
+  bottom: 30px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  opacity: 0.7;
+  transition: opacity 0.3s ease;
+}
+
+.scroll-down-indicator:hover {
+  opacity: 1;
+}
+
+.scroll-down-indicator .arrow {
+  width: 20px;
+  height: 20px;
+  border-right: 2px solid #28a745;
+  border-bottom: 2px solid #28a745;
+  transform: rotate(45deg);
+  animation: scrollDownArrow 2s infinite;
+  margin-bottom: -10px;
+}
+
+.scroll-down-indicator .arrow:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.scroll-down-indicator .arrow:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes scrollDownArrow {
+  0% {
+    opacity: 0;
+    transform: rotate(45deg) translate(-10px, -10px);
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: rotate(45deg) translate(10px, 10px);
+  }
 }

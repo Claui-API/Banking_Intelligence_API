@@ -286,7 +286,7 @@ const AdminDashboard = () => {
                 <p className="mt-2">Loading clients...</p>
               </div>
             ) : clients.length > 0 ? (
-              <Table responsive striped hover className="mb-0">
+              <Table responsive striped hover className="mb-0 table-light">
                 <thead>
                   <tr>
                     <th>Client ID</th>
@@ -363,8 +363,8 @@ const AdminDashboard = () => {
   );
   
   return (
-    <Container fluid className="py-4 px-md-4">
-      <h1 className="mb-4">Admin Dashboard</h1>
+    <Container fluid className="py-4 px-md-4 admin-dashboard-container">
+      <h1 className="mb-4 text-white">Admin Dashboard</h1>
       
       {error && (
         <Alert variant="danger">

@@ -743,7 +743,7 @@ const Dashboard = () => {
                         <>
                           <h5 className="mt-4 mb-3">Accounts</h5>
                           <div className="table-responsive">
-                            <table className="table table-hover">
+                            <table className="table table-hover table-light">
                               <thead>
                                 <tr>
                                   <th>Account</th>
@@ -772,7 +772,7 @@ const Dashboard = () => {
                         <>
                           <h5 className="mt-4 mb-3">Recent Transactions</h5>
                           <div className="table-responsive">
-                            <table className="table table-hover">
+                            <table className="table table-hover table-light">
                               <thead>
                                 <tr>
                                   <th>Date</th>

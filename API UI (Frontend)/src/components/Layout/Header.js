@@ -35,8 +35,8 @@ const Header = () => {
                   </Button>
                 )}
                 
-                <Dropdown align="end" className="me-2">
-                  <Dropdown.Toggle variant="outline-dark" id="dropdown-menu">
+                <Dropdown align="end" className="me-2" menuVariant="light">
+                  <Dropdown.Toggle variant="outline-light" id="dropdown-menu">
                     Account
                   </Dropdown.Toggle>
                   <Dropdown.Menu>

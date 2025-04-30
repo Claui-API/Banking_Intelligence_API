@@ -17,8 +17,15 @@ const ClientStatusBadge = ({ status }) => {
     }
   };
   
+  const getTextClass = () => {
+    return status === 'revoked' ? 'text-white' : '';
+  };
+  
   return (
-    <Badge bg={getVariant()} className="text-capitalize">
+    <Badge 
+      bg={getVariant()} 
+      className={`text-capitalize ${getTextClass()}`}
+    >
       {status}
     </Badge>
   );
