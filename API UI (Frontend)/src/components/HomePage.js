@@ -3,20 +3,21 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Container, Row, Col, Button, Card, Image } from 'react-bootstrap';
-import { motion, useAnimation } from 'framer-motion';
+import { motion, useAnimation, AnimatePresence } from 'framer-motion';
 import { useInView } from 'react-intersection-observer';
 import CountUp from 'react-countup';
 import Particles from 'react-tsparticles';
 import { loadFull } from 'tsparticles';
+import useDelayedAnimation, { getStaggeredDelay } from '../hooks/useDelayedAnimation';
 import './HomePage.css';
 
-// Animation variants for different elements
+// Animation variants
 const fadeIn = {
   hidden: { opacity: 0, y: 20 },
   visible: { 
     opacity: 1, 
     y: 0,
-    transition: { duration: 0.6 }
+    transition: { duration: 0.8, ease: "easeOut" }
   }
 };
 
@@ -25,6 +26,7 @@ const staggerContainer = {
   visible: {
     opacity: 1,
     transition: {
+      delayChildren: 0.3,
       staggerChildren: 0.2
     }
   }
@@ -35,7 +37,7 @@ const scaleIn = {
   visible: { 
     scale: 1, 
     opacity: 1,
-    transition: { duration: 0.5 }
+    transition: { duration: 0.7, ease: "easeOut" }
   }
 };
 
@@ -44,14 +46,24 @@ const HomePage = () => {
   const controls = useAnimation();
   const [scrollY, setScrollY] = useState(0);
   
+  // Use our custom hook to delay animations until page is loaded
+  const animationsActive = useDelayedAnimation({ 
+    initialDelay: 200, // Increased delay before starting animations
+    disableOnMobile: false // Set to true to disable animations on mobile
+  });
+  
   // References for animations
   const [featuresRef, featuresInView] = useInView({ threshold: 0.2, triggerOnce: true });
   const [howItWorksRef, howItWorksInView] = useInView({ threshold: 0.2, triggerOnce: true });
   const [ctaRef, ctaInView] = useInView({ threshold: 0.5, triggerOnce: true });
   
-  // Initialize particles
+  // Initialize particles with a ref to ensure it only loads once
+  const particlesInitialized = useRef(false);
   const particlesInit = async (main) => {
-    await loadFull(main);
+    if (!particlesInitialized.current) {
+      await loadFull(main);
+      particlesInitialized.current = true;
+    }
   };
   
   // Handle scroll effects
@@ -66,203 +78,214 @@ const HomePage = () => {
   
   // Trigger animations when sections come into view
   useEffect(() => {
-    if (featuresInView) {
+    if (featuresInView && animationsActive) {
       controls.start('visible');
     }
-  }, [controls, featuresInView]);
+  }, [controls, featuresInView, animationsActive]);
   
   return (
     <div className="home-page-container">
-      {/* Particles Background */}
-      <Particles
-        id="tsparticles"
-        init={particlesInit}
-        options={{
-          fullScreen: {
-            enable: true,
-            zIndex: -1
-          },
-          particles: {
-            number: {
-              value: 40,
-              density: {
-                enable: true,
-                value_area: 800
-              }
-            },
-            color: {
-              value: "#28a745"
-            },
-            opacity: {
-              value: 0.3,
-              random: true
-            },
-            size: {
-              value: 3,
-              random: true
-            },
-            line_linked: {
+      {/* Particles Background - only show after animations are active */}
+      {animationsActive && (
+        <Particles
+          id="tsparticles"
+          init={particlesInit}
+          options={{
+            fullScreen: {
               enable: true,
-              distance: 150,
-              color: "#28a745",
-              opacity: 0.2,
-              width: 1
+              zIndex: -1
             },
-            move: {
-              enable: true,
-              speed: 1,
-              direction: "none",
-              random: true,
-              straight: false,
-              out_mode: "out",
-              bounce: false
-            }
-          },
-          interactivity: {
-            detect_on: "canvas",
-            events: {
-              onhover: {
-                enable: true,
-                mode: "grab"
-              },
-              onclick: {
-                enable: true,
-                mode: "push"
-              }
-            },
-            modes: {
-              grab: {
-                distance: 140,
-                line_linked: {
-                  opacity: 0.5
+            particles: {
+              number: {
+                value: 30, // Reduced from original for better performance
+                density: {
+                  enable: true,
+                  value_area: 1000
                 }
               },
-              push: {
-                particles_nb: 3
+              color: {
+                value: "#28a745"
+              },
+              opacity: {
+                value: 0.3,
+                random: true
+              },
+              size: {
+                value: 3,
+                random: true
+              },
+              line_linked: {
+                enable: true,
+                distance: 150,
+                color: "#28a745",
+                opacity: 0.2,
+                width: 1
+              },
+              move: {
+                enable: true,
+                speed: 0.8, // Slower speed for better performance
+                direction: "none",
+                random: true,
+                straight: false,
+                out_mode: "out",
+                bounce: false
               }
-            }
-          },
-          retina_detect: true
-        }}
-      />
+            },
+            interactivity: {
+              detect_on: "canvas",
+              events: {
+                onhover: {
+                  enable: true,
+                  mode: "grab"
+                },
+                onclick: {
+                  enable: true,
+                  mode: "push"
+                }
+              },
+              modes: {
+                grab: {
+                  distance: 140,
+                  line_linked: {
+                    opacity: 0.5
+                  }
+                },
+                push: {
+                  particles_nb: 2 // Reduced for better performance
+                }
+              }
+            },
+            retina_detect: true
+          }}
+        />
+      )}
 
-      {/* Header section with motion */}
-      <motion.div 
-        className="text-center py-4"
-        initial={{ opacity: 0, y: -50 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.8, ease: "easeOut" }}
-      >
-        <Container>
-          <motion.h1 
-            className="text-white mb-0" 
-            style={{ 
-              fontSize: '3.5rem', 
-              fontWeight: '900', 
-              letterSpacing: '-0.03em',
-              fontFamily: "'Inter Display', 'Inter', sans-serif",
-              textTransform: 'none'
-            }}
-            animate={{ 
-              textShadow: [
-                "0 0 5px rgba(40, 167, 69, 0.3)",
-                "0 0 15px rgba(40, 167, 69, 0.5)",
-                "0 0 5px rgba(40, 167, 69, 0.3)"
-              ]
-            }}
-            transition={{ 
-              duration: 3, 
-              ease: "easeInOut", 
-              repeat: Infinity 
-            }}
-          >
-            Banking Intelligence API
-          </motion.h1>
-        </Container>
-      </motion.div>
-
-      {/* App Overview section */}
-      <Container className="py-4 text-center">
-        <motion.div 
-          className="mb-4"
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.8, delay: 0.4 }}
-        >
+      {/* Header section with motion - only animate after page load */}
+      <AnimatePresence>
+        {animationsActive && (
           <motion.div 
-            className="mx-auto mb-5" 
-            style={{ 
-              maxWidth: '600px', 
-              background: 'linear-gradient(90deg, #00c6ff, #ff00de)', 
-              padding: '2px',
-              borderRadius: '4px'
-            }}
-            whileHover={{ 
-              boxShadow: "0 0 25px rgba(0, 198, 255, 0.5)"
-            }}
-            transition={{ duration: 0.3 }}
-          >
-            <div style={{ background: '#222', padding: '15px' }}>
-              {/* YouTube video embed */}
-              <div className="ratio ratio-16x9" style={{ maxWidth: '100%' }}>
-                <iframe
-                  src="https://www.youtube.com/embed/hMO6E50YSXU?si=KLrgifAyC5Pb1uCC"
-                  title="Banking Intelligence Demo"
-                  allowFullScreen
-                  frameBorder="0"
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                ></iframe>
-              </div>
-            </div>
-          </motion.div>
-          
-          <motion.p 
-            className="text-white mx-auto" 
-            style={{ maxWidth: '600px', fontSize: '1.5rem' }}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.8, delay: 0.6 }}
-          >
-            Add AI-powered financial insights to your banking application with the CLAU Banking Intelligence API
-          </motion.p>
-          
-          <motion.div 
-            className="d-flex justify-content-center gap-3 mt-4"
-            initial={{ opacity: 0, y: 20 }}
+            className="text-center py-4"
+            initial={{ opacity: 0, y: -25 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.8 }}
+            transition={{ duration: 0.8, ease: "easeOut", delay: 0.2 }}
           >
-            {isAuthenticated ? (
-              <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-                <Link to="/dashboard" className="btn btn-success btn-lg">
-                  Go to API Dashboard
-                </Link>
-              </motion.div>
-            ) : (
-              <>
-                <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-                  <Link to="/register" className="btn btn-success btn-lg">
-                    Get Your API Key
-                  </Link>
-                </motion.div>
-                <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-                  <Link to="/docs" className="btn btn-outline-success btn-lg">
-                    View Documentation
-                  </Link>
-                </motion.div>
-              </>
-            )}
+            <Container>
+              <motion.h1 
+                className="text-white mb-0" 
+                style={{ 
+                  fontSize: '3.5rem', 
+                  fontWeight: '900', 
+                  letterSpacing: '-0.03em',
+                  fontFamily: "'Inter Display', 'Inter', sans-serif",
+                  textTransform: 'none'
+                }}
+                animate={{ 
+                  textShadow: [
+                    "0 0 5px rgba(40, 167, 69, 0.3)",
+                    "0 0 15px rgba(40, 167, 69, 0.5)",
+                    "0 0 5px rgba(40, 167, 69, 0.3)"
+                  ]
+                }}
+                transition={{ 
+                  duration: 3, 
+                  ease: "easeInOut", 
+                  repeat: Infinity,
+                  delay: 1.2 // Delay the glow effect
+                }}
+              >
+                Banking Intelligence API
+              </motion.h1>
+            </Container>
           </motion.div>
-        </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* App Overview section - only animate after page load */}
+      <Container className="py-4 text-center">
+        <AnimatePresence>
+          {animationsActive && (
+            <motion.div 
+              className="mb-4"
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.8, delay: 0.6 }} // Increased delay
+            >
+              <motion.div 
+                className="mx-auto mb-5" 
+                style={{ 
+                  maxWidth: '600px', 
+                  background: 'linear-gradient(90deg, #00c6ff, #ff00de)', 
+                  padding: '2px',
+                  borderRadius: '4px'
+                }}
+                whileHover={{ 
+                  boxShadow: "0 0 25px rgba(0, 198, 255, 0.5)"
+                }}
+                transition={{ duration: 0.3 }}
+              >
+                <div style={{ background: '#222', padding: '15px' }}>
+                  {/* YouTube video embed */}
+                  <div className="ratio ratio-16x9" style={{ maxWidth: '100%' }}>
+                    <iframe
+                      src="https://www.youtube.com/embed/hMO6E50YSXU?si=KLrgifAyC5Pb1uCC"
+                      title="Banking Intelligence Demo"
+                      allowFullScreen
+                      frameBorder="0"
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    ></iframe>
+                  </div>
+                </div>
+              </motion.div>
+              
+              <motion.p 
+                className="text-white mx-auto" 
+                style={{ maxWidth: '600px', fontSize: '1.5rem' }}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ duration: 0.8, delay: 0.9 }} // Increased delay
+              >
+                Add AI-powered financial insights to your banking application with the CLAU Banking Intelligence API
+              </motion.p>
+              
+              <motion.div 
+                className="d-flex justify-content-center gap-3 mt-4"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5, delay: 1.2 }} // Increased delay
+              >
+                {isAuthenticated ? (
+                  <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                    <Link to="/dashboard" className="btn btn-success btn-lg">
+                      Go to API Dashboard
+                    </Link>
+                  </motion.div>
+                ) : (
+                  <>
+                    <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                      <Link to="/register" className="btn btn-success btn-lg">
+                        Get Your API Key
+                      </Link>
+                    </motion.div>
+                    <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                      <Link to="/docs" className="btn btn-outline-success btn-lg">
+                        View Documentation
+                      </Link>
+                    </motion.div>
+                  </>
+                )}
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </Container>
 
-      {/* Stats Counter Section */}
+      {/* Stats Counter Section - only display counters after animations are active */}
       <Container className="py-4">
         <motion.div 
           className="text-center stats-container"
           initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.8, delay: 1 }}
+          animate={animationsActive ? { opacity: 1 } : { opacity: 0 }}
+          transition={{ duration: 0.8, delay: 1.4 }} // Additional delay
         >
           <Row>
             <Col md={4}>
@@ -271,7 +294,7 @@ const HomePage = () => {
                   <i className="bi bi-graph-up"></i>
                 </div>
                 <h2 className="text-white">
-                  <CountUp end={98} suffix="%" duration={2.5} />
+                  {animationsActive && <CountUp end={98} suffix="%" duration={2.5} delay={0.5} />}
                 </h2>
                 <p className="text-light">API Uptime</p>
               </div>
@@ -282,9 +305,9 @@ const HomePage = () => {
                   <i className="bi bi-people"></i>
                 </div>
                 <h2 className="text-white">
-                  <CountUp end={1250} duration={3} />+
+                  {animationsActive && <CountUp end={1250} duration={3} delay={0.7} />}+
                 </h2>
-                <p className="text-light">Active Developers</p>
+                <p className="text-white">Active Developers</p>
               </div>
             </Col>
             <Col md={4}>
@@ -293,9 +316,9 @@ const HomePage = () => {
                   <i className="bi bi-clock-history"></i>
                 </div>
                 <h2 className="text-white">
-                  <CountUp end={500} suffix="ms" duration={2} />
+                  {animationsActive && <CountUp end={500} suffix="ms" duration={2} delay={0.9} />}
                 </h2>
-                <p className="text-light">Average Response Time</p>
+                <p className="text-white">Average Response Time</p>
               </div>
             </Col>
           </Row>
@@ -308,7 +331,7 @@ const HomePage = () => {
           ref={featuresRef}
           variants={staggerContainer}
           initial="hidden"
-          animate={featuresInView ? "visible" : "hidden"}
+          animate={featuresInView && animationsActive ? "visible" : "hidden"}
         >
           <motion.h2 
             className="text-success text-center mb-5"
@@ -373,7 +396,7 @@ const HomePage = () => {
       <motion.div
         ref={howItWorksRef}
         initial="hidden"
-        animate={howItWorksInView ? "visible" : "hidden"}
+        animate={howItWorksInView && animationsActive ? "visible" : "hidden"}
         variants={staggerContainer}
         className="py-5 rounded my-5"
       >
@@ -401,7 +424,7 @@ const HomePage = () => {
                 <motion.pre 
                   className="bg-black p-3 rounded text-white code-block"
                   initial={{ x: 50, opacity: 0 }}
-                  animate={{ x: 0, opacity: 1 }}
+                  animate={howItWorksInView && animationsActive ? { x: 0, opacity: 1 } : { x: 50, opacity: 0 }}
                   transition={{ duration: 0.5, delay: 0.2 }}
                 >
                   <code>
@@ -429,7 +452,7 @@ const HomePage = () => {
                 <motion.pre 
                   className="bg-black p-3 rounded text-white code-block"
                   initial={{ x: -50, opacity: 0 }}
-                  animate={{ x: 0, opacity: 1 }}
+                  animate={howItWorksInView && animationsActive ? { x: 0, opacity: 1 } : { x: -50, opacity: 0 }}
                   transition={{ duration: 0.5, delay: 0.4 }}
                 >
                   <code>
@@ -460,7 +483,7 @@ const HomePage = () => {
                 <motion.pre 
                   className="bg-black p-3 rounded text-white code-block"
                   initial={{ x: 50, opacity: 0 }}
-                  animate={{ x: 0, opacity: 1 }}
+                  animate={howItWorksInView && animationsActive ? { x: 0, opacity: 1 } : { x: 50, opacity: 0 }}
                   transition={{ duration: 0.5, delay: 0.6 }}
                 >
                   <code>
@@ -481,14 +504,14 @@ const HomePage = () => {
       <motion.div
         ref={ctaRef}
         initial={{ opacity: 0, y: 50 }}
-        animate={ctaInView ? { opacity: 1, y: 0 } : { opacity: 0, y: 50 }}
+        animate={ctaInView && animationsActive ? { opacity: 1, y: 0 } : { opacity: 0, y: 50 }}
         transition={{ duration: 0.8 }}
         className="py-5 cta-section"
       >
         <Container className="text-center">
           <motion.h2 
             className="text-success mb-4"
-            animate={ctaInView ? 
+            animate={ctaInView && animationsActive ? 
               { scale: [1, 1.05, 1], textShadow: "0 0 8px rgba(40, 167, 69, 0.5)" } : {}
             }
             transition={{ duration: 1.5, repeat: Infinity, repeatType: "reverse" }}
@@ -497,7 +520,7 @@ const HomePage = () => {
           </motion.h2>
           <motion.p 
             className="text-light mb-4"
-            animate={ctaInView ? { opacity: [0.7, 1, 0.7] } : {}}
+            animate={ctaInView && animationsActive ? { opacity: [0.7, 1, 0.7] } : {}}
             transition={{ duration: 2, repeat: Infinity }}
           >
             Join fintech companies already using our API to provide personalized financial guidance
