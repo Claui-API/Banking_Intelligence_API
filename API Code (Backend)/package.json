@@ -9,7 +9,9 @@
     "dev": "nodemon src/server.js",
     "test": "jest",
     "lint": "eslint src/**/*.js",
-    "format": "prettier --write 'src/**/*.js'"
+    "format": "prettier --write 'src/**/*.js'",
+    "setup-rag": "node src/scripts/setup-postgres-rag.js",
+    "fix-pg-rag": "node src/scripts/fix-postgres-rag.js"
   },
   "keywords": [
     "finance",
@@ -25,7 +27,7 @@
     "aws-sdk": "^2.1692.0",
     "axios": "^1.8.3",
     "bcrypt": "^5.1.1",
-    "cohere-ai": "^7.15.4",
+    "cohere-ai": "^7.17.1",
     "compression": "^1.8.0",
     "cors": "^2.8.5",
     "crypto": "^1.0.1",
@@ -41,6 +43,7 @@
     "plaid": "^31.1.0",
     "sequelize": "^6.37.7",
     "sqlite3": "^5.1.7",
+    "uuid": "^9.0.1",
     "winston": "^3.17.0"
   },
   "devDependencies": {
