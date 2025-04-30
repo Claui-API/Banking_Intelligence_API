@@ -1,6 +1,7 @@
-// Enhanced insights.controller.js with comprehensive query classification
+// src/controllers/insights.controller.js - Fixed version
 const cohereService = require('../services/cohere.service');
 const databaseService = require('../services/data.service');
+const cohereRagService = require('../services/cohere-rag.service');
 const logger = require('../utils/logger');
 
 /**
@@ -69,6 +70,10 @@ function classifyQuery(query) {
  * Controller for financial insights endpoints
  */
 class InsightsController {
+  constructor() {
+    // Add any controller initialization here
+  }
+
   /**
    * Generate personal financial insights
    * @param {Object} req - Express request object
@@ -77,6 +82,7 @@ class InsightsController {
    */
   async generateInsights(req, res, next) {
     try {
+      const startTime = Date.now(); // Track performance
       const { userId } = req.auth;
       
       if (!userId) {
@@ -86,7 +92,7 @@ class InsightsController {
         });
       }
       
-      const { query } = req.body;
+      const { query, requestId = `req_${Date.now()}` } = req.body;
       
       if (!query) {
         return res.status(400).json({
@@ -97,24 +103,18 @@ class InsightsController {
       
       // Classify the query using our enhanced classifier
       const queryType = classifyQuery(query);
-      logger.info(`Query classified as: ${queryType}`, { query });
+      logger.info(`Query classified as: ${queryType}`, { query, requestId });
       
-      // Get user data for all query types
+      // Get user data
       let userData;
       try {
         userData = await databaseService.getUserFinancialData(userId);
-        logger.info(`Retrieved financial data for user ${userId}`);
+        logger.info(`Retrieved financial data for user ${userId}`, { requestId });
       } catch (error) {
         // If we can't find the user data, return mock data for development
         if (process.env.NODE_ENV !== 'production') {
-          logger.warn(`Using mock data for user ${userId}: ${error.message}`);
-          userData = databaseService._getMockUserData(userId);
-          
-          // Log the mock data being used
-          logger.info('Mock data details:', {
-            accountCount: userData.accounts.length,
-            transactionCount: userData.transactions.length
-          });
+          logger.warn(`Using mock data for user ${userId}: ${error.message}`, { requestId });
+          userData = databaseService.getMockUserData(userId);
         } else {
           return res.status(404).json({
             success: false,
@@ -123,66 +123,64 @@ class InsightsController {
         }
       }
       
-      // Generate insights using Cohere
+      // Process financial data for RAG (don't await, do this in background)
+      try {
+        // Don't block response, fire this in background with no await
+        cohereRagService.processFinancialData(userId, userData)
+          .catch(err => logger.error(`Background financial data processing error: ${err.message}`, { requestId }));
+        
+        logger.info(`Started background financial data processing for RAG, user ${userId}`, { requestId });
+      } catch (error) {
+        logger.error(`Error initiating financial data processing for RAG: ${error.message}`, { requestId });
+        // Continue execution - will fall back to direct API call if document processing fails
+      }
+      
+      // =================== COHERE RAG IMPLEMENTATION ===================
+      // Generate insights using Cohere's built-in RAG capabilities
       let insights;
       try {
-        // Pass the queryType to the Cohere service to adjust the prompt accordingly
-        insights = await cohereService.generateInsights({
-          ...userData,
-          query,
+        insights = await cohereRagService.generateInsights(
+          userId, 
+          query, 
           queryType
+        );
+        
+        const generateDuration = Date.now() - startTime;
+        logger.info(`Generated insights with Cohere RAG in ${generateDuration}ms`, { 
+          requestId,
+          generateDuration 
         });
       } catch (error) {
-        logger.error('Error generating insights with Cohere:', error);
+        logger.error('Error generating insights with Cohere RAG:', error, { requestId });
         
-        // In development mode, provide mock insights if Cohere fails
-        if (process.env.NODE_ENV !== 'production') {
-          logger.info('Using mock insights due to Cohere service error');
-          
-          // Generate mock response based on query type
-          switch(queryType) {
-            case 'greeting':
-              insights = {
-                insight: `Hey ${userData.userProfile?.name || 'there'}! 👋 How can I help with your finances today?`,
-                timestamp: new Date().toISOString(),
-                queryType
-              };
-              break;
-            case 'joke':
-              insights = {
-                insight: `Why don't scientists trust atoms? Because they make up everything! 😂 Need any financial help today?`,
-                timestamp: new Date().toISOString(),
-                queryType
-              };
-              break;
-            case 'budgeting':
-              insights = {
-                insight: `Looking at your finances, I'd recommend a 50/30/20 budget: 50% on necessities, 30% on wants, and 20% on savings. Based on your monthly income of $${userData._calculateMonthlyIncome().toFixed(2)}, you should aim to save about $${(userData._calculateMonthlyIncome() * 0.2).toFixed(2)} each month. 💰`,
-                timestamp: new Date().toISOString(),
-                queryType
-              };
-              break;
-            case 'spending':
-              insights = {
-                insight: `In the past month, you've spent $${userData._calculateMonthlyExpenses().toFixed(2)}, mostly on ${userData._getTopExpenseCategories()[0] || 'groceries'} ($${(userData._calculateMonthlyExpenses() * 0.25).toFixed(2)}), ${userData._getTopExpenseCategories()[1] || 'dining'} ($${(userData._calculateMonthlyExpenses() * 0.15).toFixed(2)}), and ${userData._getTopExpenseCategories()[2] || 'entertainment'} ($${(userData._calculateMonthlyExpenses() * 0.1).toFixed(2)}). 📊`,
-                timestamp: new Date().toISOString(),
-                queryType
-              };
-              break;
-            default:
-              insights = {
-                insight: `Here's an analysis of your finances based on your query: "${query}"\n\nYour overall financial health is good. Your spending patterns show that you're managing your budget effectively, with approximately **20%** of your income going to savings.\n\nYou could optimize your finances further by reviewing your subscription services, which currently account for about **$75** monthly.`,
-                timestamp: new Date().toISOString(),
-                queryType
-              };
-          }
-        } else {
-          return res.status(500).json({
-            success: false,
-            message: `Failed to generate insights: ${error.message}`
+        // Fall back to traditional Cohere API if RAG fails
+        try {
+          insights = await cohereService.generateInsights({
+            ...userData,
+            query,
+            queryType,
+            requestId
           });
+          
+          logger.info(`Fell back to traditional Cohere API`, { requestId });
+        } catch (cohereError) {
+          logger.error('Error falling back to traditional Cohere API:', cohereError, { requestId });
+          
+          // In development mode, provide mock insights if all else fails
+          if (process.env.NODE_ENV !== 'production') {
+            logger.info('Using mock insights as last resort', { requestId });
+            
+            // Generate mock response based on query type
+            insights = this._generateMockInsight(queryType, userData, query);
+          } else {
+            return res.status(500).json({
+              success: false,
+              message: `Failed to generate insights: ${error.message}`
+            });
+          }
         }
       }
+      // ============================================================
       
       // Return the insights
       return res.status(200).json({
@@ -190,7 +188,9 @@ class InsightsController {
         data: {
           query,
           insights,
-          timestamp: new Date().toISOString()
+          timestamp: new Date().toISOString(),
+          processingTime: Date.now() - startTime,
+          ragEnabled: true
         }
       });
     } catch (error) {
@@ -205,11 +205,13 @@ class InsightsController {
           data: {
             query: req.body.query || 'financial analysis',
             insights: {
-              insight: `Here's a financial analysis based on mock data.\n\nYour spending patterns show a healthy balance with approximately **30%** going to essential expenses. Your savings rate is around **15%**, which is good but could be improved.\n\nConsider reducing discretionary spending on dining and entertainment by **$100** per month to boost your savings rate.`,
+              insight: `Here's a financial analysis based on mock data.\n\nYour spending patterns show a healthy balance with approximately 30% going to essential expenses. Your savings rate is around 15%, which is good but could be improved.\n\nConsider reducing discretionary spending on dining and entertainment by $100 per month to boost your savings rate.`,
               timestamp: new Date().toISOString(),
               queryType: 'financial'
             },
-            timestamp: new Date().toISOString()
+            timestamp: new Date().toISOString(),
+            error: true,
+            ragEnabled: false
           }
         });
       }
@@ -225,7 +227,6 @@ class InsightsController {
    * @param {Function} next - Express next middleware function
    */
   async getFinancialSummary(req, res, next) {
-    // This method remains mostly unchanged from the original
     try {
       const { userId } = req.auth; // Extracted from auth middleware
       
@@ -243,17 +244,22 @@ class InsightsController {
       try {
         userData = await databaseService.getUserFinancialData(userId);
         logger.info(`Retrieved financial data for financial summary - user ${userId}`);
+        
+        // Process the data for RAG while we're at it (async, won't block response)
+        try {
+          // Don't block response, fire this in background with no await
+          cohereRagService.processFinancialData(userId, userData)
+            .catch(err => logger.error(`Background financial data processing error: ${err.message}`));
+          
+          logger.info(`Started background financial data processing for RAG, user ${userId}`);
+        } catch (processingError) {
+          logger.error(`Error initiating financial data processing for RAG: ${processingError.message}`);
+        }
       } catch (error) {
         // If we can't find the user data, return mock data for development
         if (process.env.NODE_ENV !== 'production') {
           logger.warn(`Using mock data for financial summary - user ${userId}: ${error.message}`);
-          userData = databaseService._getMockUserData(userId);
-          
-          // Log the mock data being used
-          logger.info('Mock data details for financial summary:', {
-            accountCount: userData.accounts.length,
-            transactionCount: userData.transactions.length
-          });
+          userData = databaseService.getMockUserData(userId);
         } else {
           return res.status(404).json({
             success: false,
@@ -271,7 +277,7 @@ class InsightsController {
         // In development mode, provide default structure if data is missing
         if (process.env.NODE_ENV !== 'production') {
           logger.info('Creating default account and transaction data in development');
-          const mockData = databaseService._getMockUserData(userId);
+          const mockData = databaseService.getMockUserData(userId);
           return res.status(200).json({
             success: true,
             data: {
@@ -323,7 +329,7 @@ class InsightsController {
       // If we catch any error in development mode, return mock data
       if (process.env.NODE_ENV !== 'production') {
         logger.info('Returning mock financial summary due to caught error');
-        const mockData = databaseService._getMockUserData(req.auth.userId || 'default-user');
+        const mockData = databaseService.getMockUserData(req.auth.userId || 'default-user');
         
         return res.status(200).json({
           success: true,
@@ -339,6 +345,132 @@ class InsightsController {
       }
       
       next(error);
+    }
+  }
+  
+  /**
+   * Generate mock insights as a last resort
+   * @param {string} queryType - Query type
+   * @param {Object} userData - User's financial data
+   * @param {string} query - User's query
+   * @returns {Object} - Mock insight
+   */
+  _generateMockInsight(queryType, userData, query) {
+    switch(queryType) {
+      case 'greeting':
+        return {
+          insight: `Hey ${userData.userProfile?.name || 'there'}! 👋 How can I help with your finances today?`,
+          timestamp: new Date().toISOString(),
+          queryType
+        };
+      case 'joke':
+        return {
+          insight: `Why don't scientists trust atoms? Because they make up everything! 😂 Need any financial help today?`,
+          timestamp: new Date().toISOString(),
+          queryType
+        };
+      case 'budgeting':
+        const income = this._calculateMonthlyIncome(userData);
+        return {
+          insight: `Looking at your finances, I'd recommend a 50/30/20 budget: 50% on necessities, 30% on wants, and 20% on savings. Based on your monthly income of $${income.toFixed(2)}, you should aim to save about $${(income * 0.2).toFixed(2)} each month. 💰`,
+          timestamp: new Date().toISOString(),
+          queryType
+        };
+      case 'spending':
+        const expenses = this._calculateMonthlyExpenses(userData);
+        const topCategories = this._getTopExpenseCategories(userData);
+        return {
+          insight: `In the past month, you've spent $${expenses.toFixed(2)}, mostly on ${topCategories[0] || 'groceries'} ($${(expenses * 0.25).toFixed(2)}), ${topCategories[1] || 'dining'} ($${(expenses * 0.15).toFixed(2)}), and ${topCategories[2] || 'entertainment'} ($${(expenses * 0.1).toFixed(2)}). 📊`,
+          timestamp: new Date().toISOString(),
+          queryType
+        };
+      default:
+        return {
+          insight: `Here's an analysis of your finances based on your query: "${query}"\n\nYour overall financial health is good. Your spending patterns show that you're managing your budget effectively, with approximately 20% of your income going to savings.\n\nYou could optimize your finances further by reviewing your subscription services, which currently account for about $75 monthly.`,
+          timestamp: new Date().toISOString(),
+          queryType
+        };
+    }
+  }
+  
+  // Helper methods for calculating financial metrics
+  _calculateMonthlyIncome(userData) {
+    if (!userData || !userData.transactions || !Array.isArray(userData.transactions)) {
+      return 0;
+    }
+    
+    // Filter for income transactions in the last 30 days
+    const now = new Date();
+    const thirtyDaysAgo = new Date(now.setDate(now.getDate() - 30));
+    
+    return userData.transactions
+      .filter(t => new Date(t.date) >= thirtyDaysAgo && t.amount > 0)
+      .reduce((sum, t) => sum + t.amount, 0);
+  }
+  
+  _calculateMonthlyExpenses(userData) {
+    if (!userData || !userData.transactions || !Array.isArray(userData.transactions)) {
+      return 0;
+    }
+    
+    // Filter for expense transactions in the last 30 days
+    const now = new Date();
+    const thirtyDaysAgo = new Date(now.setDate(now.getDate() - 30));
+    
+    return userData.transactions
+      .filter(t => new Date(t.date) >= thirtyDaysAgo && t.amount < 0)
+      .reduce((sum, t) => sum + Math.abs(t.amount), 0);
+  }
+  
+  _getTopExpenseCategories(userData) {
+    if (!userData || !userData.transactions || !Array.isArray(userData.transactions)) {
+      return [];
+    }
+    
+    // Count categories for expense transactions
+    const categoryCounts = {};
+    userData.transactions
+      .filter(t => t.amount < 0)
+      .forEach(transaction => {
+        if (transaction.category) {
+          categoryCounts[transaction.category] = 
+            (categoryCounts[transaction.category] || 0) + 1;
+        }
+      });
+    
+    // Sort by count
+    return Object.entries(categoryCounts)
+      .sort((a, b) => b[1] - a[1])
+      .map(([category]) => category);
+  }
+  
+  /**
+   * Get RAG performance metrics
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   */
+  async getRagMetrics(req, res) {
+    try {
+      // Check if user has admin role
+      if (!req.auth || !req.auth.role || req.auth.role !== 'admin') {
+        return res.status(403).json({
+          success: false,
+          message: 'Admin access required for metrics'
+        });
+      }
+      
+      const metrics = cohereRagService.getPerformanceMetrics();
+      
+      return res.status(200).json({
+        success: true,
+        data: metrics
+      });
+    } catch (error) {
+      logger.error('Error retrieving RAG metrics:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to retrieve RAG metrics'
+      });
     }
   }
 }
