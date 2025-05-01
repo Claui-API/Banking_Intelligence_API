@@ -4,7 +4,8 @@ const {
   getSystemRagMetrics, 
   getUserRagMetrics, 
   getQueryTypeMetrics,
-  initializeMetricsModel
+  initializeMetricsModel,
+  getEnhancedUserRagMetrics
 } = require('../middleware/rag-metrics.middleware');
 const { User } = require('../models/User');
 const { sequelize } = require('../config/database');
@@ -226,45 +227,117 @@ class RagMetricsController {
   }
 
   /**
- * Get query type distribution metrics
- * @param {Object} req - Express request object
- * @param {Object} res - Express response object
- */
-async getQueryTypeMetrics(req, res) {
-	try {
-	  // Check if user has admin role
-	  if (req.auth.role !== 'admin') {
-		return res.status(403).json({
-		  success: false,
-		  message: 'Access denied. Admin privileges required.'
-		});
-	  }
-	  
-	  // Get query type metrics
-	  const metrics = await getQueryTypeMetrics();
-	  
-	  // Transform into array format for easier front-end charting
-	  const formattedMetrics = Object.entries(metrics).map(([type, count]) => ({
-		type,
-		count,
-		percentage: (count / Object.values(metrics).reduce((sum, val) => sum + val, 0) * 100).toFixed(1)
-	  }));
-	  
-	  return res.status(200).json({
-		success: true,
-		data: {
-		  distribution: metrics,
-		  formattedData: formattedMetrics
-		}
-	  });
-	} catch (error) {
-	  logger.error('Error getting query type metrics:', error);
-	  return res.status(500).json({
-		success: false,
-		message: 'Failed to retrieve query type metrics',
-		error: error.message
-	  });
-	}
+   * Get query type distribution metrics
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   */
+  async getQueryTypeMetrics(req, res) {
+    try {
+      // Check if user has admin role
+      if (req.auth.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. Admin privileges required.'
+      });
+      }
+      
+      // Get query type metrics
+      const metrics = await getQueryTypeMetrics();
+      
+      // Transform into array format for easier front-end charting
+      const formattedMetrics = Object.entries(metrics).map(([type, count]) => ({
+      type,
+      count,
+      percentage: (count / Object.values(metrics).reduce((sum, val) => sum + val, 0) * 100).toFixed(1)
+      }));
+      
+      return res.status(200).json({
+      success: true,
+      data: {
+        distribution: metrics,
+        formattedData: formattedMetrics
+      }
+      });
+    } catch (error) {
+      logger.error('Error getting query type metrics:', error);
+      return res.status(500).json({
+      success: false,
+      message: 'Failed to retrieve query type metrics',
+      error: error.message
+      });
+    }
+  }
+
+  /**
+   * Get per-user RAG metrics
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   */
+  async getUserMetrics(req, res) {
+    try {
+      // Check if user has admin role
+      if (req.auth.role !== 'admin') {
+        return res.status(403).json({
+          success: false,
+          message: 'Access denied. Admin privileges required.'
+        });
+      }
+      
+      // Check if enhanced metrics are requested
+      const useEnhancedMetrics = req.query.enhanced === 'true';
+      
+      // Get user metrics using the appropriate function
+      const metrics = useEnhancedMetrics ? 
+        await getEnhancedUserRagMetrics() : 
+        await getUserRagMetrics();
+      
+      // Enrich with user details
+      const enrichedMetrics = [];
+      
+      for (const metric of metrics) {
+        try {
+          // Find user details
+          const user = await User.findByPk(metric.userId);
+          
+          if (user) {
+            enrichedMetrics.push({
+              ...metric,
+              name: user.clientName,
+              email: user.email
+            });
+          } else {
+            // Include metrics even if user details not found
+            enrichedMetrics.push({
+              ...metric,
+              name: 'Unknown User',
+              email: `${metric.userId.substring(0, 8)}...`
+            });
+          }
+        } catch (userError) {
+          logger.warn(`Error retrieving user details for ${metric.userId}:`, userError);
+          
+          // Include metrics even if user details not found
+          enrichedMetrics.push({
+            ...metric,
+            name: 'Unknown User',
+            email: `${metric.userId.substring(0, 8)}...`
+          });
+        }
+      }
+      
+      return res.status(200).json({
+        success: true,
+        data: enrichedMetrics,
+        enhanced: useEnhancedMetrics
+      });
+    } catch (error) {
+      logger.error('Error getting user RAG metrics:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to retrieve user RAG metrics',
+        error: error.message
+      });
+    }
   }
 }
 

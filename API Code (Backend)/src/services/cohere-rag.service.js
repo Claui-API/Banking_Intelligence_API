@@ -371,7 +371,18 @@ class CohereRagService {
         if (Date.now() - cachedData.timestamp < this.cacheExpiration) {
           logger.info(`Cache hit for query: "${query}"`);
           this.metrics.cachedQueries++;
-          return cachedData.response;
+          
+          // Return with explicit fromCache flag
+          return {
+            insight: cachedData.response.insight || cachedData.response.insights?.insight || "Cache hit retrieved",
+            citations: cachedData.response.citations || [],
+            timestamp: new Date().toISOString(),
+            queryType,
+            processingTime: 5, // Fast since it's cached
+            usedRag: true,
+            fromCache: true, // EXPLICIT flag
+            documentsUsed: 0
+          };
         }
       }
       

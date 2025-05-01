@@ -105,6 +105,9 @@ class InsightsController {
       const queryType = classifyQuery(query);
       logger.info(`Query classified as: ${queryType}`, { query, requestId });
       
+      // Store query type in req.body for middleware
+      req.body.queryType = queryType;
+      
       // Get user data
       let userData;
       try {
@@ -123,7 +126,10 @@ class InsightsController {
         }
       }
       
-      // CHANGE: Process financial data for RAG and wait for it to complete
+      // Process financial data for RAG and wait for it to complete
+      let documentsUsed = 0;
+      let documentIds = [];
+      
       try {
         // Check if documents already exist for this user
         const existingDocuments = await cohereRagService.FinancialDocuments.findAll({
@@ -131,14 +137,34 @@ class InsightsController {
           attributes: ['id']
         });
         
-        // Only process data if no documents exist or force refresh is requested
-        if (!existingDocuments || existingDocuments.length === 0 || req.query.refreshData === 'true') {
+        if (existingDocuments && existingDocuments.length > 0) {
+          documentsUsed = existingDocuments.length;
+          documentIds = existingDocuments.map(doc => doc.id);
+          logger.info(`Found ${documentsUsed} existing documents for user ${userId}`, { requestId });
+        } else if (req.query.refreshData === 'true') {
           logger.info(`Processing financial data for RAG, user ${userId}`, { requestId });
+          
           // AWAIT the processing now instead of running in background
-          await cohereRagService.processFinancialData(userId, userData);
-          logger.info(`Completed financial data processing for RAG, user ${userId}`, { requestId });
+          const processedDocs = await cohereRagService.processFinancialData(userId, userData);
+          documentsUsed = processedDocs?.length || 0;
+          documentIds = processedDocs?.map(doc => doc.id) || [];
+          
+          logger.info(`Completed financial data processing for RAG, user ${userId}`, { 
+            requestId,
+            documentsProcessed: documentsUsed 
+          });
         } else {
-          logger.info(`Found ${existingDocuments.length} existing documents for user ${userId}`, { requestId });
+          // No documents exist and no refresh requested - process data
+          logger.info(`No documents found, processing data for RAG, user ${userId}`, { requestId });
+          
+          const processedDocs = await cohereRagService.processFinancialData(userId, userData);
+          documentsUsed = processedDocs?.length || 0;
+          documentIds = processedDocs?.map(doc => doc.id) || [];
+          
+          logger.info(`Initial data processing for RAG complete, user ${userId}`, { 
+            requestId,
+            documentsProcessed: documentsUsed 
+          });
         }
       } catch (error) {
         logger.error(`Error processing financial data for RAG: ${error.message}`, { requestId });
@@ -147,6 +173,9 @@ class InsightsController {
       
       // Generate insights using Cohere's built-in RAG capabilities
       let insights;
+      let usedRag = true;
+      let fromCache = false;
+      
       try {
         insights = await cohereRagService.generateInsights(
           userId, 
@@ -159,6 +188,16 @@ class InsightsController {
           requestId,
           generateDuration 
         });
+        
+        // Check if this came from cache - look for signs in the insight or in the object
+        fromCache = 
+          insights.fromCache === true || 
+          (typeof insights.insight === 'string' && insights.insight.includes("Cache hit"));
+        
+        if (fromCache) {
+          logger.info(`Using cached insights for query: "${query}"`, { requestId });
+        }
+        
       } catch (error) {
         logger.error('Error generating insights with Cohere RAG:', error, { requestId });
         
@@ -171,6 +210,10 @@ class InsightsController {
             queryType,
             requestId
           });
+          
+          usedRag = false;
+          fromCache = false;
+          
         } catch (cohereError) {
           logger.error('Error falling back to traditional Cohere API:', cohereError, { requestId });
           
@@ -180,6 +223,9 @@ class InsightsController {
             
             // Generate mock response based on query type
             insights = this._generateMockInsight(queryType, userData, query);
+            
+            usedRag = false;
+            fromCache = false;
           } else {
             return res.status(500).json({
               success: false,
@@ -189,15 +235,24 @@ class InsightsController {
         }
       }
       
-      // Return the insights
+      // Return the insights with RAG metrics flags
       return res.status(200).json({
         success: true,
         data: {
           query,
-          insights,
+          insights: {
+            ...insights,
+            fromCache: fromCache,         // Explicitly include in insights
+            usedRag: usedRag,            // Explicitly include in insights
+            documentsUsed: documentsUsed,  // Explicitly include in insights
+            documentIds: documentIds       // Explicitly include in insights
+          },
           timestamp: new Date().toISOString(),
           processingTime: Date.now() - startTime,
-          ragEnabled: true
+          ragEnabled: usedRag,           // Top level flag for middleware
+          fromCache: fromCache,          // Top level flag for middleware
+          documentsUsed: documentsUsed,   // Top level flag for middleware
+          documentIds: documentIds        // Top level flag for middleware
         }
       });
     } catch (error) {
@@ -214,11 +269,14 @@ class InsightsController {
             insights: {
               insight: `Here's a financial analysis based on mock data.\n\nYour spending patterns show a healthy balance with approximately 30% going to essential expenses. Your savings rate is around 15%, which is good but could be improved.\n\nConsider reducing discretionary spending on dining and entertainment by $100 per month to boost your savings rate.`,
               timestamp: new Date().toISOString(),
-              queryType: 'financial'
+              queryType: 'financial',
+              fromCache: false,
+              usedRag: false
             },
             timestamp: new Date().toISOString(),
             error: true,
-            ragEnabled: false
+            ragEnabled: false,
+            fromCache: false
           }
         });
       }
@@ -252,7 +310,7 @@ class InsightsController {
         userData = await databaseService.getUserFinancialData(userId);
         logger.info(`Retrieved financial data for financial summary - user ${userId}`);
         
-        // CHANGE: Process the data for RAG synchronously
+        // Process the data for RAG synchronously
         try {
           // Check if documents already exist for this user
           const existingDocuments = await cohereRagService.FinancialDocuments.findAll({
