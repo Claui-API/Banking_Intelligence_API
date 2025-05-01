@@ -85,112 +85,234 @@ const inMemoryMetrics = {
  * Middleware to track RAG metrics
  */
 const ragMetricsMiddleware = async (req, res, next) => {
-  // Store the original end method
-  const originalEnd = res.end;
+  // Add logging here - INSIDE the function
+  logger.info(`Processing request: ${req.method} ${req.path}`);
   
-  // Replace the end method
-  res.end = async function(...args) {
-    try {
-      // Only track metrics for insights generation endpoint
-      if (req.path === '/api/insights/generate' && req.method === 'POST') {
-        // Extract relevant data
-        const userId = req.auth?.userId;
-        const query = req.body?.query;
-        const queryType = req.body?.queryType;
-        const requestId = req.body?.requestId || `req_${Date.now()}`;
-        
-        // Check if response is successful and contains RAG data
-        let responseBody;
-        try {
-          // Get the response data
-          const responseData = Buffer.isBuffer(args[0]) ? args[0].toString() : args[0];
-          responseBody = typeof responseData === 'string' ? JSON.parse(responseData) : responseData;
-        } catch (parseError) {
-          logger.warn('Error parsing response for RAG metrics:', parseError);
-        }
-        
-        if (responseBody && responseBody.success && responseBody.data) {
-          const ragData = responseBody.data;
-          
-          // Extract metrics from response
-          const usedRag = ragData.ragEnabled !== false;
-          const cachedResponse = ragData.insights && ragData.insights.fromCache === true;
-          const processingTime = ragData.processingTime || null;
-          const documentCount = ragData.insights && ragData.insights.documentsUsed ? 
-            ragData.insights.documentsUsed : null;
-          const documentIds = ragData.insights && ragData.insights.documentIds ?
-            ragData.insights.documentIds : null;
-          
-          // Update in-memory stats (fallback)
-          inMemoryMetrics.total++;
-          if (cachedResponse) {
-            inMemoryMetrics.cached++;
-          } else if (usedRag) {
-            inMemoryMetrics.direct++;
-          }
-          
-          // Update by user
-          if (userId) {
-            if (!inMemoryMetrics.byUser.has(userId)) {
-              inMemoryMetrics.byUser.set(userId, { total: 0, cached: 0, direct: 0 });
-            }
-            
-            const userStats = inMemoryMetrics.byUser.get(userId);
-            userStats.total++;
-            if (cachedResponse) {
-              userStats.cached++;
-            } else if (usedRag) {
-              userStats.direct++;
-            }
-          }
-          
-          // Update by query type
-          if (queryType) {
-            if (!inMemoryMetrics.byQueryType.has(queryType)) {
-              inMemoryMetrics.byQueryType.set(queryType, 0);
-            }
-            
-            inMemoryMetrics.byQueryType.set(
-              queryType, 
-              inMemoryMetrics.byQueryType.get(queryType) + 1
-            );
-          }
-          
-          // Store in database if possible
-          try {
-            const metricsModel = await initializeMetricsModel();
-            
-            if (metricsModel) {
-              await metricsModel.create({
-                userId,
-                queryId: requestId,
-                query,
-                queryType: queryType || 'unknown',
-                usedRag,
-                cachedResponse,
-                processingTime,
-                documentCount,
-                documentIds
-              });
-              
-              logger.info(`Stored RAG metrics for query ID: ${requestId}`);
-            }
-          } catch (dbError) {
-            logger.error('Error storing RAG metrics in database:', dbError);
-          }
-        }
-      }
-    } catch (error) {
-      logger.error('Error in RAG metrics middleware:', error);
-      // Don't block the response if metrics tracking fails
-    }
+  // Check if this is an insights generation request
+  if (req.path === '/api/insights/generate' && req.method === 'POST') {
+    // Log that we're intercepting this request
+    const fullPath = `${req.baseUrl || ''}${req.path}`;
+    logger.info(`RAG Metrics: Intercepting API call ${req.method} ${fullPath}`);
     
-    // Call the original end method
-    return originalEnd.apply(this, args);
-  };
+    // Store original write and end methods
+    const originalWrite = res.write;
+    const originalEnd = res.end;
+    
+    let buffers = [];
+    
+    // Override write
+    res.write = function(chunk) {
+      buffers.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      return originalWrite.apply(res, arguments);
+    };
+    
+    // Override end
+    res.end = function(chunk) {
+      if (chunk) {
+        buffers.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      }
+      
+      // Combine all collected chunks
+      const body = Buffer.concat(buffers).toString('utf8');
+      logger.info(`RAG Metrics: Captured response body (${body.length} bytes)`);
+      
+      try {
+        const responseBody = JSON.parse(body);
+        logger.info('RAG Metrics: Successfully parsed JSON response');
+        
+        // Now process the metrics with the parsed body
+        processMetrics(req, responseBody);
+      } catch (error) {
+        logger.error(`RAG Metrics: Error parsing response JSON: ${error.message}`);
+      }
+      
+      // Call the original end without the monkey-patched version to avoid recursion
+      return originalEnd.apply(res, arguments);
+    };
+  }
   
   next();
 };
+
+// Function to process metrics from the response
+async function processMetrics(req, responseBody) {
+  try {
+    if (responseBody && responseBody.success && responseBody.data) {
+      const ragData = responseBody.data;
+      const userId = req.auth?.userId;
+      const query = req.body?.query;
+      const queryType = req.body?.queryType || classifyQuery(query);
+      const requestId = req.body?.requestId || `req_${Date.now()}`;
+      
+      logger.info(`RAG Metrics: Processing metrics for userId ${userId}, query "${query}"`);
+      
+      // Extract the metrics we need
+      const usedRag = ragData.ragEnabled !== false;
+      
+      // Check multiple places for fromCache flag
+      const cachedResponse = 
+        ragData.fromCache === true || 
+        (ragData.insights && ragData.insights.fromCache === true) ||
+        (ragData.insights && typeof ragData.insights.insight === 'string' && 
+         ragData.insights.insight.includes("Cache hit"));
+      
+      // Log detailed information about the extracted flags
+      logger.info(`RAG Metrics: Extracted flags - usedRag: ${usedRag}, cachedResponse: ${cachedResponse}`, {
+        ragDataKeys: Object.keys(ragData),
+        insightsKeys: ragData.insights ? Object.keys(ragData.insights) : [],
+        hasFromCacheTopLevel: 'fromCache' in ragData,
+        hasFromCacheInsights: ragData.insights && 'fromCache' in ragData.insights,
+        fromCacheTopValue: ragData.fromCache,
+        fromCacheInsightsValue: ragData.insights?.fromCache,
+        insightText: typeof ragData.insights?.insight === 'string' ? 
+          `${ragData.insights.insight.substring(0, 50)}...` : 'not a string'
+      });
+      
+      // Now store in database
+      await storeMetricsInDatabase(userId, requestId, query, queryType, usedRag, cachedResponse, ragData);
+      
+      // Update in-memory stats (fallback)
+      inMemoryMetrics.total++;
+      if (cachedResponse) {
+        inMemoryMetrics.cached++;
+      } else if (usedRag) {
+        inMemoryMetrics.direct++;
+      }
+      
+      // Update by user
+      if (userId) {
+        if (!inMemoryMetrics.byUser.has(userId)) {
+          inMemoryMetrics.byUser.set(userId, { total: 0, cached: 0, direct: 0 });
+        }
+        
+        const userStats = inMemoryMetrics.byUser.get(userId);
+        userStats.total++;
+        if (cachedResponse) {
+          userStats.cached++;
+        } else if (usedRag) {
+          userStats.direct++;
+        }
+      }
+      
+      // Update by query type
+      if (queryType) {
+        if (!inMemoryMetrics.byQueryType.has(queryType)) {
+          inMemoryMetrics.byQueryType.set(queryType, 0);
+        }
+        
+        inMemoryMetrics.byQueryType.set(
+          queryType, 
+          inMemoryMetrics.byQueryType.get(queryType) + 1
+        );
+      }
+    } else {
+      logger.warn('RAG Metrics: Response not suitable for metrics collection', {
+        hasResponseBody: !!responseBody,
+        hasSuccess: !!(responseBody && responseBody.success),
+        hasData: !!(responseBody && responseBody.data)
+      });
+    }
+  } catch (error) {
+    logger.error(`RAG Metrics: Error processing metrics: ${error.message}`, {
+      stack: error.stack
+    });
+  }
+}
+
+// Function to store metrics in database
+async function storeMetricsInDatabase(userId, requestId, query, queryType, usedRag, cachedResponse, ragData) {
+  try {
+    const metricsModel = await initializeMetricsModel();
+    
+    if (metricsModel) {
+      const processingTime = ragData.processingTime || null;
+      const documentCount = 
+        ragData.documentsUsed || 
+        (ragData.insights && ragData.insights.documentsUsed) || null;
+        
+      const documentIds = 
+        ragData.documentIds || 
+        (ragData.insights && ragData.insights.documentIds) || null;
+      
+      logger.info(`RAG Metrics: Attempting to store metrics with ID ${requestId}`, {
+        userId,
+        queryId: requestId,
+        queryType: queryType || 'unknown',
+        usedRag,
+        cachedResponse,
+        processingTime,
+        documentCount: documentCount || 0
+      });
+      
+      // Create the metrics record
+      const record = await metricsModel.create({
+        userId,
+        queryId: requestId,
+        query: query || 'Unknown query',
+        queryType: queryType || 'unknown',
+        usedRag,
+        cachedResponse,
+        processingTime,
+        documentCount,
+        documentIds
+      });
+      
+      logger.info(`RAG Metrics: Successfully stored metrics with ID ${record.id}`);
+    } else {
+      logger.warn('RAG Metrics: Metrics model initialization failed, using in-memory storage only');
+    }
+  } catch (error) {
+    logger.error(`RAG Metrics: Database storage error: ${error.message}`, {
+      name: error.name,
+      stack: error.stack,
+      code: error.code
+    });
+    
+    // Try to identify common issues
+    if (error.name === 'SequelizeUniqueConstraintError') {
+      logger.warn(`RAG Metrics: Duplicate queryId - ${requestId} already exists in database`);
+    } else if (error.name === 'SequelizeDatabaseError') {
+      logger.error('RAG Metrics: Database error - check connection settings and table schema');
+    }
+  }
+}
+
+// Helper function to classify queries (simplified version)
+function classifyQuery(query) {
+  if (!query) return 'financial';
+  
+  const normalizedQuery = query.toString().trim().toLowerCase();
+  
+  if (/^(hi|hello|hey|howdy)/i.test(normalizedQuery)) {
+    return 'greeting';
+  }
+  
+  if (/joke|funny/i.test(normalizedQuery)) {
+    return 'joke';
+  }
+  
+  if (/budget/i.test(normalizedQuery)) {
+    return 'budgeting';
+  }
+  
+  if (/spend/i.test(normalizedQuery)) {
+    return 'spending';
+  }
+  
+  if (/save|saving/i.test(normalizedQuery)) {
+    return 'saving';
+  }
+  
+  if (/invest/i.test(normalizedQuery)) {
+    return 'investing';
+  }
+  
+  if (/debt|loan|mortgage/i.test(normalizedQuery)) {
+    return 'debt';
+  }
+  
+  return 'financial';
+}
 
 /**
  * Get RAG metrics for system dashboard
@@ -339,6 +461,183 @@ const getUserRagMetrics = async () => {
 };
 
 /**
+ * Get enhanced per-user RAG metrics with detailed analytics
+ * @returns {Array} Detailed user metrics
+ */
+const getEnhancedUserRagMetrics = async () => {
+  try {
+    const metricsModel = await initializeMetricsModel();
+    
+    if (!metricsModel) {
+      logger.warn('Using in-memory metrics as fallback for enhanced user metrics');
+      return convertInMemoryUserMetrics();
+    }
+    
+    // Get all queries with detailed information
+    const queries = await metricsModel.findAll({
+      attributes: [
+        'userId', 
+        'queryType', 
+        'usedRag', 
+        'cachedResponse', 
+        'processingTime',
+        'createdAt',
+        'query'
+      ],
+      order: [['createdAt', 'DESC']]
+    });
+    
+    // Group queries by user
+    const userMetricsMap = new Map();
+    
+    queries.forEach(query => {
+      const userId = query.userId;
+      
+      if (!userMetricsMap.has(userId)) {
+        userMetricsMap.set(userId, {
+          userId,
+          queryCount: 0,
+          cachedCount: 0,
+          directApiCount: 0,
+          avgProcessingTime: 0,
+          totalProcessingTime: 0,
+          lastActive: null,
+          queryTypes: {},
+          recentQueries: [],
+          activityByHour: Array(24).fill(0),
+          activityByDay: Array(7).fill(0)
+        });
+      }
+      
+      const userStats = userMetricsMap.get(userId);
+      
+      // Update basic counts
+      userStats.queryCount++;
+      if (query.cachedResponse) {
+        userStats.cachedCount++;
+      } else if (query.usedRag) {
+        userStats.directApiCount++;
+      }
+      
+      // Update processing time metrics
+      if (query.processingTime) {
+        userStats.totalProcessingTime += query.processingTime;
+        userStats.avgProcessingTime = userStats.totalProcessingTime / userStats.queryCount;
+      }
+      
+      // Update query type distribution
+      const queryType = query.queryType || 'unknown';
+      userStats.queryTypes[queryType] = (userStats.queryTypes[queryType] || 0) + 1;
+      
+      // Track recent activity
+      const createdAt = new Date(query.createdAt);
+      if (!userStats.lastActive || createdAt > userStats.lastActive) {
+        userStats.lastActive = createdAt;
+      }
+      
+      // Add to recent queries (keep only 10 most recent)
+      if (userStats.recentQueries.length < 10) {
+        userStats.recentQueries.push({
+          queryType,
+          query: query.query,
+          usedRag: query.usedRag,
+          cachedResponse: query.cachedResponse,
+          processingTime: query.processingTime,
+          createdAt: query.createdAt
+        });
+      }
+      
+      // Track activity by hour and day
+      const hour = createdAt.getHours();
+      const day = createdAt.getDay();
+      userStats.activityByHour[hour]++;
+      userStats.activityByDay[day]++;
+    });
+    
+    // Convert map to array and calculate additional metrics
+    const enhancedUserMetrics = Array.from(userMetricsMap.values()).map(userStats => {
+      // Calculate cache hit rate
+      const cacheHitRate = userStats.queryCount > 0 
+        ? ((userStats.cachedCount / userStats.queryCount) * 100).toFixed(1)
+        : '0.0';
+      
+      // Calculate cost savings (assumed $0.02 per API call saved)
+      const costSavings = (userStats.cachedCount * 0.02).toFixed(2);
+      
+      // Find most common query type
+      let mostCommonQueryType = 'none';
+      let maxCount = 0;
+      
+      Object.entries(userStats.queryTypes).forEach(([type, count]) => {
+        if (count > maxCount) {
+          maxCount = count;
+          mostCommonQueryType = type;
+        }
+      });
+      
+      // Sort recent queries by date (newest first)
+      userStats.recentQueries.sort((a, b) => 
+        new Date(b.createdAt) - new Date(a.createdAt)
+      );
+      
+      // Find peak activity times
+      const mostActiveHour = userStats.activityByHour.indexOf(Math.max(...userStats.activityByHour));
+      const mostActiveDay = userStats.activityByDay.indexOf(Math.max(...userStats.activityByDay));
+      
+      // Format day names
+      const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+      
+      return {
+        ...userStats,
+        cacheHitRate,
+        costSavings,
+        mostCommonQueryType,
+        mostActiveHour,
+        mostActiveHourFormatted: `${mostActiveHour}:00`,
+        mostActiveDay,
+        mostActiveDayFormatted: dayNames[mostActiveDay]
+      };
+    });
+    
+    return enhancedUserMetrics;
+  } catch (error) {
+    logger.error('Error getting enhanced user RAG metrics:', error);
+    return convertInMemoryUserMetrics();
+  }
+};
+
+// Helper function to convert in-memory metrics to enhanced format
+const convertInMemoryUserMetrics = () => {
+  const userMetricsArray = [];
+  
+  for (const [userId, metrics] of inMemoryMetrics.byUser.entries()) {
+    userMetricsArray.push({
+      userId,
+      queryCount: metrics.total,
+      cachedCount: metrics.cached,
+      directApiCount: metrics.direct,
+      cacheHitRate: metrics.total > 0 
+        ? `${((metrics.cached / metrics.total) * 100).toFixed(1)}`
+        : '0.0',
+      costSavings: (metrics.cached * 0.02).toFixed(2),
+      avgProcessingTime: 0,
+      lastActive: new Date(),
+      queryTypes: {},
+      recentQueries: [],
+      activityByHour: Array(24).fill(0),
+      activityByDay: Array(7).fill(0),
+      mostCommonQueryType: 'unknown',
+      mostActiveHour: 12, // Default to noon
+      mostActiveDay: 1,    // Default to Monday
+      mostActiveHourFormatted: '12:00',
+      mostActiveDayFormatted: 'Monday'
+    });
+  }
+  
+  return userMetricsArray;
+};
+
+/**
  * Get query type distribution metrics
  * @returns {Object} Query type distribution
  */
@@ -392,6 +691,7 @@ module.exports = {
   ragMetricsMiddleware,
   getSystemRagMetrics,
   getUserRagMetrics,
+  getEnhancedUserRagMetrics,
   getQueryTypeMetrics,
   initializeMetricsModel
 };

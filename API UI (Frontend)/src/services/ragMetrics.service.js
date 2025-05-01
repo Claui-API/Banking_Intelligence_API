@@ -65,38 +65,6 @@ export const ragMetricsService = {
     }
   },
   
-  // Get per-user RAG metrics
-  getUserMetrics: async () => {
-    try {
-      const response = await api.get('/rag-metrics/users');
-      
-      if (!response.data.success) {
-        throw new Error(response.data.message || 'Failed to fetch RAG user metrics');
-      }
-      
-      logger.info('RAG user metrics retrieved successfully');
-      
-      return response.data.data;
-    } catch (error) {
-      logger.logError('RAG User Metrics Error', error);
-      
-      if (error.response) {
-        // Check for permission errors
-        if (error.response.status === 403) {
-          throw new Error('You do not have permission to view RAG user metrics.');
-        }
-        
-        const errorMessage = error.response.data?.message || 'Failed to fetch RAG user metrics';
-        throw new Error(errorMessage);
-      } else if (error.request) {
-        throw new Error('No response from server. Please check your network connection.');
-      } else {
-        throw new Error('Error setting up RAG user metrics request');
-      }
-    }
-  },
-  
-  // Get query type distribution metrics
   getQueryTypeMetrics: async () => {
     try {
       const response = await api.get('/rag-metrics/query-types');
@@ -110,20 +78,33 @@ export const ragMetricsService = {
       return response.data.data;
     } catch (error) {
       logger.logError('RAG Query Type Metrics Error', error);
-      
-      if (error.response) {
-        // Check for permission errors
-        if (error.response.status === 403) {
-          throw new Error('You do not have permission to view RAG query type metrics.');
-        }
-        
-        const errorMessage = error.response.data?.message || 'Failed to fetch RAG query type metrics';
-        throw new Error(errorMessage);
-      } else if (error.request) {
-        throw new Error('No response from server. Please check your network connection.');
-      } else {
-        throw new Error('Error setting up RAG query type metrics request');
+      throw error;
+    }
+  },
+  
+  getUserMetrics: async (options = {}) => {
+    try {
+      // Build query parameters
+      const params = {};
+      if (options.enhanced) {
+        params.enhanced = 'true';
       }
+      
+      const queryString = new URLSearchParams(params).toString();
+      const url = queryString ? `/rag-metrics/users?${queryString}` : '/rag-metrics/users';
+      
+      const response = await api.get(url);
+      
+      if (!response.data.success) {
+        throw new Error(response.data.message || 'Failed to fetch RAG user metrics');
+      }
+      
+      logger.info(`RAG user metrics retrieved successfully (enhanced: ${!!options.enhanced})`);
+      
+      return response.data.data;
+    } catch (error) {
+      logger.logError('RAG User Metrics Error', error);
+      throw error;
     }
   }
 };

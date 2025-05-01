@@ -35,6 +35,37 @@ const requestLogger = require('./middleware/requestLogger');
 const { authMiddleware } = require('./middleware/auth');
 const { validateInsightsRequest } = require('./middleware/validation');
 
+const testRagMetrics = async () => {
+  try {
+    // Initialize the model
+    const { initializeMetricsModel } = require('./middleware/rag-metrics.middleware');
+    const model = await initializeMetricsModel();
+    
+    if (model) {
+      // Try a direct insertion
+      await model.create({
+        userId: 'test-user-id',
+        queryId: 'test-query-id',
+        query: 'Test query',
+        queryType: 'test',
+        usedRag: true,
+        cachedResponse: true,
+        processingTime: 100,
+        documentCount: 5,
+        createdAt: new Date()
+      });
+      console.log('✅ RAG metrics test record created successfully');
+    } else {
+      console.log('❌ RAG metrics model initialization failed');
+    }
+  } catch (error) {
+    console.error('❌ RAG metrics test failed:', error);
+  }
+};
+
+// Run the test on startup
+testRagMetrics();
+
 // General API rate limiter
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
