@@ -279,7 +279,7 @@ export const insightsMetricsService = {
       
       return { system, history, queryTypes, users };
     } catch (error) {
-      logger.logError('Error refreshing all metrics', error);
+      logger.error('Error refreshing all metrics', error);
       throw error;
     }
   }

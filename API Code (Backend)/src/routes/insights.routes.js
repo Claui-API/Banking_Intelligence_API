@@ -25,7 +25,7 @@ router.get('/summary', authMiddleware, insightsController.getFinancialSummary);
  * @access Private (Admin only)
  */
 router.get('/metrics/:metric', authMiddleware, authorize('admin'), (req, res) => {
-  res.redirect(`/api/insights/metrics/${req.params.metric}`);
+  res.redirect(`/api/insights-metrics/${req.params.metric}`);
 });
 
 module.exports = router;

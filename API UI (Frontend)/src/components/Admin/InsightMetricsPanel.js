@@ -1,4 +1,4 @@
-// src/components/Admin/InsightMetricsPanel.js
+// src/components/Admin/InsightMetricsPanel.js - Fixed implementation
 import React, { useState, useEffect } from 'react';
 import { Card, Row, Col, Alert, Button, Table, Spinner } from 'react-bootstrap';
 import { 
@@ -8,17 +8,12 @@ import {
 import { insightsMetricsService } from '../../services/insightsMetrics.service';
 import logger from '../../utils/logger';
 
-/**
- * Component to display AI Insights performance metrics
- * for admin dashboard
- */
+// Component to display AI Insights performance metrics
 const InsightMetricsPanel = () => {
   const [metrics, setMetrics] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
-  
-  // Historical metrics for charts
   const [historicalMetrics, setHistoricalMetrics] = useState([]);
   
   // Fetch metrics on component mount
@@ -26,18 +21,18 @@ const InsightMetricsPanel = () => {
     fetchMetrics();
   }, []);
   
-  // Function to fetch metrics from API
+  // Fetch metrics from API using the insightsMetricsService
   const fetchMetrics = async () => {
     try {
       setRefreshing(true);
       
-      // Fetch system metrics using the service
+      // Use insightsMetricsService instead of ragMetricsService
       const metricsData = await insightsMetricsService.getSystemMetrics();
       setMetrics(metricsData);
       
       logger.info('InsightMetricsPanel: Metrics data loaded successfully');
       
-      // Also fetch historical data using the service
+      // Also fetch historical data
       try {
         const historicalData = await insightsMetricsService.getHistoricalMetrics(7);
         if (historicalData && Array.isArray(historicalData)) {
@@ -52,7 +47,6 @@ const InsightMetricsPanel = () => {
     } catch (err) {
       logger.error('Error fetching insight metrics:', err);
       
-      // Check for authentication issues
       if (err.message && err.message.includes('permission')) {
         setError('Authentication error: Please ensure you are logged in as an admin user');
       } else {
@@ -82,7 +76,7 @@ const InsightMetricsPanel = () => {
       avgResponseTime: 456,
       minResponseTime: 250,
       maxResponseTime: 1750,
-      todayQueries: Math.floor(Math.random() * 100) + 50,
+      todayQueries: Math.floor(Math.random() * 100 + 50),
       queryTypeDistribution: {
         financial: 487,
         budgeting: 302,

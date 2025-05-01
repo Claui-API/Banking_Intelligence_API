@@ -39,45 +39,25 @@ const { validateInsightsRequest } = require('./middleware/validation');
 const { insightMetricsMiddleware } = require('./middleware/insights-metrics.middleware');
 
 // Test insights metrics on startup
-const testInsightMetrics = async () => {
+const initializeMetrics = async () => {
   try {
-    // Initialize the model
-    const { initializeMetricsModel } = require('./middleware/insights-metrics.middleware');
-    const model = await initializeMetricsModel();
+    // Initialize the metrics model
+    const metricsModel = await initializeMetricsModel();
     
-    if (model) {
-      // Generate a valid UUID for the test
-      const { v4: uuidv4 } = require('uuid');
-      const testUserId = uuidv4(); // Generate a proper UUID instead of using a string
-      
-      // Try a direct insertion
-      await model.create({
-        id: uuidv4(), // Generate another UUID for the record ID
-        userId: testUserId,
-        queryId: `test-query-id-${Date.now()}`,
-        query: 'Test query',
-        queryType: 'test',
-        responseTime: 100,
-        success: true,
-        errorMessage: null,
-        createdAt: new Date()
-      });
-      console.log('✅ Insight metrics test record created successfully');
-      
-      // Store a flag that insights metrics are available
-      app.set('insightMetricsAvailable', true);
+    if (metricsModel) {
+      // Count total records
+      const count = await metricsModel.count();
+      console.log(`✅ Initialized metrics system with ${count} records`);
     } else {
-      console.log('⚠️ Insight metrics model initialization failed, will use fallback metrics');
-      app.set('insightMetricsAvailable', false);
+      console.log('⚠️ Metrics model initialization failed');
     }
   } catch (error) {
-    console.error('❌ Insight metrics test failed:', error);
-    
-    // Even if the test fails, we'll continue with the app startup
-    console.log('Continuing server startup despite metrics test failure');
-    app.set('insightMetricsAvailable', false);
+    console.error('❌ Error initializing metrics:', error);
   }
 };
+
+// Run initialization
+initializeMetrics();
 
 // General API rate limiter
 const apiLimiter = rateLimit({
@@ -155,7 +135,7 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/clients', clientRoutes);
 
 // Use the new insights metrics routes
-app.use('/api/insights/metrics', insightMetricsRoutes);
+app.use('/api/insights-metrics', insightMetricsRoutes);
 
 // Mobile v1 routes
 app.use('/api/v1/notifications', notificationRoutes);
@@ -222,9 +202,6 @@ const server = app.listen(PORT, () => {
     `Server running on port ${PORT} in ${process.env.NODE_ENV || 'development'} mode`
   );
 });
-
-// Run the insights metrics test after server starts
-testInsightMetrics();
 
 // Graceful shutdown on unhandled rejections
 process.on('unhandledRejection', err => {
