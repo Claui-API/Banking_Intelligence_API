@@ -1,12 +1,14 @@
 // src/components/Admin/AdminDashboard.js
+
+// src/components/Admin/AdminDashboard.js - Update imports
 import React, { useState, useEffect } from 'react';
 import { Container, Row, Col, Card, Table, Button, Badge, Spinner, Alert, Tabs, Tab } from 'react-bootstrap';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { adminService } from '../../services/admin';
 import ClientStatusBadge from './ClientStatusBadge';
-import RagMetricsPanel from './RagMetricsPanel';
-import UserRagMetrics from './UserRagMetrics';
+import InsightMetricsPanel from './InsightMetricsPanel'; // Updated import
+import UserInsightMetrics from './UserInsightMetrics'; // Updated import
 import AiInsightsTab from './AiInsightsTab';
 import logger from '../../utils/logger';
 import './AdminDashboard.css';
@@ -276,10 +278,10 @@ const AdminDashboard = () => {
         </Col>
       </Row>
       
-      {/* RAG Metrics Panel - Added to the overview tab */}
+      {/* InsightMetricsPanel - Updated component */}
       <Row className="mt-4">
         <Col xs={12}>
-          <RagMetricsPanel />
+          <InsightMetricsPanel />
         </Col>
       </Row>
     </>

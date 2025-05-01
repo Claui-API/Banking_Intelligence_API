@@ -1,4 +1,4 @@
-// server.js - Update to include client routes
+// server.js - Updated to use standard Cohere service with insights metrics
 const express = require('express');
 const path = require('path');
 const helmet = require('helmet');
@@ -9,9 +9,9 @@ const notificationRoutes = require('./routes/notification.routes');
 const syncRoutes = require('./routes/sync.routes');
 const mobileInsightsRoutes = require('./routes/insights.mobile.routes');
 const adminRoutes = require('./routes/admin.routes');
-const clientRoutes = require('./routes/client.routes'); // Add client routes
-const ragMetricsRoutes = require('./routes/rag-metrics.routes');
-const { ragMetricsMiddleware } = require('./middleware/rag-metrics.middleware');
+const clientRoutes = require('./routes/client.routes');
+// Remove RAG metrics import and use insights metrics
+const insightMetricsRoutes = require('./routes/insights-metrics.routes');
 
 // Load .env variables
 dotenv.config();
@@ -32,39 +32,52 @@ const webhookRoutes = require('./routes/plaid.webhook.routes');
 const diagnosticsRoutes = require('./routes/diagnostics.routes');
 const { errorHandler, notFoundHandler } = require('./middleware/errorHandler');
 const requestLogger = require('./middleware/requestLogger');
-const { authMiddleware } = require('./middleware/auth');
+const { authMiddleware, authorize } = require('./middleware/auth');
 const { validateInsightsRequest } = require('./middleware/validation');
 
-const testRagMetrics = async () => {
+// Import insights metrics middleware
+const { insightMetricsMiddleware } = require('./middleware/insights-metrics.middleware');
+
+// Test insights metrics on startup
+const testInsightMetrics = async () => {
   try {
     // Initialize the model
-    const { initializeMetricsModel } = require('./middleware/rag-metrics.middleware');
+    const { initializeMetricsModel } = require('./middleware/insights-metrics.middleware');
     const model = await initializeMetricsModel();
     
     if (model) {
+      // Generate a valid UUID for the test
+      const { v4: uuidv4 } = require('uuid');
+      const testUserId = uuidv4(); // Generate a proper UUID instead of using a string
+      
       // Try a direct insertion
       await model.create({
-        userId: 'test-user-id',
-        queryId: 'test-query-id',
+        id: uuidv4(), // Generate another UUID for the record ID
+        userId: testUserId,
+        queryId: `test-query-id-${Date.now()}`,
         query: 'Test query',
         queryType: 'test',
-        usedRag: true,
-        cachedResponse: true,
-        processingTime: 100,
-        documentCount: 5,
+        responseTime: 100,
+        success: true,
+        errorMessage: null,
         createdAt: new Date()
       });
-      console.log('✅ RAG metrics test record created successfully');
+      console.log('✅ Insight metrics test record created successfully');
+      
+      // Store a flag that insights metrics are available
+      app.set('insightMetricsAvailable', true);
     } else {
-      console.log('❌ RAG metrics model initialization failed');
+      console.log('⚠️ Insight metrics model initialization failed, will use fallback metrics');
+      app.set('insightMetricsAvailable', false);
     }
   } catch (error) {
-    console.error('❌ RAG metrics test failed:', error);
+    console.error('❌ Insight metrics test failed:', error);
+    
+    // Even if the test fails, we'll continue with the app startup
+    console.log('Continuing server startup despite metrics test failure');
+    app.set('insightMetricsAvailable', false);
   }
 };
-
-// Run the test on startup
-testRagMetrics();
 
 // General API rate limiter
 const apiLimiter = rateLimit({
@@ -86,7 +99,9 @@ app.use(cors({
 }));
 app.use(express.json());
 app.use(requestLogger(logger));
-app.use(ragMetricsMiddleware);
+
+// Apply insights metrics middleware (instead of RAG metrics)
+app.use(insightMetricsMiddleware);
 
 // Apply rate limiting to /api except webhooks
 app.use('/api', (req, res, next) => {
@@ -102,8 +117,10 @@ app.use('/api/webhooks', webhookRoutes);
 app.use('/api', healthRoutes);
 app.use('/api/diagnostics', diagnosticsRoutes);
 app.use('/api/admin', adminRoutes);
-app.use('/api/clients', clientRoutes); // Add client routes
-app.use('/api/rag-metrics', ragMetricsRoutes);
+app.use('/api/clients', clientRoutes);
+
+// Use the new insights metrics routes
+app.use('/api/insights/metrics', insightMetricsRoutes);
 
 // Mobile v1 routes
 app.use('/api/v1/notifications', notificationRoutes);
@@ -170,6 +187,9 @@ const server = app.listen(PORT, () => {
     `Server running on port ${PORT} in ${process.env.NODE_ENV || 'development'} mode`
   );
 });
+
+// Run the insights metrics test after server starts
+testInsightMetrics();
 
 // Graceful shutdown on unhandled rejections
 process.on('unhandledRejection', err => {
