@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { Card, Table, Form, Button, Alert, Spinner, Badge, Tabs, Tab, Row, Col } from 'react-bootstrap';
 import { Bar, BarChart, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import axios from 'axios';
+import { insightsMetricsService } from '../../services/insightsMetrics.service';
 import logger from '../../utils/logger';
 
 /**
@@ -20,31 +20,79 @@ const UserInsightMetrics = () => {
   
   // Fetch user metrics
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setLoading(true);
-        
-        // Fetch user metrics
-        const response = await axios.get('/api/insights/metrics/users');
-        const userData = response.data.data;
-        
-        setUserMetrics(userData);
-        setLoading(false);
-        
-        if (userData.length > 0) {
-          setSelectedUser(userData[0]);
-        }
-        
-        logger.info(`Loaded user insight metrics for ${userData.length} users`);
-      } catch (err) {
-        setError(err.message || 'Failed to load user metrics');
-        setLoading(false);
-        logger.error('Error fetching user insight metrics:', err);
-      }
-    };
-    
     fetchData();
   }, []);
+  
+  // Function to fetch data from API using the service
+  const fetchData = async () => {
+    try {
+      setLoading(true);
+      
+      // Fetch user metrics using the service
+      const userData = await insightsMetricsService.getUserMetrics();
+      
+      setUserMetrics(userData);
+      setLoading(false);
+      
+      if (userData.length > 0) {
+        setSelectedUser(userData[0]);
+      }
+      
+      logger.info(`Loaded user insight metrics for ${userData.length} users`);
+    } catch (error) {
+      logger.error('Error fetching user insight metrics:', error);
+      
+      // Check for authentication issues
+      if (error.message && error.message.includes('permission')) {
+        setError('Authentication error: Please ensure you are logged in as an admin user');
+      } else {
+        setError(error.message || 'Failed to load user metrics');
+      }
+      
+      // Use mock data for development/preview only if we have no data
+      if (process.env.NODE_ENV !== 'production' && userMetrics.length === 0) {
+        const mockData = generateMockUserData();
+        setUserMetrics(mockData);
+        if (mockData.length > 0) {
+          setSelectedUser(mockData[0]);
+        }
+        logger.info('Using mock user metrics data for preview');
+      }
+      
+      setLoading(false);
+    }
+  };
+
+  // Generate mock user data for development/preview
+  const generateMockUserData = () => {
+    return Array.from({ length: 8 }).map((_, i) => ({
+      userId: `user-${i + 1}`,
+      name: `Test User ${i + 1}`,
+      email: `user${i + 1}@example.com`,
+      queryCount: Math.floor(Math.random() * 200) + 50,
+      successCount: Math.floor(Math.random() * 180) + 40,
+      failedCount: Math.floor(Math.random() * 10),
+      avgResponseTime: Math.floor(Math.random() * 300) + 300,
+      successRate: `${(Math.random() * 10 + 90).toFixed(1)}`,
+      lastActive: new Date(Date.now() - Math.floor(Math.random() * 7 * 24 * 60 * 60 * 1000)).toISOString(),
+      mostCommonQueryType: ['financial', 'budgeting', 'saving', 'spending'][Math.floor(Math.random() * 4)],
+      queryTypes: { 
+        financial: Math.floor(Math.random() * 50) + 10,
+        budgeting: Math.floor(Math.random() * 40) + 5,
+        saving: Math.floor(Math.random() * 30) + 5,
+        spending: Math.floor(Math.random() * 20) + 5
+      },
+      recentQueries: Array.from({ length: 5 }).map((_, j) => ({
+        queryId: `query-${i + 1}-${j + 1}`,
+        query: ['How can I save money?', 'What are my spending patterns?', 'How to budget better?'][Math.floor(Math.random() * 3)],
+        queryType: ['financial', 'budgeting', 'saving', 'spending'][Math.floor(Math.random() * 4)],
+        processingTime: Math.floor(Math.random() * 500) + 300,
+        createdAt: new Date(Date.now() - Math.floor(Math.random() * 14 * 24 * 60 * 60 * 1000)).toISOString()
+      })),
+      activityByHour: Array(24).fill(0).map(() => Math.floor(Math.random() * 5)),
+      activityByDay: Array(7).fill(0).map(() => Math.floor(Math.random() * 8))
+    }));
+  };
   
   // Handle user selection for detailed view
   const handleSelectUser = (user) => {
@@ -143,10 +191,10 @@ const UserInsightMetrics = () => {
           <Table responsive striped hover className='table-light'>
             <thead>
               <tr>
-                <th onClick={() => setSortBy('name')}>User</th>
-                <th onClick={() => setSortBy('queryCount')}>Queries</th>
-                <th onClick={() => setSortBy('avgResponseTime')}>Avg Response Time</th>
-                <th onClick={() => setSortBy('lastActive')}>Last Active</th>
+                <th onClick={() => setSortBy('name')} className="cursor-pointer">User</th>
+                <th onClick={() => setSortBy('queryCount')} className="cursor-pointer">Queries</th>
+                <th onClick={() => setSortBy('avgResponseTime')} className="cursor-pointer">Avg Response Time</th>
+                <th onClick={() => setSortBy('lastActive')} className="cursor-pointer">Last Active</th>
                 <th>Actions</th>
               </tr>
             </thead>

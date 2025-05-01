@@ -36,7 +36,18 @@ api.interceptors.request.use(
     const token = localStorage.getItem('token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
+      
+      // Log that we're attaching the token
+      logger.debug('Attaching Authorization token to request', {
+        url: config.url,
+        tokenLength: token.length,
+      });
+    } else {
+      logger.warn('No authentication token found in localStorage', {
+        url: config.url
+      });
     }
+    
     return config;
   },
   (error) => {
@@ -50,6 +61,7 @@ api.interceptors.response.use(
   (response) => {
     logger.info('API Response', {
       status: response.status,
+      url: response.config.url,
       data: response.data
     });
     return response;
@@ -60,40 +72,58 @@ api.interceptors.response.use(
       // The request was made and the server responded with a status code
       logger.error('API Error Response', {
         status: error.response.status,
+        url: error.config.url,
         data: error.response.data,
         headers: error.response.headers
       });
 
       switch (error.response.status) {
         case 401: // Unauthorized
-          logger.warn('Unauthorized access - redirecting to login');
-          localStorage.removeItem('token');
-          window.location.href = '/login';
+          logger.warn('Unauthorized access - redirecting to login', {
+            url: error.config.url
+          });
+          // Only redirect to login if not already on the login page
+          if (!window.location.pathname.includes('/login')) {
+            localStorage.removeItem('token');
+            window.location.href = '/login';
+          }
           break;
         case 403: // Forbidden
-          logger.error('Access forbidden');
+          logger.error('Access forbidden', {
+            url: error.config.url
+          });
           break;
         case 404: // Not Found
-          logger.error('Requested resource not found');
+          logger.error('Requested resource not found', {
+            url: error.config.url
+          });
           break;
         case 429: // Too Many Requests
-          logger.warn('Rate limit exceeded - too many requests');
+          logger.warn('Rate limit exceeded - too many requests', {
+            url: error.config.url
+          });
           break;
         case 500: // Internal Server Error
-          logger.error('Server error occurred');
+          logger.error('Server error occurred', {
+            url: error.config.url
+          });
           break;
         default:
-          logger.error('Unexpected API error');
+          logger.error(`Unexpected API error (${error.response.status})`, {
+            url: error.config.url
+          });
       }
     } else if (error.request) {
       // The request was made but no response was received
       logger.error('No response received', {
-        request: error.request
+        request: error.request,
+        url: error.config?.url
       });
     } else {
       // Something happened in setting up the request
       logger.error('Error setting up request', {
-        message: error.message
+        message: error.message,
+        url: error.config?.url
       });
     }
 

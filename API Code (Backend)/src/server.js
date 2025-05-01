@@ -85,6 +85,19 @@ const apiLimiter = rateLimit({
   max: 100,
   standardHeaders: true,
   legacyHeaders: false,
+  // Skip rate limiting for admin users
+  skip: function (req, res) {
+    return req.auth && req.auth.role === 'admin';
+  },
+  // Custom key generator to separate limits by user
+  keyGenerator: function (req) {
+    // If authenticated, use userId for rate limit key
+    if (req.auth && req.auth.userId) {
+      return req.auth.userId;
+    }
+    // Otherwise use IP address (default behavior)
+    return req.ip;
+  },
   message: { success: false, message: 'Too many requests, please try again later.' }
 });
 
@@ -105,7 +118,29 @@ app.use(insightMetricsMiddleware);
 
 // Apply rate limiting to /api except webhooks
 app.use('/api', (req, res, next) => {
+  // Skip for webhooks
   if (req.path.startsWith('/webhooks')) return next();
+  
+  // For paths that need authentication, parse auth token first for rate limit decisions
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ') && 
+      !req.path.startsWith('/auth/login') && 
+      !req.path.startsWith('/auth/register')) {
+    
+    // Parse but don't validate the token yet - just to get the role
+    try {
+      const token = authHeader.split(' ')[1];
+      const decodedToken = jwt.decode(token);
+      if (decodedToken && decodedToken.role === 'admin') {
+        // Skip rate limiting for admin users
+        return next();
+      }
+    } catch (e) {
+      // If token parsing fails, continue with rate limiting
+    }
+  }
+  
+  // Apply rate limiting for non-admin users
   return apiLimiter(req, res, next);
 });
 

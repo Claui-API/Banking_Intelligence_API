@@ -9,6 +9,7 @@ import { Link } from 'react-router-dom';
 import logger from '../../utils/logger';
 import './Dashboard.css';
 import ApiDebugPanel from '../Debug/ApiDebugPanel';
+import ApiConnectionDiagnostics from '../Debug/ApiConnectionDiagnostics'
 
 const codeString = `// Example: Generate financial insights
 fetch('https://api.banking-intelligence.com/v1/insights/generate', {
@@ -423,7 +424,12 @@ const Dashboard = () => {
         </div>
         
         {/* Show debug panel if enabled */}
-        {showDebugPanel && <ApiDebugPanel />}
+        {showDebugPanel && (
+        <>
+          <ApiDebugPanel />
+          <ApiConnectionDiagnostics />
+        </>
+      )}
         
         {/* Show data source alert */}
         {financialData && !dataLoading && (
