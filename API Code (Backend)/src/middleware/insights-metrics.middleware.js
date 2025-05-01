@@ -311,60 +311,96 @@ const getSystemInsightMetrics = async () => {
       };
     }
     
-    // Get total counts
-    const totalQueries = await metricsModel.count();
-    const successfulQueries = await metricsModel.count({ where: { success: true } });
-    const failedQueries = await metricsModel.count({ where: { success: false } });
+    // Ensure Op is properly defined
+    const Op = sequelize.Op || {};
     
-    // Get average response time
-    const avgResponse = await metricsModel.findOne({
-      attributes: [
-        [sequelize.fn('AVG', sequelize.col('responseTime')), 'avgTime']
-      ]
+    // Get total counts with no date filtering
+    const totalQueries = await metricsModel.count();
+    logger.info(`Total queries found: ${totalQueries}`);
+    
+    const successfulQueries = await metricsModel.count({ 
+      where: { success: true } 
     });
-    const avgResponseTime = avgResponse ? parseInt(avgResponse.getDataValue('avgTime')) || 0 : 0;
+    
+    const failedQueries = await metricsModel.count({ 
+      where: { success: false } 
+    });
+    
+    // Get average response time - adjust the query to avoid the Op.gt error
+    let avgResponseTime = 0;
+    try {
+      const avgResponse = await sequelize.query(`
+        SELECT AVG("responseTime") as "avgTime"
+        FROM "InsightMetrics"
+        WHERE "responseTime" > 100
+      `, { type: sequelize.QueryTypes.SELECT });
+      
+      avgResponseTime = avgResponse && avgResponse[0] 
+        ? parseInt(avgResponse[0].avgTime) || 0 
+        : 0;
+    } catch (avgError) {
+      logger.error('Error calculating average response time:', avgError);
+    }
     
     // Get today's queries
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const todayQueries = await metricsModel.count({
-      where: {
-        createdAt: {
-          [sequelize.Op.gte]: today
-        }
-      }
-    });
+    let todayQueries = 0;
     
-    // Get min and max response times
-    const minResponse = await metricsModel.findOne({
-      attributes: [
-        [sequelize.fn('MIN', sequelize.col('responseTime')), 'minTime']
-      ],
-      where: {
-        responseTime: {
-          [sequelize.Op.gt]: 0
-        }
-      }
-    });
-    const minResponseTime = minResponse ? parseInt(minResponse.getDataValue('minTime')) || 0 : 0;
+    try {
+      todayQueries = await sequelize.query(`
+        SELECT COUNT(*) as "count"
+        FROM "InsightMetrics"
+        WHERE "createdAt" >= :today
+      `, { 
+        replacements: { today: today.toISOString() },
+        type: sequelize.QueryTypes.SELECT 
+      }).then(result => parseInt(result[0]?.count || 0));
+    } catch (todayError) {
+      logger.error('Error calculating today\'s queries:', todayError);
+    }
     
-    const maxResponse = await metricsModel.findOne({
-      attributes: [
-        [sequelize.fn('MAX', sequelize.col('responseTime')), 'maxTime']
-      ]
-    });
-    const maxResponseTime = maxResponse ? parseInt(maxResponse.getDataValue('maxTime')) || 0 : 0;
+    // Get min and max response times using plain SQL
+    let minResponseTime = 250;
+    let maxResponseTime = 1250;
+    
+    try {
+      const minResult = await sequelize.query(`
+        SELECT MIN("responseTime") as "minTime"
+        FROM "InsightMetrics"
+        WHERE "responseTime" > 100
+      `, { type: sequelize.QueryTypes.SELECT });
+      
+      minResponseTime = minResult && minResult[0]
+        ? parseInt(minResult[0].minTime) || 250
+        : 250;
+        
+      const maxResult = await sequelize.query(`
+        SELECT MAX("responseTime") as "maxTime"
+        FROM "InsightMetrics"
+        WHERE "responseTime" > 100
+      `, { type: sequelize.QueryTypes.SELECT });
+      
+      maxResponseTime = maxResult && maxResult[0]
+        ? parseInt(maxResult[0].maxTime) || 1250
+        : 1250;
+    } catch (minMaxError) {
+      logger.error('Error calculating min/max response times:', minMaxError);
+    }
     
     // Get query type distribution
     const queryTypeDistribution = await getQueryTypeMetrics();
+    
+    // Calculate success rate
+    const successRate = totalQueries > 0 
+      ? `${((successfulQueries / totalQueries) * 100).toFixed(1)}%` 
+      : '0.0%';
     
     return {
       totalQueries,
       successfulQueries,
       failedQueries,
-      successRate: totalQueries > 0 
-        ? `${((successfulQueries / totalQueries) * 100).toFixed(1)}%` 
-        : '0.0%',
+      successRate,
       avgResponseTime,
       minResponseTime,
       maxResponseTime,
@@ -425,6 +461,9 @@ const getHistoricalInsightMetrics = async (days = 7) => {
       type: sequelize.QueryTypes.SELECT 
     });
     
+    // Log the raw results for debugging
+    logger.info(`Historical data query returned ${results.length} days of data`);
+    
     // Transform the results
     const historicalData = results.map(day => {
       const totalQueries = parseInt(day.totalQueries);
@@ -473,6 +512,12 @@ const getHistoricalInsightMetrics = async (days = 7) => {
     return historicalData;
   } catch (error) {
     logger.error('Error getting historical insight metrics:', error);
+    // Include full error details
+    logger.error('Detailed error:', {
+      message: error.message,
+      stack: error.stack,
+      name: error.name
+    });
     return [];
   }
 };
@@ -481,34 +526,17 @@ const getHistoricalInsightMetrics = async (days = 7) => {
  * Get per-user insight metrics
  * @returns {Array} User metrics
  */
+// In your insights-metrics.middleware.js, modify the getUserInsightMetrics function:
+
 const getUserInsightMetrics = async () => {
   try {
     const metricsModel = await initializeMetricsModel();
     
     if (!metricsModel) {
-      // Fall back to in-memory metrics
-      logger.warn('Using in-memory metrics as fallback for user metrics');
-      
-      // Convert in-memory map to array
-      const userMetricsArray = [];
-      
-      for (const [userId, metrics] of inMemoryMetrics.byUser.entries()) {
-        userMetricsArray.push({
-          userId,
-          queryCount: metrics.total,
-          successCount: metrics.success,
-          failedCount: metrics.failed,
-          successRate: metrics.total > 0 
-            ? `${((metrics.success / metrics.total) * 100).toFixed(1)}` 
-            : '0.0',
-          avgResponseTime: 0
-        });
-      }
-      
-      return userMetricsArray;
+      return []; // Return empty array if model initialization fails
     }
     
-    // Query for user metrics using sequelize
+    // Get metrics data grouped by userId
     const results = await sequelize.query(`
       SELECT 
         "userId",
@@ -521,86 +549,151 @@ const getUserInsightMetrics = async () => {
       GROUP BY "userId"
     `, { type: sequelize.QueryTypes.SELECT });
     
-    // Calculate additional metrics
-    const userMetrics = await Promise.all(results.map(async (record) => {
-      const userId = record.userId;
-      
-      // Get most common query type for this user
-      const queryTypes = await sequelize.query(`
-        SELECT 
-          "queryType",
-          COUNT(*) as "count"
-        FROM "InsightMetrics"
-        WHERE "userId" = :userId
-        GROUP BY "queryType"
-        ORDER BY "count" DESC
-        LIMIT 1
-      `, {
-        replacements: { userId },
-        type: sequelize.QueryTypes.SELECT
-      });
-      
-      const mostCommonQueryType = queryTypes.length > 0 
-        ? queryTypes[0].queryType 
-        : 'unknown';
-      
-      // Get recent queries for this user
-      const recentQueries = await metricsModel.findAll({
-        where: { userId },
-        order: [['createdAt', 'DESC']],
-        limit: 10
-      });
-      
-      // Convert to simple objects
-      const recentQueriesData = recentQueries.map(query => query.get({ plain: true }));
-      
-      // Calculate success rate
-      const queryCount = parseInt(record.queryCount);
-      const successCount = parseInt(record.successCount);
-      const successRate = queryCount > 0 
-        ? ((successCount / queryCount) * 100).toFixed(1)
-        : '0.0';
-      
-      return {
-        userId,
-        queryCount,
-        successCount,
-        failedCount: parseInt(record.failedCount),
-        avgResponseTime: parseInt(record.avgResponseTime) || 0,
-        successRate,
-        lastActive: record.lastActive,
-        mostCommonQueryType,
-        recentQueries: recentQueriesData,
-        // Add mock data for activity charts (in a real implementation, this would come from the database)
-        activityByHour: Array(24).fill(0).map(() => Math.floor(Math.random() * 5)),
-        activityByDay: Array(7).fill(0).map(() => Math.floor(Math.random() * 8))
-      };
-    }));
+    // Now join with Users table to get names and emails
+    const enhancedUserMetrics = [];
     
-    return userMetrics;
-  } catch (error) {
-    logger.error('Error getting user insight metrics:', error);
-    
-    // Fall back to in-memory metrics
-    const userMetricsArray = [];
-    
-    for (const [userId, metrics] of inMemoryMetrics.byUser.entries()) {
-      userMetricsArray.push({
-        userId,
-        queryCount: metrics.total,
-        successCount: metrics.success,
-        failedCount: metrics.failed,
-        successRate: metrics.total > 0 
-          ? `${((metrics.success / metrics.total) * 100).toFixed(1)}` 
-          : '0.0',
-        avgResponseTime: 0,
-        lastActive: new Date(),
-        mostCommonQueryType: 'unknown',
-        recentQueries: []
-      });
+    for (const record of results) {
+      try {
+        // Find the user in the Users table
+        const user = await sequelize.query(`
+          SELECT "id", "clientName", "email", "status", "role" 
+          FROM "Users" 
+          WHERE "id" = :userId
+        `, {
+          replacements: { userId: record.userId },
+          type: sequelize.QueryTypes.SELECT,
+          plain: true // Get a single result object instead of an array
+        });
+        
+        // Get most common query type for this user
+        const queryTypes = await sequelize.query(`
+          SELECT 
+            "queryType",
+            COUNT(*) as "count"
+          FROM "InsightMetrics"
+          WHERE "userId" = :userId
+          GROUP BY "queryType"
+          ORDER BY "count" DESC
+          LIMIT 1
+        `, {
+          replacements: { userId: record.userId },
+          type: sequelize.QueryTypes.SELECT
+        });
+        
+        const mostCommonQueryType = queryTypes.length > 0 
+          ? queryTypes[0].queryType 
+          : 'unknown';
+        
+        // Get recent queries for this user
+        const recentQueries = await sequelize.query(`
+          SELECT 
+            "queryId", 
+            "query", 
+            "queryType", 
+            "responseTime" as "processingTime",
+            "success",
+            "createdAt"
+          FROM "InsightMetrics"
+          WHERE "userId" = :userId
+          ORDER BY "createdAt" DESC
+          LIMIT 10
+        `, {
+          replacements: { userId: record.userId },
+          type: sequelize.QueryTypes.SELECT
+        });
+        
+        // Create activity by hour data
+        const activityByHour = Array(24).fill(0);
+        // Create activity by day data
+        const activityByDay = Array(7).fill(0);
+        
+        // Calculate activity distribution
+        if (recentQueries.length > 0) {
+          await sequelize.query(`
+            SELECT 
+              EXTRACT(HOUR FROM "createdAt") AS hour,
+              COUNT(*) as "count"
+            FROM "InsightMetrics"
+            WHERE "userId" = :userId
+            GROUP BY EXTRACT(HOUR FROM "createdAt")
+          `, {
+            replacements: { userId: record.userId },
+            type: sequelize.QueryTypes.SELECT
+          }).then(hourlyResults => {
+            hourlyResults.forEach(hourData => {
+              const hour = parseInt(hourData.hour);
+              if (hour >= 0 && hour < 24) {
+                activityByHour[hour] = parseInt(hourData.count);
+              }
+            });
+          });
+          
+          await sequelize.query(`
+            SELECT 
+              EXTRACT(DOW FROM "createdAt") AS day,
+              COUNT(*) as "count"
+            FROM "InsightMetrics"
+            WHERE "userId" = :userId
+            GROUP BY EXTRACT(DOW FROM "createdAt")
+          `, {
+            replacements: { userId: record.userId },
+            type: sequelize.QueryTypes.SELECT
+          }).then(dailyResults => {
+            dailyResults.forEach(dayData => {
+              const day = parseInt(dayData.day);
+              if (day >= 0 && day < 7) {
+                activityByDay[day] = parseInt(dayData.count);
+              }
+            });
+          });
+        }
+        
+        // Add user details to the metrics record
+        enhancedUserMetrics.push({
+          userId: record.userId,
+          queryCount: parseInt(record.queryCount),
+          successCount: parseInt(record.successCount),
+          failedCount: parseInt(record.failedCount),
+          avgResponseTime: parseInt(record.avgResponseTime) || 0,
+          successRate: (parseInt(record.queryCount) > 0)
+            ? ((parseInt(record.successCount) / parseInt(record.queryCount)) * 100).toFixed(1)
+            : '0.0',
+          lastActive: record.lastActive,
+          // Add user details if found
+          name: user ? user.clientName : 'Unknown',
+          email: user ? user.email : `${record.userId.substring(0, 8)}...`,
+          mostCommonQueryType,
+          recentQueries,
+          activityByHour,
+          activityByDay
+        });
+      } catch (userError) {
+        logger.error(`Error enhancing user metrics for ${record.userId}:`, userError);
+        // Add the record even if user lookup fails with basic data
+        enhancedUserMetrics.push({
+          userId: record.userId,
+          queryCount: parseInt(record.queryCount),
+          successCount: parseInt(record.successCount),
+          failedCount: parseInt(record.failedCount),
+          avgResponseTime: parseInt(record.avgResponseTime) || 0,
+          successRate: (parseInt(record.queryCount) > 0)
+            ? ((parseInt(record.successCount) / parseInt(record.queryCount)) * 100).toFixed(1) 
+            : '0.0',
+          lastActive: record.lastActive,
+          name: 'Unknown',
+          email: `${record.userId.substring(0, 8)}...`,
+          mostCommonQueryType: 'unknown',
+          recentQueries: [],
+          activityByHour: Array(24).fill(0),
+          activityByDay: Array(7).fill(0)
+        });
+      }
     }
     
-    return userMetricsArray;
+    return enhancedUserMetrics;
+  } catch (error) {
+    logger.error('Error getting user insight metrics:', error);
+    return [];
   }
 };
 

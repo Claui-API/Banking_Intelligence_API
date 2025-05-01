@@ -39,45 +39,25 @@ const { validateInsightsRequest } = require('./middleware/validation');
 const { insightMetricsMiddleware } = require('./middleware/insights-metrics.middleware');
 
 // Test insights metrics on startup
-const testInsightMetrics = async () => {
+const initializeMetrics = async () => {
   try {
-    // Initialize the model
-    const { initializeMetricsModel } = require('./middleware/insights-metrics.middleware');
-    const model = await initializeMetricsModel();
+    // Initialize the metrics model
+    const metricsModel = await initializeMetricsModel();
     
-    if (model) {
-      // Generate a valid UUID for the test
-      const { v4: uuidv4 } = require('uuid');
-      const testUserId = uuidv4(); // Generate a proper UUID instead of using a string
-      
-      // Try a direct insertion
-      await model.create({
-        id: uuidv4(), // Generate another UUID for the record ID
-        userId: testUserId,
-        queryId: `test-query-id-${Date.now()}`,
-        query: 'Test query',
-        queryType: 'test',
-        responseTime: 100,
-        success: true,
-        errorMessage: null,
-        createdAt: new Date()
-      });
-      console.log('✅ Insight metrics test record created successfully');
-      
-      // Store a flag that insights metrics are available
-      app.set('insightMetricsAvailable', true);
+    if (metricsModel) {
+      // Count total records
+      const count = await metricsModel.count();
+      console.log(`✅ Initialized metrics system with ${count} records`);
     } else {
-      console.log('⚠️ Insight metrics model initialization failed, will use fallback metrics');
-      app.set('insightMetricsAvailable', false);
+      console.log('⚠️ Metrics model initialization failed');
     }
   } catch (error) {
-    console.error('❌ Insight metrics test failed:', error);
-    
-    // Even if the test fails, we'll continue with the app startup
-    console.log('Continuing server startup despite metrics test failure');
-    app.set('insightMetricsAvailable', false);
+    console.error('❌ Error initializing metrics:', error);
   }
 };
+
+// Run initialization
+initializeMetrics();
 
 // General API rate limiter
 const apiLimiter = rateLimit({
@@ -85,6 +65,19 @@ const apiLimiter = rateLimit({
   max: 100,
   standardHeaders: true,
   legacyHeaders: false,
+  // Skip rate limiting for admin users
+  skip: function (req, res) {
+    return req.auth && req.auth.role === 'admin';
+  },
+  // Custom key generator to separate limits by user
+  keyGenerator: function (req) {
+    // If authenticated, use userId for rate limit key
+    if (req.auth && req.auth.userId) {
+      return req.auth.userId;
+    }
+    // Otherwise use IP address (default behavior)
+    return req.ip;
+  },
   message: { success: false, message: 'Too many requests, please try again later.' }
 });
 
@@ -105,7 +98,29 @@ app.use(insightMetricsMiddleware);
 
 // Apply rate limiting to /api except webhooks
 app.use('/api', (req, res, next) => {
+  // Skip for webhooks
   if (req.path.startsWith('/webhooks')) return next();
+  
+  // For paths that need authentication, parse auth token first for rate limit decisions
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ') && 
+      !req.path.startsWith('/auth/login') && 
+      !req.path.startsWith('/auth/register')) {
+    
+    // Parse but don't validate the token yet - just to get the role
+    try {
+      const token = authHeader.split(' ')[1];
+      const decodedToken = jwt.decode(token);
+      if (decodedToken && decodedToken.role === 'admin') {
+        // Skip rate limiting for admin users
+        return next();
+      }
+    } catch (e) {
+      // If token parsing fails, continue with rate limiting
+    }
+  }
+  
+  // Apply rate limiting for non-admin users
   return apiLimiter(req, res, next);
 });
 
@@ -120,7 +135,7 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/clients', clientRoutes);
 
 // Use the new insights metrics routes
-app.use('/api/insights/metrics', insightMetricsRoutes);
+app.use('/api/insights-metrics', insightMetricsRoutes);
 
 // Mobile v1 routes
 app.use('/api/v1/notifications', notificationRoutes);
@@ -187,9 +202,6 @@ const server = app.listen(PORT, () => {
     `Server running on port ${PORT} in ${process.env.NODE_ENV || 'development'} mode`
   );
 });
-
-// Run the insights metrics test after server starts
-testInsightMetrics();
 
 // Graceful shutdown on unhandled rejections
 process.on('unhandledRejection', err => {

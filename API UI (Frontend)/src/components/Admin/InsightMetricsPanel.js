@@ -1,24 +1,19 @@
-// src/components/Admin/InsightMetricsPanel.js
+// src/components/Admin/InsightMetricsPanel.js - Fixed implementation
 import React, { useState, useEffect } from 'react';
 import { Card, Row, Col, Alert, Button, Table, Spinner } from 'react-bootstrap';
 import { 
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, 
   Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell 
 } from 'recharts';
-import axios from 'axios';
+import { insightsMetricsService } from '../../services/insightsMetrics.service';
 import logger from '../../utils/logger';
 
-/**
- * Component to display AI Insights performance metrics
- * for admin dashboard
- */
+// Component to display AI Insights performance metrics
 const InsightMetricsPanel = () => {
   const [metrics, setMetrics] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
-  
-  // Historical metrics for charts
   const [historicalMetrics, setHistoricalMetrics] = useState([]);
   
   // Fetch metrics on component mount
@@ -26,21 +21,22 @@ const InsightMetricsPanel = () => {
     fetchMetrics();
   }, []);
   
-  // Function to fetch metrics from API
+  // Fetch metrics from API using the insightsMetricsService
   const fetchMetrics = async () => {
     try {
       setRefreshing(true);
       
-      // Fetch system metrics
-      const metricsResponse = await axios.get('/api/insights/metrics/system');
-      const metricsData = metricsResponse.data.data;
+      // Use insightsMetricsService instead of ragMetricsService
+      const metricsData = await insightsMetricsService.getSystemMetrics();
       setMetrics(metricsData);
+      
+      logger.info('InsightMetricsPanel: Metrics data loaded successfully');
       
       // Also fetch historical data
       try {
-        const historicalResponse = await axios.get('/api/insights/metrics/history');
-        const historicalData = historicalResponse.data.data;
+        const historicalData = await insightsMetricsService.getHistoricalMetrics(7);
         if (historicalData && Array.isArray(historicalData)) {
+          logger.info(`Loaded ${historicalData.length} historical data points`);
           setHistoricalMetrics(historicalData);
         }
       } catch (historyError) {
@@ -50,11 +46,67 @@ const InsightMetricsPanel = () => {
       setLoading(false);
     } catch (err) {
       logger.error('Error fetching insight metrics:', err);
-      setError(err.message || 'Failed to fetch metrics');
+      
+      if (err.message && err.message.includes('permission')) {
+        setError('Authentication error: Please ensure you are logged in as an admin user');
+      } else {
+        setError(err.message || 'Failed to fetch metrics');
+      }
+      
+      // Use mock data for development/preview only if we have no data
+      if (process.env.NODE_ENV !== 'production' && !metrics) {
+        setMetrics(getMockMetrics());
+        setHistoricalMetrics(getMockHistoricalData());
+        logger.info('Using mock metrics data for preview');
+      }
+      
       setLoading(false);
     } finally {
       setRefreshing(false);
     }
+  };
+  
+  // Generate mock data for development/preview
+  const getMockMetrics = () => {
+    return {
+      totalQueries: 1432,
+      successfulQueries: 1398,
+      failedQueries: 34,
+      successRate: '97.6%',
+      avgResponseTime: 456,
+      minResponseTime: 250,
+      maxResponseTime: 1750,
+      todayQueries: Math.floor(Math.random() * 100 + 50),
+      queryTypeDistribution: {
+        financial: 487,
+        budgeting: 302,
+        saving: 276,
+        spending: 201,
+        investing: 89,
+        debt: 77
+      },
+      timestamp: new Date().toISOString()
+    };
+  };
+  
+  // Generate mock historical data for development/preview
+  const getMockHistoricalData = () => {
+    const data = [];
+    const now = new Date();
+    
+    for (let i = 6; i >= 0; i--) {
+      const date = new Date();
+      date.setDate(now.getDate() - i);
+      
+      data.push({
+        date: date.toISOString().split('T')[0],
+        totalQueries: Math.floor(Math.random() * 100) + 50,
+        avgResponseTime: Math.floor(Math.random() * 200) + 350,
+        responseTime: Math.floor(Math.random() * 200) + 350
+      });
+    }
+    
+    return data;
   };
   
   // Format historical data for display
@@ -93,6 +145,10 @@ const InsightMetricsPanel = () => {
       </Card>
     );
   }
+  
+  // Format the data for display
+  const formattedHistoricalData = formatHistoricalData(historicalMetrics);
+  const pieData = preparePieData();
   
   return (
     <Card className="mb-4">
@@ -161,7 +217,7 @@ const InsightMetricsPanel = () => {
                   <Card.Body>
                     <ResponsiveContainer width="100%" height={300}>
                       <LineChart
-                        data={historicalMetrics}
+                        data={formattedHistoricalData}
                         margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
                       >
                         <CartesianGrid strokeDasharray="3 3" />
@@ -181,7 +237,6 @@ const InsightMetricsPanel = () => {
                           dataKey="avgResponseTime"
                           name="Avg Response Time (ms)"
                           stroke="#28a745"
-                          yAxisId={1}
                         />
                       </LineChart>
                     </ResponsiveContainer>
@@ -193,7 +248,7 @@ const InsightMetricsPanel = () => {
                   <Card.Body>
                     <ResponsiveContainer width="100%" height={300}>
                       <BarChart
-                        data={historicalMetrics}
+                        data={formattedHistoricalData}
                         margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
                       >
                         <CartesianGrid strokeDasharray="3 3" />
@@ -218,7 +273,7 @@ const InsightMetricsPanel = () => {
                     <ResponsiveContainer width="100%" height={300}>
                       <PieChart>
                         <Pie
-                          data={preparePieData()}
+                          data={pieData}
                           cx="50%"
                           cy="50%"
                           labelLine={false}
@@ -227,7 +282,7 @@ const InsightMetricsPanel = () => {
                           fill="#8884d8"
                           dataKey="value"
                         >
-                          {preparePieData().map((entry, index) => (
+                          {pieData.map((entry, index) => (
                             <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                           ))}
                         </Pie>
