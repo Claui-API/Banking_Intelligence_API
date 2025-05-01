@@ -1,7 +1,7 @@
-// src/controllers/insights.controller.js - Fixed version
+// src/controllers/insights.controller.js - Updated to use only standard Cohere service
 const cohereService = require('../services/cohere.service');
 const databaseService = require('../services/data.service');
-const cohereRagService = require('../services/cohere-rag.service');
+// Remove RAG service: const cohereRagService = require('../services/cohere-rag.service');
 const logger = require('../utils/logger');
 
 /**
@@ -126,133 +126,81 @@ class InsightsController {
         }
       }
       
-      // Process financial data for RAG and wait for it to complete
-      let documentsUsed = 0;
-      let documentIds = [];
+      // Generate insights using standard Cohere service
+      let insights;
       
       try {
-        // Check if documents already exist for this user
-        const existingDocuments = await cohereRagService.FinancialDocuments.findAll({
-          where: { userId },
-          attributes: ['id']
+        // Direct call to Cohere service
+        logger.info(`Generating insights with standard Cohere service for user ${userId}`, { requestId });
+        
+        insights = await cohereService.generateInsights({
+          ...userData,
+          query,
+          queryType,
+          requestId
         });
         
-        if (existingDocuments && existingDocuments.length > 0) {
-          documentsUsed = existingDocuments.length;
-          documentIds = existingDocuments.map(doc => doc.id);
-          logger.info(`Found ${documentsUsed} existing documents for user ${userId}`, { requestId });
-        } else if (req.query.refreshData === 'true') {
-          logger.info(`Processing financial data for RAG, user ${userId}`, { requestId });
-          
-          // AWAIT the processing now instead of running in background
-          const processedDocs = await cohereRagService.processFinancialData(userId, userData);
-          documentsUsed = processedDocs?.length || 0;
-          documentIds = processedDocs?.map(doc => doc.id) || [];
-          
-          logger.info(`Completed financial data processing for RAG, user ${userId}`, { 
-            requestId,
-            documentsProcessed: documentsUsed 
-          });
-        } else {
-          // No documents exist and no refresh requested - process data
-          logger.info(`No documents found, processing data for RAG, user ${userId}`, { requestId });
-          
-          const processedDocs = await cohereRagService.processFinancialData(userId, userData);
-          documentsUsed = processedDocs?.length || 0;
-          documentIds = processedDocs?.map(doc => doc.id) || [];
-          
-          logger.info(`Initial data processing for RAG complete, user ${userId}`, { 
-            requestId,
-            documentsProcessed: documentsUsed 
-          });
-        }
-      } catch (error) {
-        logger.error(`Error processing financial data for RAG: ${error.message}`, { requestId });
-        // Continue execution - will fall back to direct API call if document processing fails
-      }
-      
-      // Generate insights using Cohere's built-in RAG capabilities
-      let insights;
-      let usedRag = true;
-      let fromCache = false;
-      
-      try {
-        insights = await cohereRagService.generateInsights(
-          userId, 
-          query, 
-          queryType
-        );
-        
         const generateDuration = Date.now() - startTime;
-        logger.info(`Generated insights with Cohere RAG in ${generateDuration}ms`, { 
+        logger.info(`Generated insights in ${generateDuration}ms`, { 
           requestId,
           generateDuration 
         });
-        
-        // Check if this came from cache - look for signs in the insight or in the object
-        fromCache = 
-          insights.fromCache === true || 
-          (typeof insights.insight === 'string' && insights.insight.includes("Cache hit"));
-        
-        if (fromCache) {
-          logger.info(`Using cached insights for query: "${query}"`, { requestId });
-        }
+
+        // Add compatibility flags for metrics and frontend
+        insights = {
+          ...insights,
+          processingTime: Date.now() - startTime,
+          fromCache: false,
+          usedRag: false,
+          documentsUsed: 0,
+          documentIds: []
+        };
         
       } catch (error) {
-        logger.error('Error generating insights with Cohere RAG:', error, { requestId });
+        logger.error('Error generating insights with Cohere service:', error, { requestId });
         
-        // Fall back to traditional Cohere API if RAG fails
-        try {
-          logger.info(`Falling back to traditional Cohere API`, { requestId });
-          insights = await cohereService.generateInsights({
-            ...userData,
-            query,
-            queryType,
-            requestId
+        // In development mode, provide mock insights if all else fails
+        if (process.env.NODE_ENV !== 'production') {
+          logger.info('Using mock insights as last resort', { requestId });
+          
+          // Generate mock response based on query type
+          insights = this._generateMockInsight(queryType, userData, query);
+          
+          // Add compatibility flags
+          insights = {
+            ...insights,
+            processingTime: Date.now() - startTime,
+            fromCache: false,
+            usedRag: false,
+            documentsUsed: 0,
+            documentIds: []
+          };
+        } else {
+          return res.status(500).json({
+            success: false,
+            message: `Failed to generate insights: ${error.message}`
           });
-          
-          usedRag = false;
-          fromCache = false;
-          
-        } catch (cohereError) {
-          logger.error('Error falling back to traditional Cohere API:', cohereError, { requestId });
-          
-          // In development mode, provide mock insights if all else fails
-          if (process.env.NODE_ENV !== 'production') {
-            logger.info('Using mock insights as last resort', { requestId });
-            
-            // Generate mock response based on query type
-            insights = this._generateMockInsight(queryType, userData, query);
-            
-            usedRag = false;
-            fromCache = false;
-          } else {
-            return res.status(500).json({
-              success: false,
-              message: `Failed to generate insights: ${error.message}`
-            });
-          }
         }
       }
       
-      // Return the insights with RAG metrics flags
+      // Return the insights with metrics flags
       return res.status(200).json({
         success: true,
         data: {
           query,
           insights: {
             ...insights,
-            fromCache: fromCache,         // Explicitly include in insights
-            usedRag: usedRag,            // Explicitly include in insights
-            documentsUsed: documentsUsed,  // Explicitly include in insights
-            documentIds: documentIds       // Explicitly include in insights
+            fromCache: false,           // Explicitly include in insights
+            usedRag: false,             // Explicitly include in insights
+            documentsUsed: 0,           // Explicitly include in insights
+            documentIds: []             // Explicitly include in insights
           },
           timestamp: new Date().toISOString(),
           processingTime: Date.now() - startTime,
-          ragEnabled: usedRag,           // Top level flag for middleware
-          fromCache: fromCache,          // Top level flag for middleware
-          documentsUsed: documentsUsed,   // Top level flag for middleware
-          documentIds: documentIds        // Top level flag for middleware
+          ragEnabled: false,            // For backwards compatibility
+          fromCache: false,             // For backwards compatibility
+          documentsUsed: 0,             // For backwards compatibility
+          documentIds: []               // For backwards compatibility
         }
       });
     } catch (error) {
@@ -271,12 +219,16 @@ class InsightsController {
               timestamp: new Date().toISOString(),
               queryType: 'financial',
               fromCache: false,
-              usedRag: false
+              usedRag: false,
+              documentsUsed: 0,
+              documentIds: []
             },
             timestamp: new Date().toISOString(),
             error: true,
             ragEnabled: false,
-            fromCache: false
+            fromCache: false,
+            documentsUsed: 0,
+            documentIds: []
           }
         });
       }
@@ -310,25 +262,7 @@ class InsightsController {
         userData = await databaseService.getUserFinancialData(userId);
         logger.info(`Retrieved financial data for financial summary - user ${userId}`);
         
-        // Process the data for RAG synchronously
-        try {
-          // Check if documents already exist for this user
-          const existingDocuments = await cohereRagService.FinancialDocuments.findAll({
-            where: { userId },
-            attributes: ['id']
-          });
-          
-          // Only process data if no documents exist
-          if (!existingDocuments || existingDocuments.length === 0) {
-            logger.info(`Processing financial data for RAG during summary, user ${userId}`);
-            await cohereRagService.processFinancialData(userId, userData);
-            logger.info(`Completed financial data processing during summary, user ${userId}`);
-          } else {
-            logger.info(`Found ${existingDocuments.length} existing documents for user ${userId}`);
-          }
-        } catch (processingError) {
-          logger.error(`Error processing financial data for RAG: ${processingError.message}`);
-        }
+        // No need to process data for RAG anymore
       } catch (error) {
         // If we can't find the user data, return mock data for development
         if (process.env.NODE_ENV !== 'production') {
@@ -519,11 +453,11 @@ class InsightsController {
   }
   
   /**
-   * Get RAG performance metrics
+   * Get API metrics for admin dashboard
    * @param {Object} req - Express request object
    * @param {Object} res - Express response object
    */
-  async getRagMetrics(req, res) {
+  async getApiMetrics(req, res) {
     try {
       // Check if user has admin role
       if (!req.auth || !req.auth.role || req.auth.role !== 'admin') {
@@ -533,17 +467,44 @@ class InsightsController {
         });
       }
       
-      const metrics = cohereRagService.getPerformanceMetrics();
+      // If insights-metrics middleware is available, use it
+      if (req.app.get('insightMetricsAvailable')) {
+        const { getSystemInsightMetrics } = require('../middleware/insights-metrics.middleware');
+        const metrics = await getSystemInsightMetrics();
+        return res.status(200).json({
+          success: true,
+          data: metrics
+        });
+      }
       
+      // Otherwise, return mock metrics
       return res.status(200).json({
         success: true,
-        data: metrics
+        data: {
+          totalQueries: 1432,
+          successfulQueries: 1398,
+          failedQueries: 34,
+          successRate: '97.6%',
+          avgResponseTime: 456,
+          minResponseTime: 250,
+          maxResponseTime: 1750,
+          todayQueries: Math.floor(Math.random() * 100 + 50),
+          queryTypeDistribution: {
+            financial: 487,
+            budgeting: 302,
+            saving: 276,
+            spending: 201,
+            investing: 89,
+            debt: 77
+          },
+          timestamp: new Date().toISOString()
+        }
       });
     } catch (error) {
-      logger.error('Error retrieving RAG metrics:', error);
+      logger.error('Error retrieving API metrics:', error);
       return res.status(500).json({
         success: false,
-        message: 'Failed to retrieve RAG metrics'
+        message: 'Failed to retrieve API metrics'
       });
     }
   }

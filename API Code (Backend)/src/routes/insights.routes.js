@@ -20,10 +20,12 @@ router.post('/generate', authMiddleware, insightsController.generateInsights);
 router.get('/summary', authMiddleware, insightsController.getFinancialSummary);
 
 /**
- * @route GET /api/insights/rag-metrics
- * @desc Get RAG system performance metrics
+ * @route GET /api/insights/metrics/:metric
+ * @desc Redirect to metrics routes (for backward compatibility)
  * @access Private (Admin only)
  */
-router.get('/rag-metrics', authMiddleware, authorize('admin'), insightsController.getRagMetrics);
+router.get('/metrics/:metric', authMiddleware, authorize('admin'), (req, res) => {
+  res.redirect(`/api/insights/metrics/${req.params.metric}`);
+});
 
 module.exports = router;

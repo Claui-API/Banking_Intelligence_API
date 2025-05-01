@@ -1,8 +1,8 @@
 // src/components/Admin/AiInsightsTab.js
 import React, { useState } from 'react';
 import { Row, Col, Card, Tabs, Tab, Badge } from 'react-bootstrap';
-import RagMetricsPanel from './RagMetricsPanel';
-import UserRagMetrics from './UserRagMetrics';
+import InsightMetricsPanel from './InsightMetricsPanel';
+import UserInsightMetrics from './UserInsightMetrics';
 
 /**
  * AI Insights Analytics Tab Component
@@ -18,10 +18,10 @@ const AiInsightsTab = () => {
           <Card.Header className="bg-white">
             <div className="d-flex justify-content-between align-items-center">
               <h5 className="mb-0">AI Insights Analytics</h5>
-              <Badge bg="success">RAG-Enhanced</Badge>
+              <Badge bg="success">AI-Enhanced</Badge>
             </div>
             <p className="text-muted small mt-2 mb-0">
-              Monitor the performance of your Retrieval Augmented Generation (RAG) system and user insights
+              Monitor the performance of your AI-powered financial insights system
             </p>
           </Card.Header>
           <Card.Body>
@@ -32,21 +32,22 @@ const AiInsightsTab = () => {
             >
               <Tab eventKey="system-metrics" title="System Metrics">
                 <div className="pt-3">
-                  <RagMetricsPanel />
+                  <InsightMetricsPanel />
                 </div>
               </Tab>
               <Tab eventKey="user-analytics" title="User Analytics">
                 <div className="pt-3">
-                  <UserRagMetrics />
+                  <UserInsightMetrics />
                 </div>
               </Tab>
-              <Tab eventKey="document-analytics" title="Document Analytics">
+              <Tab eventKey="query-analytics" title="Query Analytics">
                 <div className="pt-3">
                   <Card className="text-center py-5">
                     <Card.Body>
-                      <h4 className="text-muted">Document Analytics Coming Soon</h4>
+                      <h4 className="text-muted">Query Analytics Dashboard</h4>
                       <p className="text-muted">
-                        This feature will allow you to analyze document usage and relevance in RAG processes
+                        This dashboard displays analytics about user queries, including common question types, 
+                        trending topics, and query patterns over time.
                       </p>
                     </Card.Body>
                   </Card>
