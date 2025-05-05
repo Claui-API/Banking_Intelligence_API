@@ -5,8 +5,8 @@ import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { insightsService } from '../../services/insights';
 import { useAuth } from '../../context/AuthContext';
 import Documentation from '../Documentation/Documentation';
-import InsightsPanel from './InsightsPanel';
 import './Dashboard.css';
+import APIKeysManagement from '../APITokenManagement';
 
 // Example code for the playground
 const apiExampleCode = `// Example: Generate financial insights
@@ -33,7 +33,8 @@ fetch('https://bankingintelligenceapi.com/api/insights/generate', {
 
 const Dashboard = () => {
   const { user, clientStatus } = useAuth();
-  const [activeSection, setActiveSection] = useState('playground');
+  // Changed the default active section from 'playground' to 'home'
+  const [activeSection, setActiveSection] = useState('home');
   const [apiKey, setApiKey] = useState(() => {
     return user?.token || localStorage.getItem('token') || 'No API key found';
   });
@@ -46,11 +47,6 @@ const Dashboard = () => {
       timestamp: new Date().toISOString()
     }
   ]);
-  
-  // State for insights panel
-  const [insightsData, setInsightsData] = useState(null);
-  const [insightLoading, setInsightLoading] = useState(false);
-  const [insightError, setInsightError] = useState(null);
   
   // Add a ref to track the latest request ID
   const latestRequestIdRef = useRef(null);
@@ -296,184 +292,150 @@ const Dashboard = () => {
           </div>
         );
         
-      case 'insights':
+      case 'api-keys':
+        return <APIKeysManagement />;
+        
+      case 'documentation':
+        return <Documentation />;
+        
+      case 'home':
+      default:
         return (
-          <Container fluid className="py-4 px-4">
-            <h2 className="text-white mb-4">Financial Insights</h2>
-            <Row>
-              <Col md={8}>
-                <InsightsPanel 
-                  insightsData={insightsData}
-                  onInsightRequest={handleInsightRequest}
-                  loading={insightLoading}
-                  error={insightError}
-                />
+          <Container fluid className="py-5">
+            <Row className="justify-content-center text-center mb-5">
+              <Col md={10}>
+                <h2 className="text-white mb-4">Welcome to Banking Intelligence API</h2>
+                <p className="text-white mb-4">Add AI-powered financial insights to your banking application</p>
+                <div className="mt-4">
+                  <Button 
+                    variant="success" 
+                    size="lg"
+                    className="me-3"
+                    onClick={() => setActiveSection('playground')}
+                  >
+                    Try the Playground
+                  </Button>
+                  <Button 
+                    variant="outline-light"
+                    size="lg"
+                    onClick={() => setActiveSection('documentation')}
+                  >
+                    Read Documentation
+                  </Button>
+                </div>
               </Col>
-              <Col md={4}>
-                <Card className="content-card h-100">
-                  <Card.Header>Financial Tips</Card.Header>
-                  <Card.Body>
-                    <h5>Improving Your Finances</h5>
-                    <p>Use the insights panel to get personalized financial advice based on your data.</p>
-                    <hr className="border-secondary" />
-                    <h6>Popular Queries</h6>
-                    <ul className="mb-4">
-                      <li>Spending analysis by category</li>
-                      <li>Budget recommendations</li>
-                      <li>Savings opportunities</li>
-                      <li>Investment strategies</li>
-                    </ul>
+            </Row>
+            
+            <Row className="mb-5 justify-content-center">
+              <Col md={10}>
+                <Card className="bg-black text-white">
+                  <Card.Body className=" bg-black p-4">
+                    <h3 className="text-success justify-content-center mb-3">Getting Started</h3>
+                    <p>
+                      The Banking Intelligence API lets you enhance your application with AI-powered financial insights.
+                      Analyze transactions, provide budget recommendations, and help your users make better financial decisions.
+                    </p>
+                    
+                    <Row className="mt-4 text-center">
+                      <Col md={4}>
+                        <div className="mb-3">
+                          <i className="bi bi-chat-dots text-success" style={{ fontSize: '2rem' }}></i>
+                        </div>
+                        <h5>Try the Playground</h5>
+                        <p className="small">Test queries and see responses in real-time</p>
+                      </Col>
+                      <Col md={4}>
+                        <div className="mb-3">
+                          <i className="bi bi-key text-success" style={{ fontSize: '2rem' }}></i>
+                        </div>
+                        <h5>Get Your API Keys</h5>
+                        <p className="small">Generate keys to integrate with your app</p>
+                      </Col>
+                      <Col md={4}>
+                        <div className="mb-3">
+                          <i className="bi bi-book text-success" style={{ fontSize: '2rem' }}></i>
+                        </div>
+                        <h5>Read the Docs</h5>
+                        <p className="small">Explore API endpoints and implementation</p>
+                      </Col>
+                    </Row>
+                  </Card.Body>
+                </Card>
+              </Col>
+            </Row>
+            
+            <h3 className="text-white text-center mb-4">Explore Our Features</h3>
+            
+            <Row className="g-4">
+              <Col lg={4}>
+                <Card className="h-100 bg-black text-white border border-success feature-card">
+                  <Card.Body className='bg-black'>
+                    <div className="d-flex align-items-center mb-3">
+                      <div className="feature-icon bg-success bg-opacity-25 me-3">
+                        <i className="bi bi-chat-text text-success" style={{ fontSize: '1.5rem' }}></i>
+                      </div>
+                      <h4 className="mb-0">Playground</h4>
+                    </div>
+                    <p>
+                      Test our AI in an interactive chat interface. Ask financial questions and see how the API responds in real-time.
+                    </p>
                     <Button 
                       variant="outline-success" 
+                      className="mt-auto w-100"
                       onClick={() => setActiveSection('playground')}
-                      className="w-100"
                     >
-                      <i className="bi bi-chat-text me-2"></i>
-                      Try Conversational Mode
+                      Open Playground
+                    </Button>
+                  </Card.Body>
+                </Card>
+              </Col>
+              
+              <Col lg={4}>
+                <Card className="h-100 bg-black text-white border border-success feature-card">
+                  <Card.Body className='bg-black'>
+                    <div className="d-flex align-items-center mb-3">
+                      <div className="feature-icon bg-success bg-opacity-25 me-3">
+                        <i className="bi bi-key-fill text-success" style={{ fontSize: '1.5rem' }}></i>
+                      </div>
+                      <h4 className="mb-0">API Keys</h4>
+                    </div>
+                    <p>
+                      Manage your API keys and credentials for integrating the Banking Intelligence API with your applications and monitor your usage.
+                    </p>
+                    <Button 
+                      variant="outline-success" 
+                      className="mt-auto w-100"
+                      onClick={() => setActiveSection('api-keys')}
+                    >
+                      Manage API Keys
+                    </Button>
+                  </Card.Body>
+                </Card>
+              </Col>
+              
+              <Col lg={4}>
+                <Card className="h-100 bg-black text-white border border-success feature-card">
+                  <Card.Body className='bg-black'>
+                    <div className="d-flex align-items-center mb-3">
+                      <div className="feature-icon bg-success bg-opacity-25 me-3">
+                        <i className="bi bi-book-half text-success" style={{ fontSize: '1.5rem' }}></i>
+                      </div>
+                      <h4 className="mb-0">Documentation</h4>
+                    </div>
+                    <p>
+                      Comprehensive guides, API references, and code examples to help you integrate our financial AI into your app.
+                    </p>
+                    <Button 
+                      variant="outline-success" 
+                      className="mt-auto w-100"
+                      onClick={() => setActiveSection('documentation')}
+                    >
+                      View Documentation
                     </Button>
                   </Card.Body>
                 </Card>
               </Col>
             </Row>
-          </Container>
-        );
-        
-      case 'api-keys':
-        return (
-          <Container fluid className="py-4 px-4">
-            <h2 className="text-white mb-4">API Keys</h2>
-            
-            <Card className="content-card mb-4">
-              <Card.Header>Your API Keys</Card.Header>
-              <Card.Body>
-                <div className="mb-4">
-                  <h5 className="mb-3">Live API Key</h5>
-                  <InputGroup className="mb-3">
-                    <Form.Control
-                      type="text"
-                      value={apiKey}
-                      readOnly
-                      className="input-dark text-success"
-                    />
-                    <Button variant="outline-secondary" onClick={handleCopyKey}>
-                      <i className="bi bi-clipboard"></i> Copy
-                    </Button>
-                  </InputGroup>
-                  <div className="alert-warning p-3 rounded">
-                    <i className="bi bi-exclamation-triangle-fill me-2"></i>
-                    Keep your API keys secret. They can be used to make API calls on behalf of your account.
-                  </div>
-                </div>
-                
-                <h5 className="mb-3">Client Credentials</h5>
-                <Row>
-                  <Col md={6}>
-                    <Form.Group className="mb-3">
-                      <Form.Label>Client ID</Form.Label>
-                      <InputGroup>
-                        <Form.Control
-                          type="text"
-                          value={localStorage.getItem('clientId') || 'client_id_not_found'}
-                          readOnly
-                          className="input-dark"
-                        />
-                        <Button variant="outline-secondary" onClick={() => navigator.clipboard.writeText(localStorage.getItem('clientId') || '')}>
-                          <i className="bi bi-clipboard"></i> Copy
-                        </Button>
-                      </InputGroup>
-                    </Form.Group>
-                  </Col>
-                  
-                  <Col md={6}>
-                    <Form.Group className="mb-3">
-                      <Form.Label>Client Secret</Form.Label>
-                      <InputGroup>
-                        <Form.Control
-                          type="password"
-                          value="••••••••••••••••••••"
-                          readOnly
-                          className="input-dark"
-                        />
-                        <Button variant="outline-secondary">
-                          <i className="bi bi-eye"></i>
-                        </Button>
-                        <Button variant="outline-secondary">
-                          <i className="bi bi-clipboard"></i> Copy
-                        </Button>
-                      </InputGroup>
-                    </Form.Group>
-                  </Col>
-                </Row>
-                
-                <Button variant="success" onClick={() => alert("This would generate a new API key in a real implementation.")}>
-                  <i className="bi bi-key-fill me-2"></i>
-                  Generate New API Key
-                </Button>
-              </Card.Body>
-            </Card>
-            
-            <Card className="content-card">
-              <Card.Header>API Key Usage</Card.Header>
-              <Card.Body>
-                <p>Your API key carries many privileges. Please keep it secure! Do not share your API key in publicly accessible areas such as GitHub, client-side code, or in requests to our API.</p>
-                
-                <h5 className="mt-4 mb-3">Authentication</h5>
-                <p>Use your API key to authenticate requests to the Banking Intelligence API by providing it in the Authorization header:</p>
-                <div className="code-snippet mb-4">
-                  <code>Authorization: Bearer YOUR_API_KEY</code>
-                </div>
-                
-                <div className="usage-stats p-4 bg-dark rounded">
-                  <h6>This Month's Usage</h6>
-                  <div className="d-flex justify-content-between align-items-center">
-                    <div className="progress flex-grow-1 me-3" style={{ height: '10px' }}>
-                      <div 
-                        className="progress-bar bg-success" 
-                        role="progressbar" 
-                        style={{ width: '25%' }}
-                        aria-valuenow="25" 
-                        aria-valuemin="0" 
-                        aria-valuemax="100"
-                      ></div>
-                    </div>
-                    <div className="text-white">
-                      250 / 1,000
-                    </div>
-                  </div>
-                  <div className="text-muted mt-2">
-                    API calls reset on June 1st
-                  </div>
-                </div>
-              </Card.Body>
-            </Card>
-          </Container>
-        );
-        
-      case 'documentation':
-        return <Documentation />;
-        
-      default:
-        return (
-          <Container fluid className="py-5 text-center">
-            <h2 className="text-white mb-4">Welcome to Banking Intelligence API</h2>
-            <p className="text-muted">Select a section from the sidebar to get started.</p>
-            <div className="mt-4">
-              <Button 
-                variant="success" 
-                size="lg"
-                className="me-3"
-                onClick={() => setActiveSection('playground')}
-              >
-                Try the Playground
-              </Button>
-              <Button 
-                variant="outline-light"
-                size="lg"
-                onClick={() => setActiveSection('documentation')}
-              >
-                Read Documentation
-              </Button>
-            </div>
           </Container>
         );
     }
@@ -484,8 +446,14 @@ const Dashboard = () => {
       {/* Sidebar */}
       <div className="sidebar">
         <div className="sidebar-header">
-          <h4 className="text-success mb-0">Banking Intelligence API</h4>
-          <div className="preview-badge">Preview</div>
+          <h4 className="text-success mb-0">
+            <a href="/" className="logo-link">
+              <img 
+                src="/images/chat-icon.png" 
+                alt="AI Assistant" 
+                className="sidebar-image-clau"/>
+            </a>
+          </h4>
         </div>
         
         <Nav className="sidebar-nav">
@@ -493,49 +461,29 @@ const Dashboard = () => {
             onClick={() => setActiveSection('home')} 
             className={`sidebar-link ${activeSection === 'home' ? 'active' : ''}`}
           >
+            <i className="bi bi-house-door me-2"></i>
             Home
           </Nav.Link>
           <Nav.Link 
             onClick={() => setActiveSection('documentation')} 
             className={`sidebar-link ${activeSection === 'documentation' ? 'active' : ''}`}
           >
+            <i className="bi bi-book me-2"></i>
             Documentation
           </Nav.Link>
           <Nav.Link 
             onClick={() => setActiveSection('playground')} 
             className={`sidebar-link ${activeSection === 'playground' ? 'active' : ''}`}
           >
+            <i className="bi bi-chat-text me-2"></i>
             Playground
-          </Nav.Link>
-          <Nav.Link 
-            onClick={() => setActiveSection('dashboard')} 
-            className={`sidebar-link ${activeSection === 'dashboard' ? 'active' : ''}`}
-          >
-            Dashboard
           </Nav.Link>
           <Nav.Link 
             onClick={() => setActiveSection('api-keys')} 
             className={`sidebar-link ${activeSection === 'api-keys' ? 'active' : ''}`}
           >
+            <i className="bi bi-key me-2"></i>
             API Keys
-          </Nav.Link>
-          <Nav.Link 
-            onClick={() => setActiveSection('insights')} 
-            className={`sidebar-link ${activeSection === 'insights' ? 'active' : ''}`}
-          >
-            Insights
-          </Nav.Link>
-          <Nav.Link 
-            onClick={() => setActiveSection('usage')} 
-            className={`sidebar-link ${activeSection === 'usage' ? 'active' : ''}`}
-          >
-            Usage
-          </Nav.Link>
-          <Nav.Link 
-            onClick={() => setActiveSection('team-members')} 
-            className={`sidebar-link ${activeSection === 'team-members' ? 'active' : ''}`}
-          >
-            Team Members
           </Nav.Link>
         </Nav>
       </div>

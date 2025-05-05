@@ -229,6 +229,16 @@
   display: block;
 }
 
+.sidebar-image-clau {
+  width: 50%;
+  height: 50%;
+  object-fit: cover;
+  border-radius: 50%;
+  display: block;
+  margin: 0 auto;
+  align-self: center;
+}
+
 .send-button {
   align-self: flex-end;
   width: 50px;
