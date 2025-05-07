@@ -1,18 +1,16 @@
-// Modified Dashboard.js with improved API data handling
 import React, { useState, useEffect, useRef } from 'react';
+import { Container, Row, Col, Card, Button, Nav, Form, InputGroup, Badge, Dropdown } from 'react-bootstrap';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import { Row, Col, Card, Button, Form, InputGroup, Container, Alert, Badge } from 'react-bootstrap';
 import { insightsService } from '../../services/insights';
 import { useAuth } from '../../context/AuthContext';
-import { Link } from 'react-router-dom';
-import logger from '../../utils/logger';
+import Documentation from '../Documentation/Documentation';
 import './Dashboard.css';
-import ApiDebugPanel from '../Debug/ApiDebugPanel';
-import ApiConnectionDiagnostics from '../Debug/ApiConnectionDiagnostics'
+import APIKeysManagement from '../APITokenManagement';
 
-const codeString = `// Example: Generate financial insights
-fetch('https://api.banking-intelligence.com/v1/insights/generate', {
+// Example code for the playground
+const apiExampleCode = `// Example: Generate financial insights
+fetch('https://bankingintelligenceapi.com/api/insights/generate', {
   method: 'POST',
   headers: {
     'Content-Type': 'application/json',
@@ -33,191 +31,82 @@ fetch('https://api.banking-intelligence.com/v1/insights/generate', {
   })
 })`;
 
-const CodeBlock = () => (
-  <div className="bg-black p-3 rounded" style={{ overflowX: 'auto' }}>
-    <SyntaxHighlighter language="javascript" style={oneDark} wrapLongLines customStyle={{ fontSize: '0.9rem', margin: 0 }}>
-      {codeString}
-    </SyntaxHighlighter>
-  </div>
-);
-
 const Dashboard = () => {
-  const { user, clientStatus, refreshClientStatus, isLoading } = useAuth();
-  
-  // State for UI
-  const [error, setError] = useState('');
-  const [refreshing, setRefreshing] = useState(false);
-  const [showDebugPanel, setShowDebugPanel] = useState(process.env.NODE_ENV !== 'production');
-  
-  // Data state
-  const [financialData, setFinancialData] = useState(null);
-  const [dataLoading, setDataLoading] = useState(true);
-  const [dataError, setDataError] = useState(null);
-  
-  // Initialize with the token from auth context or localStorage
+  const { user, clientStatus } = useAuth();
+  // Changed the default active section from 'playground' to 'home'
+  const [activeSection, setActiveSection] = useState('home');
   const [apiKey, setApiKey] = useState(() => {
     return user?.token || localStorage.getItem('token') || 'No API key found';
   });
-  
-  // Store client credentials
-  const [clientId, setClientId] = useState(() => {
-    return localStorage.getItem('clientId') || 'No Client ID found';
-  });
-  
-  const [clientSecret, setClientSecret] = useState('');
-  const [showSecret, setShowSecret] = useState(false);
-  
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
-  const [insightsData, setInsightsData] = useState(null);
+  const [chatMessages, setChatMessages] = useState([
+    {
+      role: 'assistant',
+      content: 'Hello! I am CLAU, your Banking Intelligence Assistant. How can I help you with your financial data today?',
+      timestamp: new Date().toISOString()
+    }
+  ]);
   
   // Add a ref to track the latest request ID
   const latestRequestIdRef = useRef(null);
-  // Track last refresh time
-  const lastRefreshTime = useRef(0);
+  const chatEndRef = useRef(null);
   
-  // Load financial data on mount
-  useEffect(() => {
-    fetchFinancialData();
-  }, []);
-  
-  // Only refresh status on initial mount, not on every render
-  useEffect(() => {
-    // Skip automatic refresh if refreshed recently (within last 15 seconds)
-    const now = Date.now();
-    if (now - lastRefreshTime.current > 15000) {
-      handleStatusRefresh();
-    }
-  }, []); // Empty dependency array means this runs once on mount
-  
-  // Update API key if user or token changes
-  useEffect(() => {
-    if (user?.token) {
-      setApiKey(user.token);
-    } else {
-      const storedToken = localStorage.getItem('token');
-      if (storedToken) {
-        setApiKey(storedToken);
-      }
-    }
-    
-    // Try to load client secret if it exists
-    const storedSecret = localStorage.getItem('clientSecret');
-    if (storedSecret) {
-      setClientSecret(storedSecret);
-    }
-  }, [user]);
+  // Sample suggested prompts
+  const suggestedPrompts = [
+    "How much did I spend on dining out last month?",
+    "What are my top expense categories?",
+    "How can I improve my savings rate?",
+    "Am I on track with my budget this month?"
+  ];
 
-  // Fetch financial data
-  const fetchFinancialData = async () => {
-    setDataLoading(true);
-    setDataError(null);
-    
-    try {
-      const data = await insightsService.getFinancialSummary();
-      
-      // Log detailed information about the data
-      logger.info('Financial data fetched successfully', {
-        dataPresent: !!data,
-        hasAccounts: !!(data && data.accounts),
-        hasTransactions: !!(data && data.recentTransactions),
-        accountCount: data?.accounts?.length || 0,
-        transactionCount: data?.recentTransactions?.length || 0,
-        isMockData: checkIfMockData(data)
-      });
-      
-      setFinancialData(data);
-    } catch (err) {
-      logger.error('Error fetching financial data', err);
-      setDataError(err.message || 'Failed to load financial data');
-    } finally {
-      setDataLoading(false);
-    }
-  };
-  
-  // Check if the data appears to be mock data
-  const checkIfMockData = (data) => {
-    if (!data) return false;
-    
-    // Check if accounts have mock in their IDs
-    const hasMockAccounts = data.accounts && 
-      data.accounts.some(acc => 
-        acc.accountId && acc.accountId.includes('mock')
-      );
-    
-    // Check if transactions have mock in their IDs
-    const hasMockTransactions = data.recentTransactions && 
-      data.recentTransactions.some(tx => 
-        tx.transactionId && tx.transactionId.includes('mock')
-      );
-    
-    return hasMockAccounts || hasMockTransactions;
-  };
-
-  // Handle manual status refresh with debounce
-  const handleStatusRefresh = async () => {
-    // Prevent rapid multiple refreshes
-    const now = Date.now();
-    if (now - lastRefreshTime.current < 5000) { // 5 second cooldown
-      logger.info('Skipping refresh, too soon after last refresh');
-      return;
-    }
-    
-    if (!refreshClientStatus) return;
-    
-    try {
-      setRefreshing(true);
-      lastRefreshTime.current = now;
-      
-      await refreshClientStatus();
-      logger.info(`Manual status refresh completed, status: ${clientStatus}`);
-      
-    } catch (error) {
-      logger.error('Error refreshing status:', error);
-    } finally {
-      setTimeout(() => {
-        setRefreshing(false);
-      }, 1000); // Ensure refresh indicator shows for at least 1 second for UX
-    }
-  };
+  useEffect(() => {
+    // Scroll to bottom of chat when messages change
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [chatMessages]);
   
   // Generate a unique request ID
   const generateRequestId = () => {
     return `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   };
   
-  const handleDemoRequest = async (queryText, requestId) => {
-    // If no requestId is provided, generate a new one
-    const currentRequestId = requestId || generateRequestId();
-    latestRequestIdRef.current = currentRequestId;
+  // Handle message submission
+  const handleSendMessage = async () => {
+    if (!query.trim()) return;
     
+    // Add user message
+    setChatMessages(prev => [...prev, {
+      role: 'user',
+      content: query,
+      timestamp: new Date().toISOString()
+    }]);
+    
+    // Show typing indicator
     setLoading(true);
-    setError('');
     
-    // Reset insights data to empty string to start streaming
-    setInsightsData({
-      insights: '',
-      timestamp: new Date().toISOString(),
-      requestId: currentRequestId,
-      isStreaming: true
-    });
+    // Generate a request ID
+    const requestId = generateRequestId();
+    latestRequestIdRef.current = requestId;
+    
+    // Store the current query
+    const currentQuery = query;
+    
+    // Clear input
+    setQuery('');
     
     try {
-      // Use your insightsService to make the API call
-      const data = await insightsService.generateInsights(queryText, currentRequestId);
+      // Call insights service
+      const data = await insightsService.generateInsights(currentQuery, requestId);
       
-      // Check if this request is still the latest
-      if (latestRequestIdRef.current !== currentRequestId) {
-        logger.info('Ignoring outdated API response', {
-          requestId: currentRequestId,
-          latestRequestId: latestRequestIdRef.current
-        });
+      // Check if this is still the latest request
+      if (latestRequestIdRef.current !== requestId) {
+        console.log('Ignoring outdated response');
         return;
       }
       
-      // Extract the insight text
+      // Extract insights
       let insightText = '';
-      if (data.insights) {
+      if (data && data.insights) {
         if (typeof data.insights === 'string') {
           insightText = data.insights;
         } else if (data.insights.insight) {
@@ -227,644 +116,383 @@ const Dashboard = () => {
         } else {
           insightText = JSON.stringify(data.insights);
         }
+      } else {
+        insightText = "I'm unable to generate insights at the moment. Please try again later.";
       }
       
-      // Now let's simulate streaming even though we have the full response
-      // This gives a better UX than showing it all at once
-      const words = insightText.split(' ');
-      const chunks = [];
-      let currentChunk = [];
-      
-      // Create chunks of 2-5 words for natural streaming
-      words.forEach(word => {
-        currentChunk.push(word);
-        if (currentChunk.length >= (Math.floor(Math.random() * 4) + 2)) {
-          chunks.push(currentChunk.join(' '));
-          currentChunk = [];
-        }
-      });
-      
-      // Add any remaining words
-      if (currentChunk.length > 0) {
-        chunks.push(currentChunk.join(' '));
-      }
-      
-      // Stream the chunks with a variable delay
-      let streamedText = '';
-      let chunkIndex = 0;
-      
-      const streamNextChunk = () => {
-        // Stop if this is no longer the latest request
-        if (latestRequestIdRef.current !== currentRequestId) {
-          logger.info('Stopping stream for outdated request', {
-            requestId: currentRequestId,
-            latestRequestId: latestRequestIdRef.current
-          });
-          return;
-        }
-        
-        if (chunkIndex < chunks.length) {
-          // Add the next chunk
-          streamedText += (chunkIndex > 0 ? ' ' : '') + chunks[chunkIndex];
-          
-          // Update the insights data with the current streamed text
-          setInsightsData({
-            insights: streamedText,
-            timestamp: data.timestamp || new Date().toISOString(),
-            requestId: currentRequestId,
-            isStreaming: true
-          });
-          
-          chunkIndex++;
-          
-          // Random delay between chunks for natural typing effect (30-90ms)
-          const delay = Math.floor(Math.random() * 60) + 30;
-          setTimeout(streamNextChunk, delay);
-        } else {
-          // Streaming complete
-          setInsightsData({
-            insights: streamedText,
-            timestamp: data.timestamp || new Date().toISOString(),
-            requestId: currentRequestId,
-            isStreaming: false
-          });
-          setLoading(false);
-          
-          logger.info('API insight streaming completed', {
-            query: queryText,
-            requestId: currentRequestId
-          });
-        }
-      };
-      
-      // Start streaming after a short initial delay (simulates AI "thinking")
-      setTimeout(streamNextChunk, 300);
-      
+      // Add assistant message with the response
+      setChatMessages(prev => [...prev, {
+        role: 'assistant',
+        content: insightText,
+        timestamp: new Date().toISOString()
+      }]);
     } catch (error) {
-      logger.error('Error generating insights:', error);
-      setError(`Failed to generate insights: ${error.message}`);
-      setLoading(false);
+      console.error('Error generating insights:', error);
       
-      // Clear the streaming state
-      setInsightsData(null);
+      // Add error message
+      setChatMessages(prev => [...prev, {
+        role: 'assistant',
+        content: "I'm sorry, but I encountered an error while generating insights. Please try again later.",
+        timestamp: new Date().toISOString()
+      }]);
+    } finally {
+      setLoading(false);
     }
   };
   
+  const handleKeyPress = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSendMessage();
+    }
+  };
+  
+  // Handle using a suggested prompt
+  const handleSuggestedPrompt = (prompt) => {
+    setQuery(prompt);
+    
+    // Focus input field after setting value
+    document.getElementById('chat-input')?.focus();
+  };
+  
+  // Handle insights request from insights panel
+  const handleInsightRequest = async (query, requestId) => {
+    setInsightLoading(true);
+    setInsightError(null);
+    
+    try {
+      const data = await insightsService.generateInsights(query, requestId);
+      setInsightsData(data);
+    } catch (error) {
+      console.error('Error generating insights:', error);
+      setInsightError(error.message || 'Failed to generate insights');
+    } finally {
+      setInsightLoading(false);
+    }
+  };
+  
+  // Handle copy to clipboard
   const handleCopyKey = () => {
     navigator.clipboard.writeText(apiKey);
-    logger.info('API key copied to clipboard');
   };
   
-  const handleCopyClientId = () => {
-    navigator.clipboard.writeText(clientId);
-    logger.info('Client ID copied to clipboard');
-  };
-  
-  const handleCopyClientSecret = () => {
-    navigator.clipboard.writeText(clientSecret);
-    logger.info('Client secret copied to clipboard');
-  };
-  
-  const handleSaveClientSecret = () => {
-    if (clientSecret) {
-      localStorage.setItem('clientSecret', clientSecret);
-      alert('Client secret saved!');
-    }
-  };
-  
-  const handleRegenerateKey = (e) => {
-    e.preventDefault();
-    // In a real application, this would make an API call to regenerate the token
-    alert("In a production environment, this would regenerate your API key.");
-  };
-  
-  // Format insight text to handle markdown-style formatting
-  const formatInsight = (text) => {
-    if (!text) return '';
-    
-    try {
-      // Replace ** bold ** with actual bold text
-      const boldFormatted = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-      
-      // Handle line breaks
-      const withLineBreaks = boldFormatted
-        .replace(/\n\n/g, '<br /><br />')
-        .replace(/\n/g, '<br />');
-      
-      // Handle bullet points
-      const withBullets = withLineBreaks.replace(/- (.*?)(<br \/>|$)/g, '<li>$1</li>');
-      
-      // Wrap bullet points in ul if they exist
-      const finalText = withBullets.includes('<li>') 
-        ? withBullets.replace(/(<li>.*?<\/li>)+/g, '<ul>$&</ul>') 
-        : withBullets;
-      
-      return finalText;
-    } catch (formatError) {
-      logger.error('Insight Formatting', formatError);
-      return text;
-    }
-  };
-  
-  // Extract insight text from various possible formats
-  const getInsightText = () => {
-    if (!insightsData || !insightsData.insights) return '';
-    
-    // Try different possible formats
-    if (typeof insightsData.insights === 'string') {
-      return insightsData.insights;
-    }
-    
-    if (insightsData.insights.insight) {
-      return insightsData.insights.insight;
-    }
-    
-    if (insightsData.insights.text) {
-      return insightsData.insights.text;
-    }
-    
-    // Last resort: stringify the object
-    return JSON.stringify(insightsData.insights);
-  };
-  
-  const suggestedQuestions = [
-    "How is my spending compared to last month?",
-    "Where am I spending the most money?",
-    "How can I improve my financial health?",
-    "Am I on track for my savings goals?"
-  ];
-  
-  const handleSuggestedQuestion = (suggestion) => {
-    try {
-      setQuery(suggestion);
-      // Generate a new request ID for the suggested question
-      const requestId = generateRequestId();
-      logger.info(`Selected suggested insight: ${suggestion}`, {
-        requestId: requestId
-      });
-      
-      handleDemoRequest(suggestion, requestId);
-    } catch (error) {
-      logger.error('Suggested Question Handling', error);
-    }
-  };
-  
-  return (
-    <Container fluid className="py-4 px-md-4 px-2 bg-black">
-      <div className="mx-auto" style={{ maxWidth: '1200px' }}>
-        <div className="d-flex justify-content-between align-items-center mb-4">
-          <h1 className="mb-0 text-white">API Dashboard</h1>
-          <Button 
-            variant={showDebugPanel ? "danger" : "success"} 
-            size="sm"
-            onClick={() => setShowDebugPanel(!showDebugPanel)}
-          >
-            {showDebugPanel ? "Hide Debug Panel" : "Show Debug Panel"}
-          </Button>
-        </div>
-        
-        {/* Show debug panel if enabled */}
-        {showDebugPanel && (
-        <>
-          <ApiDebugPanel />
-          <ApiConnectionDiagnostics />
-        </>
-      )}
-        
-        {/* Show data source alert */}
-        {financialData && !dataLoading && (
-          <Alert variant={checkIfMockData(financialData) ? "warning" : "success"} className="mb-4">
-            <div className="d-flex align-items-center">
-              <i className={`bi ${checkIfMockData(financialData) ? "bi-exclamation-triangle" : "bi-check-circle"} fs-4 me-3`}></i>
-              <div>
-                {checkIfMockData(financialData) ? (
-                  <>
-                    <h5 className="mb-1">Using Mock Data</h5>
-                    <p className="mb-0">Your application is currently using mock data instead of real data from the API.</p>
-                    <Button 
-                      variant="outline-dark" 
-                      size="sm" 
-                      className="mt-2"
-                      onClick={fetchFinancialData}
-                    >
-                      Retry Fetching Real Data
-                    </Button>
-                  </>
-                ) : (
-                  <>
-                    <h5 className="mb-1">Using Real API Data</h5>
-                    <p className="mb-0">Your application is successfully retrieving real data from the API.</p>
-                  </>
-                )}
+  // Render sections based on active section
+  const renderContent = () => {
+    switch(activeSection) {
+      case 'playground':
+        return (
+          <div className="playground-layout">
+            {/* Playground Header */}
+            <div className="playground-header">
+              <div className="d-flex justify-content-between align-items-center">
+                <h2 className="text-white">Banking Intelligence Playground</h2>
+                <div className="api-status">
+                  <Badge bg="success" className="d-flex align-items-center">
+                    <span className="status-indicator me-1"></span>
+                    API Status: Online
+                  </Badge>
+                </div>
               </div>
             </div>
-          </Alert>
-        )}
-        
-        {/* Show approval status alert if pending */}
-        {clientStatus === 'pending' && (
-          <Alert variant="warning" className="mb-4">
-            <div className="d-flex align-items-center">
-              <i className="bi bi-exclamation-triangle-fill fs-4 me-3"></i>
-              <div>
-                <h5 className="mb-1">Your API access is pending approval</h5>
-                <p className="mb-0">Your client account needs administrator approval before you can use the API. Please check back later or contact support.</p>
-                <Button 
-                  variant="outline-dark" 
-                  size="sm" 
-                  className="mt-2"
-                  onClick={handleStatusRefresh}
-                  disabled={refreshing || isLoading}
-                >
-                  {refreshing ? (
-                    <>
-                      <span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
-                      Refreshing...
-                    </>
-                  ) : 'Refresh Status'}
-                </Button>
-              </div>
-            </div>
-          </Alert>
-        )}
-        
-        {/* Client Credentials section */}
-        <Card className="bg-white text-black border-secondary mb-4">
-          <Card.Header className="bg-white d-flex justify-content-between align-items-center">
-            <span>Client Credentials</span>
-            <div className="d-flex align-items-center gap-2">
-              {clientStatus !== 'unknown' && (
-                <Badge bg={clientStatus === 'active' ? 'success' : 'warning'} className="text-capitalize">
-                  {clientStatus}
-                </Badge>
-              )}
-              <Button 
-                variant="outline-secondary"
-                size="sm"
-                onClick={handleStatusRefresh}
-                disabled={refreshing || isLoading}
-              >
-                {refreshing ? (
-                  <>
-                    <span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
-                  </>
-                ) : (
-                  <i className="bi bi-arrow-clockwise"></i>
+            
+            {/* Chat Interface */}
+            <div className="chat-container">
+              <div className="chat-messages">
+                {chatMessages.map((message, index) => (
+                  <div 
+                    key={index} 
+                    className={`message ${message.role === 'assistant' ? 'assistant-message' : 'user-message'}`}
+                  >
+                    <div className="message-avatar">
+                      {message.role === 'assistant' ? (
+                        <img 
+                          src="/images/chat-icon.png" 
+                          alt="AI Assistant" 
+                          className="ai-avatar-image" 
+                        />
+                      ) : 'You'}
+                    </div>
+                    <div className="message-content">
+                      <pre className="message-text">{message.content}</pre>
+                      <div className="message-timestamp">
+                        {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                {loading && (
+                  <div className="message assistant-message">
+                    <div className="message-avatar">
+                      <img 
+                        src="/images/chat-icon.png" 
+                        alt="AI Assistant" 
+                        className="ai-avatar-image" 
+                      />
+                    </div>
+                    <div className="message-content">
+                      <div className="typing-indicator">
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                      </div>
+                    </div>
+                  </div>
                 )}
-              </Button>
-            </div>
-          </Card.Header>
-          <Card.Body>
-            <Row>
-              <Col md={6}>
-                <Form.Group className="mb-3">
-                  <Form.Label>Client ID</Form.Label>
-                  <InputGroup>
-                    <Form.Control
-                      type="text"
-                      value={clientId}
-                      readOnly
-                      className="bg-white text-success border-primary text-truncate"
-                    />
-                    <Button variant="outline-secondary" onClick={handleCopyClientId}>
-                      <i className="bi bi-clipboard"></i> Copy
-                    </Button>
-                  </InputGroup>
-                </Form.Group>
-              </Col>
+                <div ref={chatEndRef} />
+              </div>
               
-              <Col md={6}>
-                <Form.Group className="mb-3">
-                  <Form.Label>Client Secret</Form.Label>
-                  <InputGroup>
-                    <Form.Control
-                      type={showSecret ? "text" : "password"}
-                      value={clientSecret}
-                      onChange={(e) => setClientSecret(e.target.value)}
-                      placeholder="Enter your client secret"
-                      className="bg-white text-success border-primary"
-                    />
-                    <Button variant="outline-secondary" onClick={() => setShowSecret(!showSecret)}>
-                      <i className={`bi bi-eye${showSecret ? '-slash' : ''}`}></i>
-                    </Button>
-                    <Button variant="outline-secondary" onClick={handleCopyClientSecret} disabled={!clientSecret}>
-                      <i className="bi bi-clipboard"></i> Copy
-                    </Button>
-                    <Button variant="outline-primary" onClick={handleSaveClientSecret} disabled={!clientSecret}>
-                      Save
-                    </Button>
-                  </InputGroup>
-                  <Form.Text className="text-muted">
-                    {clientSecret ? 'Client secret will be saved locally for this session.' : 'Enter your client secret to save it for this session.'}
-                  </Form.Text>
-                </Form.Group>
-              </Col>
-            </Row>
-          </Card.Body>
-        </Card>
-        
-        {/* API Key section */}
-        <Card className="bg-white text-black border-secondary mb-4">
-          <Card.Header className="bg-white">Your API Key</Card.Header>
-          <Card.Body>
-            <InputGroup className="mb-3">
-              <Form.Control
-                type="text"
-                value={apiKey}
-                readOnly
-                className="bg-white text-success border-primary text-truncate"
-              />
-              <Button variant="outline-secondary" onClick={handleCopyKey}>
-                <i className="bi bi-clipboard"></i> Copy
-              </Button>
-            </InputGroup>
-            <Card.Text className="text-black small">
-              Use this API key to authenticate your requests to the Banking Intelligence API.
-              Keep this key secret and secure. <a href="#" className="text-success" onClick={handleRegenerateKey}>Regenerate key</a> if compromised.
-            </Card.Text>
-          </Card.Body>
-        </Card>
-        
-        {/* Conditional rendering for the rest of the Dashboard */}
-        {clientStatus === 'active' ? (
-          <>
-            {/* API Testing Console */}
-            <Card className="bg-white text-black border-secondary mb-4">
-              <Card.Header className="bg-white">API Testing Console</Card.Header>
-              <Card.Body>
-                <Card.Text>
-                  Test the Banking Intelligence API with sample queries to see how it generates insights.
-                </Card.Text>
-                
-                <Form onSubmit={(e) => {
-                  e.preventDefault();
-                  if (query.trim()) {
-                    const requestId = generateRequestId();
-                    handleDemoRequest(query, requestId);
-                  }
-                }} className="mb-4 text-black">
-                  <Form.Label>Sample Financial Query:</Form.Label>
-                  <InputGroup>
-                    <Form.Control
-                      type="text"
-                      value={query}
-                      onChange={(e) => setQuery(e.target.value)}
-                      placeholder="E.g., How can I save more money?"
-                      className="bg-white text-success border-secondary input-white-placeholder"
-                    />
-                    <Button 
-                      variant="success" 
-                      type="submit"
-                      disabled={loading || !query.trim()}
-                    >
-                      {loading ? (
-                        <>
-                          <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
-                          <span>Loading...</span>
-                        </>
-                      ) : 'Send'}
-                    </Button>
-                  </InputGroup>
-                  <Form.Text className="text-secondary">
-                    This uses real API calls to generate insights based on your query.
-                  </Form.Text>
-                </Form>
-                
-                <Card className="bg-white border-secondary">
-                  <Card.Header className="bg-white text-black">Response</Card.Header>
-                  <Card.Body>
-                    {(loading && !insightsData) ? (
-                      <div className="text-center p-4">
-                        <div className="spinner-border text-success" role="status">
-                          <span className="visually-hidden">Loading...</span>
-                        </div>
-                        <p className="text-secondary mt-3">Analyzing your financial data...</p>
-                      </div>
-                    ) : error ? (
-                      <div className="alert alert-danger">
-                        <i className="bi bi-exclamation-triangle me-2"></i>
-                        {error}
-                      </div>
-                    ) : insightsData ? (
-                      <>
-                        <div className="text-muted small mb-2">
-                          {new Date(insightsData.timestamp).toLocaleString()}
-                        </div>
-                        <div className="insights-content text-success">
-                          <div dangerouslySetInnerHTML={{ __html: formatInsight(getInsightText()) }} />
-                          {insightsData.isStreaming && (
-                            <span className="cursor-blink">|</span>
-                          )}
-                        </div>
-                      </>
-                    ) : (
-                      <div className="text-center text-secondary p-4">
-                        <i className="bi bi-lightbulb me-2"></i>
-                        Submit a query to see AI-generated financial insights.
-                      </div>
-                    )}
-                  </Card.Body>
-                </Card>
-                
-                <div className="mt-4">
-                  <h6 className="text-secondary mb-3">Try these sample questions:</h6>
-                  <div className="d-grid gap-2">
-                    {suggestedQuestions.map((suggestion, index) => (
-                      <Button
+              {/* Suggested Prompts */}
+              {chatMessages.length < 3 && (
+                <div className="suggested-prompts">
+                  <p className="text-white mb-2">Try asking:</p>
+                  <div className="d-flex flex-wrap gap-2">
+                    {suggestedPrompts.map((prompt, index) => (
+                      <Button 
                         key={index}
-                        variant="outline-secondary"
+                        variant="outline-success"
                         size="sm"
-                        className="bg-success bg-opacity-50 text-black text-start"
-                        onClick={() => handleSuggestedQuestion(suggestion)}
-                        disabled={loading}
+                        onClick={() => handleSuggestedPrompt(prompt)}
+                        className="suggested-prompt-btn"
                       >
-                        {suggestion}
+                        {prompt}
                       </Button>
                     ))}
                   </div>
                 </div>
-              </Card.Body>
-            </Card>
-            
-            {/* Financial Data Display */}
-            {financialData && (
-              <Card className="bg-white text-black border-secondary mb-4">
-                <Card.Header className="bg-white">Financial Summary</Card.Header>
-                <Card.Body>
-                  {dataLoading ? (
-                    <div className="text-center p-4">
-                      <div className="spinner-border text-success" role="status">
-                        <span className="visually-hidden">Loading...</span>
-                      </div>
-                      <p className="text-secondary mt-3">Loading financial data...</p>
-                    </div>
-                  ) : dataError ? (
-                    <Alert variant="danger">
-                      <i className="bi bi-exclamation-triangle me-2"></i>
-                      {dataError}
-                    </Alert>
-                  ) : (
-                    <>
-                      <Row className="mb-4">
-                        <Col md={6} lg={3} className="mb-3">
-                          <div className="bg-light p-3 rounded">
-                            <div className="text-muted small mb-2">Total Balance</div>
-                            <div className="h4">
-                              ${financialData.totalBalance?.toFixed(2) || '0.00'}
-                            </div>
-                          </div>
-                        </Col>
-                        <Col md={6} lg={3} className="mb-3">
-                          <div className="bg-light p-3 rounded">
-                            <div className="text-muted small mb-2">Net Worth</div>
-                            <div className="h4">
-                              ${financialData.netWorth?.toFixed(2) || '0.00'}
-                            </div>
-                          </div>
-                        </Col>
-                        <Col md={6} lg={3} className="mb-3">
-                          <div className="bg-light p-3 rounded">
-                            <div className="text-muted small mb-2">Accounts</div>
-                            <div className="h4">
-                              {financialData.accounts?.length || 0}
-                            </div>
-                          </div>
-                        </Col>
-                        <Col md={6} lg={3} className="mb-3">
-                          <div className="bg-light p-3 rounded">
-                            <div className="text-muted small mb-2">Data Source</div>
-                            <div className="h4 text-nowrap">
-                              {checkIfMockData(financialData) ? (
-                                <Badge bg="warning">Mock Data</Badge>
-                              ) : (
-                                <Badge bg="success">Real API</Badge>
-                              )}
-                            </div>
-                          </div>
-                        </Col>
-                      </Row>
-                      
-                      {/* Accounts Table */}
-                      {financialData.accounts && financialData.accounts.length > 0 && (
-                        <>
-                          <h5 className="mt-4 mb-3">Accounts</h5>
-                          <div className="table-responsive">
-                            <table className="table table-hover table-light">
-                              <thead>
-                                <tr>
-                                  <th>Account</th>
-                                  <th>Type</th>
-                                  <th>Balance</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {financialData.accounts.map(account => (
-                                  <tr key={account.accountId}>
-                                    <td>{account.name || 'Account'}</td>
-                                    <td>{account.type || 'Other'}</td>
-                                    <td className={account.balance < 0 ? 'text-danger' : 'text-success'}>
-                                      ${account.balance?.toFixed(2) || '0.00'}
-                                    </td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                        </>
-                      )}
-                      
-                      {/* Recent Transactions */}
-                      {financialData.recentTransactions && financialData.recentTransactions.length > 0 && (
-                        <>
-                          <h5 className="mt-4 mb-3">Recent Transactions</h5>
-                          <div className="table-responsive">
-                            <table className="table table-hover table-light">
-                              <thead>
-                                <tr>
-                                  <th>Date</th>
-                                  <th>Description</th>
-                                  <th>Category</th>
-                                  <th>Amount</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {financialData.recentTransactions.map(tx => (
-                                  <tr key={tx.transactionId}>
-                                    <td>{new Date(tx.date).toLocaleDateString()}</td>
-                                    <td>{tx.description || 'Transaction'}</td>
-                                    <td>{tx.category || 'Other'}</td>
-                                    <td className={tx.amount < 0 ? 'text-danger' : 'text-success'}>
-                                      ${Math.abs(tx.amount).toFixed(2)}
-                                      {tx.amount < 0 ? ' (debit)' : ' (credit)'}
-                                    </td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                        </>
-                      )}
-                    </>
-                  )}
-                </Card.Body>
-              </Card>
-            )}
-            
-            {/* Code Sample */}
-            <Card className="bg-white text-black border-secondary">
-							<Card.Header className="bg-white">Integration Example</Card.Header>
-							<Card.Body>
-								<Card.Text className="mb-3">
-									Here's how to call the API in your application:
-								</Card.Text>
-
-								{/* ✅ Render CodeBlock component */}
-								<CodeBlock />
-
-								<div className="text-end mt-3">
-									<Button variant="link" className="text-success" href="/docs">
-										View Full Documentation →
-									</Button>
-								</div>
-							</Card.Body>
-						</Card>
-          </>
-        ) : (
-          <Card className="bg-white text-black border-secondary mb-4">
-            <Card.Header className="bg-white">API Access Pending</Card.Header>
-            <Card.Body className="text-center py-5">
-              <i className="bi bi-hourglass-split text-warning" style={{ fontSize: '4rem' }}></i>
-              <h3 className="mt-4">Your API Access is Pending Approval</h3>
-              <p className="text-muted mx-auto" style={{ maxWidth: '600px' }}>
-                Your client account has been registered and is awaiting administrator approval. 
-                You'll be able to access the API once your account is approved.
-              </p>
-              <div className="d-flex justify-content-center gap-3 mt-3">
+              )}
+              
+              {/* Input Area */}
+              <div className="chat-input-container">
+                <Form.Control
+                  id="chat-input"
+                  as="textarea"
+                  rows={1}
+                  placeholder="Ask about your financial data..."
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  onKeyPress={handleKeyPress}
+                  className="chat-input text-black"
+                />
                 <Button 
-                  variant="outline-success" 
-                  as={Link} 
-                  to="/docs"
+                  variant="success"
+                  className="send-button"
+                  disabled={!query.trim() || loading}
+                  onClick={handleSendMessage}
                 >
-                  View API Documentation
-                </Button>
-                <Button 
-                  variant="outline-primary"
-                  onClick={handleStatusRefresh}
-                  disabled={refreshing || isLoading}
-                >
-                  {refreshing ? (
-                    <>
-                      <span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
-                      Refreshing...
-                    </>
-                  ) : 'Refresh Status'}
+                  <i className="bi bi-send"></i>
                 </Button>
               </div>
-            </Card.Body>
-          </Card>
-        )}
+              
+              <div className="chat-footer">
+                <p className="text-white small mb-0">
+                  CLAU may produce inaccurate information about people, places, or financial advice.
+                </p>
+              </div>
+            </div>
+          </div>
+        );
+        
+      case 'api-keys':
+        return <APIKeysManagement />;
+        
+      case 'documentation':
+        return <Documentation />;
+        
+      case 'home':
+      default:
+        return (
+          <Container fluid className="py-5">
+            <Row className="justify-content-center text-center mb-5">
+              <Col md={10}>
+                <h2 className="text-white mb-4">Welcome to Banking Intelligence API</h2>
+                <p className="text-white mb-4">Add AI-powered financial insights to your banking application</p>
+                <div className="mt-4">
+                  <Button 
+                    variant="success" 
+                    size="lg"
+                    className="me-3"
+                    onClick={() => setActiveSection('playground')}
+                  >
+                    Try the Playground
+                  </Button>
+                  <Button 
+                    variant="outline-light"
+                    size="lg"
+                    onClick={() => setActiveSection('documentation')}
+                  >
+                    Read Documentation
+                  </Button>
+                </div>
+              </Col>
+            </Row>
+            
+            <Row className="mb-5 justify-content-center">
+              <Col md={10}>
+                <Card className="bg-black text-white">
+                  <Card.Body className=" bg-black p-4">
+                    <h3 className="text-success justify-content-center mb-3">Getting Started</h3>
+                    <p>
+                      The Banking Intelligence API lets you enhance your application with AI-powered financial insights.
+                      Analyze transactions, provide budget recommendations, and help your users make better financial decisions.
+                    </p>
+                    
+                    <Row className="mt-4 text-center">
+                      <Col md={4}>
+                        <div className="mb-3">
+                          <i className="bi bi-chat-dots text-success" style={{ fontSize: '2rem' }}></i>
+                        </div>
+                        <h5>Try the Playground</h5>
+                        <p className="small">Test queries and see responses in real-time</p>
+                      </Col>
+                      <Col md={4}>
+                        <div className="mb-3">
+                          <i className="bi bi-key text-success" style={{ fontSize: '2rem' }}></i>
+                        </div>
+                        <h5>Get Your API Keys</h5>
+                        <p className="small">Generate keys to integrate with your app</p>
+                      </Col>
+                      <Col md={4}>
+                        <div className="mb-3">
+                          <i className="bi bi-book text-success" style={{ fontSize: '2rem' }}></i>
+                        </div>
+                        <h5>Read the Docs</h5>
+                        <p className="small">Explore API endpoints and implementation</p>
+                      </Col>
+                    </Row>
+                  </Card.Body>
+                </Card>
+              </Col>
+            </Row>
+            
+            <h3 className="text-white text-center mb-4">Explore Our Features</h3>
+            
+            <Row className="g-4">
+              <Col lg={4}>
+                <Card className="h-100 bg-black text-white border border-success feature-card">
+                  <Card.Body className='bg-black'>
+                    <div className="d-flex align-items-center mb-3">
+                      <div className="feature-icon bg-success bg-opacity-25 me-3">
+                        <i className="bi bi-chat-text text-success" style={{ fontSize: '1.5rem' }}></i>
+                      </div>
+                      <h4 className="mb-0">Playground</h4>
+                    </div>
+                    <p>
+                      Test our AI in an interactive chat interface. Ask financial questions and see how the API responds in real-time.
+                    </p>
+                    <Button 
+                      variant="outline-success" 
+                      className="mt-auto w-100"
+                      onClick={() => setActiveSection('playground')}
+                    >
+                      Open Playground
+                    </Button>
+                  </Card.Body>
+                </Card>
+              </Col>
+              
+              <Col lg={4}>
+                <Card className="h-100 bg-black text-white border border-success feature-card">
+                  <Card.Body className='bg-black'>
+                    <div className="d-flex align-items-center mb-3">
+                      <div className="feature-icon bg-success bg-opacity-25 me-3">
+                        <i className="bi bi-key-fill text-success" style={{ fontSize: '1.5rem' }}></i>
+                      </div>
+                      <h4 className="mb-0">API Keys</h4>
+                    </div>
+                    <p>
+                      Manage your API keys and credentials for integrating the Banking Intelligence API with your applications and monitor your usage.
+                    </p>
+                    <Button 
+                      variant="outline-success" 
+                      className="mt-auto w-100"
+                      onClick={() => setActiveSection('api-keys')}
+                    >
+                      Manage API Keys
+                    </Button>
+                  </Card.Body>
+                </Card>
+              </Col>
+              
+              <Col lg={4}>
+                <Card className="h-100 bg-black text-white border border-success feature-card">
+                  <Card.Body className='bg-black'>
+                    <div className="d-flex align-items-center mb-3">
+                      <div className="feature-icon bg-success bg-opacity-25 me-3">
+                        <i className="bi bi-book-half text-success" style={{ fontSize: '1.5rem' }}></i>
+                      </div>
+                      <h4 className="mb-0">Documentation</h4>
+                    </div>
+                    <p>
+                      Comprehensive guides, API references, and code examples to help you integrate our financial AI into your app.
+                    </p>
+                    <Button 
+                      variant="outline-success" 
+                      className="mt-auto w-100"
+                      onClick={() => setActiveSection('documentation')}
+                    >
+                      View Documentation
+                    </Button>
+                  </Card.Body>
+                </Card>
+              </Col>
+            </Row>
+          </Container>
+        );
+    }
+  };
+  
+  return (
+    <div className="dashboard-container">
+      {/* Sidebar */}
+      <div className="sidebar">
+        <div className="sidebar-header">
+          <h4 className="text-success mb-0">
+            <a href="/" className="logo-link">
+              <img 
+                src="/images/chat-icon.png" 
+                alt="AI Assistant" 
+                className="sidebar-image-clau"/>
+            </a>
+          </h4>
+        </div>
+        
+        <Nav className="sidebar-nav">
+          <Nav.Link 
+            onClick={() => setActiveSection('home')} 
+            className={`sidebar-link ${activeSection === 'home' ? 'active' : ''}`}
+          >
+            <i className="bi bi-house-door me-2"></i>
+            Home
+          </Nav.Link>
+          <Nav.Link 
+            onClick={() => setActiveSection('documentation')} 
+            className={`sidebar-link ${activeSection === 'documentation' ? 'active' : ''}`}
+          >
+            <i className="bi bi-book me-2"></i>
+            Documentation
+          </Nav.Link>
+          <Nav.Link 
+            onClick={() => setActiveSection('playground')} 
+            className={`sidebar-link ${activeSection === 'playground' ? 'active' : ''}`}
+          >
+            <i className="bi bi-chat-text me-2"></i>
+            Playground
+          </Nav.Link>
+          <Nav.Link 
+            onClick={() => setActiveSection('api-keys')} 
+            className={`sidebar-link ${activeSection === 'api-keys' ? 'active' : ''}`}
+          >
+            <i className="bi bi-key me-2"></i>
+            API Keys
+          </Nav.Link>
+        </Nav>
       </div>
-    </Container>
+      
+      {/* Main content area */}
+      <div className="main-content">
+        {renderContent()}
+      </div>
+    </div>
   );
 };
 

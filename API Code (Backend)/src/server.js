@@ -36,7 +36,7 @@ const { authMiddleware, authorize } = require('./middleware/auth');
 const { validateInsightsRequest } = require('./middleware/validation');
 
 // Import insights metrics middleware
-const { insightMetricsMiddleware } = require('./middleware/insights-metrics.middleware');
+const { insightMetricsMiddleware, initializeMetricsModel } = require('./middleware/insights-metrics.middleware');
 
 // Test insights metrics on startup
 const initializeMetrics = async () => {

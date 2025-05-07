@@ -10,6 +10,44 @@ import Particles from 'react-tsparticles';
 import { loadFull } from 'tsparticles';
 import useDelayedAnimation, { getStaggeredDelay } from '../hooks/useDelayedAnimation';
 import './HomePage.css';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
+
+const CodeBlock = ({ code, language = 'javascript' }) => (
+  <SyntaxHighlighter 
+    language={language} 
+    style={oneDark}
+    customStyle={{ 
+      fontSize: '0.9rem',
+      background: 'transparent',
+    }}
+    codeTagProps={{
+      style: {
+        background: 'transparent'
+      }
+    }}
+  >
+    {code}
+  </SyntaxHighlighter>
+);
+
+const step1 = `
+  Step 1: Create an account and get your API key
+  API_KEY = "your_api_key_here"
+  `;
+
+const step2 = `Step 2: Send financial data
+  user_data = {"{"}
+  "accounts": [...],
+  "transactions": [...]
+ {"}"}
+ `;
+
+const step3 = `Step 3: Request insights
+  insights = api.get_insights(
+    query="How can I save money?",
+    user_data=user_data
+  )`;
 
 // Animation variants
 const fadeIn = {
@@ -305,9 +343,9 @@ const HomePage = () => {
                   <i className="bi bi-people"></i>
                 </div>
                 <h2 className="text-white">
-                  {animationsActive && <CountUp end={1250} duration={3} delay={0.7} />}+
+                  {animationsActive && <CountUp end={50} duration={3} delay={0.7} />}+
                 </h2>
-                <p className="text-white">Active Developers</p>
+                <p className="text-white">Beta Testing Now</p>
               </div>
             </Col>
             <Col md={4}>
@@ -316,7 +354,7 @@ const HomePage = () => {
                   <i className="bi bi-clock-history"></i>
                 </div>
                 <h2 className="text-white">
-                  {animationsActive && <CountUp end={500} suffix="ms" duration={2} delay={0.9} />}
+                  {animationsActive && <CountUp end={1500} suffix="ms" duration={2} delay={0.9} />}
                 </h2>
                 <p className="text-white">Average Response Time</p>
               </div>
@@ -412,25 +450,22 @@ const HomePage = () => {
             <Row className="align-items-center mb-5">
               <Col md={6}>
                 <motion.div 
-                  className="bg-success p-4 rounded mb-3 mb-md-0"
+                  className="bg-success p-4 rounded mb-3 mb-md-0 w-100"
                   whileHover={{ scale: 1.03 }}
                   transition={{ duration: 0.3 }}
                 >
                   <h4 className="text-white">1. Register for an API Key</h4>
-                  <p className="text-light">Create an account and get your API key to integrate our services.</p>
+                  <p className="text-black">Create an account and get your API key to integrate our services.</p>
                 </motion.div>
               </Col>
               <Col md={6}>
                 <motion.pre 
-                  className="bg-black p-3 rounded text-white code-block"
+                  className="bg-black p-4 rounded text-white code-block w-100"
                   initial={{ x: 50, opacity: 0 }}
                   animate={howItWorksInView && animationsActive ? { x: 0, opacity: 1 } : { x: 50, opacity: 0 }}
                   transition={{ duration: 0.5, delay: 0.2 }}
                 >
-                  <code>
-                  # Step 1: Create an account and get your API key
-                  API_KEY = "your_api_key_here"
-                  </code>
+                  <CodeBlock code={step1} language="javascript" />
                 </motion.pre>
               </Col>
             </Row>
@@ -440,12 +475,12 @@ const HomePage = () => {
             <Row className="align-items-center mb-5">
               <Col md={{span: 6, order: 'last'}}>
                 <motion.div 
-                  className="bg-success p-4 rounded mb-3 mb-md-0"
+                  className="bg-success p-4 rounded mb-3 mb-md-0 w-100"
                   whileHover={{ scale: 1.03 }}
                   transition={{ duration: 0.3 }}
                 >
                   <h4 className="text-white">2. Connect User Data</h4>
-                  <p className="text-light">Send financial data to our API via secure endpoints.</p>
+                  <p className="text-black">Send financial data to our API via secure endpoints.</p>
                 </motion.div>
               </Col>
               <Col md={6}>
@@ -455,13 +490,7 @@ const HomePage = () => {
                   animate={howItWorksInView && animationsActive ? { x: 0, opacity: 1 } : { x: -50, opacity: 0 }}
                   transition={{ duration: 0.5, delay: 0.4 }}
                 >
-                  <code>
-                  # Step 2: Send financial data
-                  user_data = {"{"}
-                    "accounts": [...],
-                    "transactions": [...]
-                  {"}"}
-                  </code>
+                  <CodeBlock code={step2} language="javascript" />
                 </motion.pre>
               </Col>
             </Row>
@@ -471,12 +500,12 @@ const HomePage = () => {
             <Row className="align-items-center">
               <Col md={6}>
                 <motion.div 
-                  className="bg-success p-4 rounded mb-3 mb-md-0"
+                  className="bg-success p-4 rounded mb-3 mb-md-0 w-100"
                   whileHover={{ scale: 1.03 }}
                   transition={{ duration: 0.3 }}
                 >
                   <h4 className="text-white">3. Get Personalized Insights</h4>
-                  <p className="text-light">Receive AI-powered financial insights to display in your app.</p>
+                  <p className="text-black">Receive AI-powered financial insights to display in your app.</p>
                 </motion.div>
               </Col>
               <Col md={6}>
@@ -486,13 +515,7 @@ const HomePage = () => {
                   animate={howItWorksInView && animationsActive ? { x: 0, opacity: 1 } : { x: 50, opacity: 0 }}
                   transition={{ duration: 0.5, delay: 0.6 }}
                 >
-                  <code>
-                  # Step 3: Request insights
-                  insights = api.get_insights(
-                    query="How can I save money?",
-                    user_data=user_data
-                  )
-                  </code>
+                  <CodeBlock code={step3} language="javascript" />
                 </motion.pre>
               </Col>
             </Row>
@@ -526,11 +549,12 @@ const HomePage = () => {
             Join fintech companies already using our API to provide personalized financial guidance
           </motion.p>
           <motion.div
+            className="d-inline-block p-2 rounded"
             whileHover={{ scale: 1.05, boxShadow: "0 0 15px rgba(40, 167, 69, 0.5)" }}
             whileTap={{ scale: 0.95 }}
           >
-            <Link to="/register" className="btn btn-success btn-lg">
-              Get Started Today
+            <Link to={isAuthenticated ? "/dashboard" : "/register"} className="btn btn-success btn-lg">
+              {isAuthenticated ? "Go to Dashboard" : "Get Started Today"}
             </Link>
           </motion.div>
         </Container>

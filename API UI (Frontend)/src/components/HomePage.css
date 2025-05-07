@@ -63,7 +63,7 @@
   position: absolute;
   top: -50%;
   left: -50%;
-  width: 200%;
+  width: 300%;
   height: 200%;
   background: linear-gradient(
     to bottom right,
@@ -71,16 +71,16 @@
     rgba(40, 167, 69, 0.1) 50%,
     rgba(40, 167, 69, 0) 100%
   );
-  transform: rotate(30deg);
+  transform: rotate(45deg);
   animation: codeSweep 3s linear infinite;
 }
 
 @keyframes codeSweep {
   0% {
-    transform: translateX(-100%) translateY(-100%) rotate(30deg);
+    transform: translateX(-100%) translateY(-100%) rotate(45deg);
   }
   100% {
-    transform: translateX(100%) translateY(100%) rotate(30deg);
+    transform: translateX(100%) translateY(100%) rotate(45deg);
   }
 }
 
