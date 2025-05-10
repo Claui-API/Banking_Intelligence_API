@@ -8,7 +8,7 @@ export const insightsService = {
     try {
       logger.info('Attempting to fetch financial summary');
       const response = await api.get('/insights/summary');
-      
+
       logger.info('Financial summary retrieved', {
         status: response.status,
         dataAvailable: !!response.data,
@@ -24,10 +24,10 @@ export const insightsService = {
       } else if (!response.data.data && response.data.success) {
         logger.warn('Invalid response structure: missing data property');
       }
-      
+
       // If response.data.data exists, use it, otherwise try to use response.data directly
       const resultData = response.data?.data || response.data;
-      
+
       // Log the structure of what we're returning
       logger.info('Financial summary data structure', {
         isDirectResponseData: !response.data?.data,
@@ -39,7 +39,7 @@ export const insightsService = {
       return resultData;
     } catch (error) {
       logger.logError('Financial Summary Fetch', error);
-      
+
       // More detailed error logging
       if (error.response) {
         // The request was made and the server responded with a status code
@@ -47,11 +47,11 @@ export const insightsService = {
           status: error.response.status,
           data: error.response.data
         });
-        
+
         // If we got a 404 with mock data in development, we can try to extract and use it
-        if (process.env.NODE_ENV === 'development' && 
-            error.response.status === 404 && 
-            error.response.data?.mockData) {
+        if (process.env.NODE_ENV === 'development' &&
+          error.response.status === 404 &&
+          error.response.data?.mockData) {
           logger.info('Using mock data from error response');
           return error.response.data.mockData;
         }
@@ -142,20 +142,20 @@ export const insightsService = {
     }
   },
 
-  // Generate personalized insights with request ID tracking
+  // Generate personalized insights with request ID tracking and improved error handling
   generateInsights: async (query, requestId) => {
     try {
-      logger.info('Generating insights', { 
+      logger.info('Generating insights', {
         query,
-        requestId 
+        requestId
       });
-      
+
       // Include the requestId in the request body
-      const response = await api.post('/insights/generate', { 
+      const response = await api.post('/insights/generate', {
         query,
         requestId // Pass the requestId to the backend
       });
-      
+
       logger.info('Insights generated', {
         status: response.status,
         success: response.data?.success,
@@ -170,10 +170,10 @@ export const insightsService = {
       } else if (!response.data.data && response.data.success) {
         logger.warn('Invalid insights response structure: missing data property');
       }
-      
+
       // If response has data.data, use it, otherwise try to use response.data directly
       const resultData = response.data?.data || response.data;
-      
+
       // Return the data with the requestId
       return {
         ...resultData,
@@ -181,7 +181,17 @@ export const insightsService = {
       };
     } catch (error) {
       logger.logError('Insights Generation', error);
-      
+
+      // Create enhanced error object with status and message
+      const enhancedError = new Error(
+        // Extract message from response if available
+        error.response?.data?.message ||
+        "Failed to generate insights"
+      );
+
+      // Add status code to error object
+      enhancedError.status = error.response?.status || 500;
+
       // More detailed error logging
       if (error.response) {
         logger.error('Server responded with error', {
@@ -201,8 +211,8 @@ export const insightsService = {
         });
       }
 
-      // No mock fallback for insights - let the error propagate
-      throw error;
+      // Throw the enhanced error
+      throw enhancedError;
     }
   }
 };

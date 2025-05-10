@@ -52,12 +52,12 @@ const initializeMetricsModel = async () => {
           defaultValue: DataTypes.NOW
         }
       });
-      
+
       // Sync the model with the database
       await InsightMetricsModel.sync();
       logger.info('Insight Metrics model synchronized');
     }
-    
+
     return InsightMetricsModel;
   } catch (error) {
     logger.error('Error initializing Insight Metrics model:', error);
@@ -80,50 +80,50 @@ const inMemoryMetrics = {
 const insightMetricsMiddleware = async (req, res, next) => {
   // Add logging here - INSIDE the function
   logger.info(`Processing request: ${req.method} ${req.path}`);
-  
+
   // Check if this is an insights generation request
   if (req.path === '/api/insights/generate' && req.method === 'POST') {
     // Log that we're intercepting this request
     const fullPath = `${req.baseUrl || ''}${req.path}`;
     logger.info(`Insight Metrics: Intercepting API call ${req.method} ${fullPath}`);
-    
+
     // Store original write and end methods
     const originalWrite = res.write;
     const originalEnd = res.end;
-    
+
     let buffers = [];
-    
+
     // Override write
-    res.write = function(chunk) {
+    res.write = function (chunk) {
       buffers.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
       return originalWrite.apply(res, arguments);
     };
-    
+
     // Override end
-    res.end = function(chunk) {
+    res.end = function (chunk) {
       if (chunk) {
         buffers.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
       }
-      
+
       // Combine all collected chunks
       const body = Buffer.concat(buffers).toString('utf8');
       logger.info(`Insight Metrics: Captured response body (${body.length} bytes)`);
-      
+
       try {
         const responseBody = JSON.parse(body);
         logger.info('Insight Metrics: Successfully parsed JSON response');
-        
+
         // Now process the metrics with the parsed body
         processInsightMetrics(req, responseBody, res.statusCode);
       } catch (error) {
         logger.error(`Insight Metrics: Error parsing response JSON: ${error.message}`);
       }
-      
+
       // Call the original end without the monkey-patched version to avoid recursion
       return originalEnd.apply(res, arguments);
     };
   }
-  
+
   next();
 };
 
@@ -136,26 +136,26 @@ async function processInsightMetrics(req, responseBody, statusCode) {
       const query = req.body?.query;
       const queryType = req.body?.queryType || classifyQuery(query);
       const requestId = req.body?.requestId || `req_${Date.now()}`;
-      
+
       logger.info(`Insight Metrics: Processing metrics for userId ${userId}, query "${query}"`);
-      
+
       // Extract the metrics we need
       const success = statusCode >= 200 && statusCode < 300 && responseBody.success === true;
-      const responseTime = insightData.processingTime || 
-                         (insightData.insights && insightData.insights.processingTime) ||
-                         0;
+      const responseTime = insightData.processingTime ||
+        (insightData.insights && insightData.insights.processingTime) ||
+        0;
       const errorMessage = !success ? (responseBody.message || 'Unknown error') : null;
-      
+
       // Log detailed information about the extracted metrics
       logger.info(`Insight Metrics: Extracted data - success: ${success}, responseTime: ${responseTime}ms`, {
         statusCode,
         requestId,
         queryType
       });
-      
+
       // Now store in database
       await storeMetricsInDatabase(userId, requestId, query, queryType, success, responseTime, errorMessage);
-      
+
       // Update in-memory stats (fallback)
       inMemoryMetrics.total++;
       if (success) {
@@ -163,13 +163,13 @@ async function processInsightMetrics(req, responseBody, statusCode) {
       } else {
         inMemoryMetrics.failed++;
       }
-      
+
       // Update by user
       if (userId) {
         if (!inMemoryMetrics.byUser.has(userId)) {
           inMemoryMetrics.byUser.set(userId, { total: 0, success: 0, failed: 0 });
         }
-        
+
         const userStats = inMemoryMetrics.byUser.get(userId);
         userStats.total++;
         if (success) {
@@ -178,15 +178,15 @@ async function processInsightMetrics(req, responseBody, statusCode) {
           userStats.failed++;
         }
       }
-      
+
       // Update by query type
       if (queryType) {
         if (!inMemoryMetrics.byQueryType.has(queryType)) {
           inMemoryMetrics.byQueryType.set(queryType, 0);
         }
-        
+
         inMemoryMetrics.byQueryType.set(
-          queryType, 
+          queryType,
           inMemoryMetrics.byQueryType.get(queryType) + 1
         );
       }
@@ -208,7 +208,7 @@ async function processInsightMetrics(req, responseBody, statusCode) {
 async function storeMetricsInDatabase(userId, requestId, query, queryType, success, responseTime, errorMessage = null) {
   try {
     const metricsModel = await initializeMetricsModel();
-    
+
     if (metricsModel) {
       logger.info(`Insight Metrics: Attempting to store metrics with ID ${requestId}`, {
         userId,
@@ -217,7 +217,7 @@ async function storeMetricsInDatabase(userId, requestId, query, queryType, succe
         success,
         responseTime
       });
-      
+
       // Create the metrics record
       const record = await metricsModel.create({
         id: uuidv4(),
@@ -229,7 +229,7 @@ async function storeMetricsInDatabase(userId, requestId, query, queryType, succe
         success,
         errorMessage
       });
-      
+
       logger.info(`Insight Metrics: Successfully stored metrics with ID ${record.id}`);
     } else {
       logger.warn('Insight Metrics: Metrics model initialization failed, using in-memory storage only');
@@ -240,7 +240,7 @@ async function storeMetricsInDatabase(userId, requestId, query, queryType, succe
       stack: error.stack,
       code: error.code
     });
-    
+
     // Try to identify common issues
     if (error.name === 'SequelizeUniqueConstraintError') {
       logger.warn(`Insight Metrics: Duplicate queryId - ${requestId} already exists in database`);
@@ -252,39 +252,113 @@ async function storeMetricsInDatabase(userId, requestId, query, queryType, succe
 
 // Helper function to classify queries
 function classifyQuery(query) {
-  if (!query) return 'financial';
-  
+  if (!query) return 'general';
+
   const normalizedQuery = query.toString().trim().toLowerCase();
-  
-  if (/^(hi|hello|hey|howdy)/i.test(normalizedQuery)) {
+
+  // Check for harmful patterns first
+  const harmfulPatterns = [
+    /\b(cocaine|heroin|meth|methamphetamine|fentanyl|drug dealer|drug price|buy drugs|sell drugs|marijuana|cannabis|weed)\b/i,
+    /\b(hack|hacking|ddos|phishing|steal|stealing|launder|laundering|money laundering|illegal)\b/i,
+    /\b(make bomb|bomb making|gun dealer|illegal weapon|mass shooting|kill|murder)\b/i,
+    /\b(child porn|cp|csam|underage|minor sex|pedophilia)\b/i,
+    /\b(credit card fraud|identity theft|steal identity|fake id|counterfeit|pyramid scheme)\b/i,
+    /\b(terrorism|terrorist|radicalize|jihad|extremist)\b/i
+  ];
+
+  if (normalizedQuery && harmfulPatterns.some(pattern => pattern.test(normalizedQuery))) {
+    return 'harmful';
+  }
+
+  // Existing classifications for greeting/joke
+  if (/^(hi|hello|hey|howdy|hola|yo|sup|greetings)$/i.test(normalizedQuery) ||
+    /^(good\s+(morning|afternoon|evening))(\s+clau)?(\s*[!,.?]*)$/i.test(normalizedQuery)) {
     return 'greeting';
   }
-  
-  if (/joke|funny/i.test(normalizedQuery)) {
+
+  if (/joke|funny|make me laugh|tell me a joke/i.test(normalizedQuery)) {
     return 'joke';
   }
-  
-  if (/budget/i.test(normalizedQuery)) {
+
+  // Financial categories
+  if (/budget|how\s+to\s+budget|budgeting|create\s+a\s+budget|manage\s+budget|budget\s+plan|monthly\s+budget/i.test(normalizedQuery)) {
     return 'budgeting';
   }
-  
-  if (/spend/i.test(normalizedQuery)) {
+
+  if (/spend|spending|how\s+much\s+did\s+i\s+spend|spent|where\s+is\s+my\s+money\s+going|expenses|expense|track\s+spending|spending\s+habits/i.test(normalizedQuery)) {
     return 'spending';
   }
-  
-  if (/save|saving/i.test(normalizedQuery)) {
+
+  if (/save|saving|savings|how\s+to\s+save|save\s+money|save\s+more|increase\s+savings/i.test(normalizedQuery)) {
     return 'saving';
   }
-  
-  if (/invest/i.test(normalizedQuery)) {
+
+  if (/invest|investing|investment|stock|stocks|etf|mutual\s+fund|portfolio|retirement/i.test(normalizedQuery)) {
     return 'investing';
   }
-  
-  if (/debt|loan|mortgage/i.test(normalizedQuery)) {
+
+  if (/debt|loan|credit\s+card|mortgage|pay\s+off|interest\s+rate|refinance/i.test(normalizedQuery)) {
     return 'debt';
   }
-  
-  return 'financial';
+
+  if (/tax|taxes|tax\s+return|tax\s+refund|tax\s+deduction|tax\s+credit|irs|filing\s+taxes/i.test(normalizedQuery)) {
+    return 'tax';
+  }
+
+  if (/insurance|insure|policy|coverage|premium|deductible|life\s+insurance|health\s+insurance|auto\s+insurance/i.test(normalizedQuery)) {
+    return 'insurance';
+  }
+
+  if (/retirement|retire|401k|ira|pension|social\s+security|retirement\s+planning/i.test(normalizedQuery)) {
+    return 'retirement';
+  }
+
+  if (/bank\s+account|checking|savings\s+account|deposit|withdraw|atm|transfer\s+money|bank\s+fee|overdraft/i.test(normalizedQuery)) {
+    return 'banking';
+  }
+
+  if (/credit\s+score|credit\s+report|fico|credit\s+history|credit\s+bureau|improve\s+credit|bad\s+credit/i.test(normalizedQuery)) {
+    return 'credit';
+  }
+
+  if (/financial\s+plan|financial\s+goal|financial\s+advisor|finance\s+management|wealth\s+management/i.test(normalizedQuery)) {
+    return 'planning';
+  }
+
+  if (/real\s+estate|housing|home\s+buying|mortgage|rent|property|down\s+payment/i.test(normalizedQuery)) {
+    return 'real_estate';
+  }
+
+  if (/crypto|cryptocurrency|bitcoin|ethereum|blockchain|nft|token|defi/i.test(normalizedQuery)) {
+    return 'crypto';
+  }
+
+  if (/market\s+trend|stock\s+market|bear\s+market|bull\s+market|market\s+analysis|forecast/i.test(normalizedQuery)) {
+    return 'market_analysis';
+  }
+
+  if (/learn|explain|how\s+does|what\s+is|define|financial\s+literacy|basics\s+of/i.test(normalizedQuery)) {
+    return 'education';
+  }
+
+  if (/income|salary|wage|earn|earning|paycheck|side\s+hustle|passive\s+income/i.test(normalizedQuery)) {
+    return 'income';
+  }
+
+  if (/transaction|purchase|payment|receipt|invoice|refund|charge|statement|bill/i.test(normalizedQuery)) {
+    return 'transactions';
+  }
+
+  if (/fraud|scam|security|protect|identity|phishing|suspicious|fraud\s+alert|unauthorized/i.test(normalizedQuery)) {
+    return 'security';
+  }
+
+  if (/currency|foreign\s+exchange|forex|exchange\s+rate|conversion|dollar|euro|yuan|yen|pound/i.test(normalizedQuery)) {
+    return 'forex';
+  }
+
+  // Default to general for any other financial queries
+  return 'general';
 }
 
 /**
@@ -294,38 +368,38 @@ function classifyQuery(query) {
 const getSystemInsightMetrics = async () => {
   try {
     const metricsModel = await initializeMetricsModel();
-    
+
     if (!metricsModel) {
       // Fall back to in-memory metrics
       logger.warn('Using in-memory metrics as fallback');
-      
+
       return {
         totalQueries: inMemoryMetrics.total,
         successfulQueries: inMemoryMetrics.success,
         failedQueries: inMemoryMetrics.failed,
-        successRate: inMemoryMetrics.total > 0 
-          ? `${((inMemoryMetrics.success / inMemoryMetrics.total) * 100).toFixed(1)}%` 
+        successRate: inMemoryMetrics.total > 0
+          ? `${((inMemoryMetrics.success / inMemoryMetrics.total) * 100).toFixed(1)}%`
           : '0.0%',
         avgResponseTime: 0,
         timestamp: new Date().toISOString()
       };
     }
-    
+
     // Ensure Op is properly defined
     const Op = sequelize.Op || {};
-    
+
     // Get total counts with no date filtering
     const totalQueries = await metricsModel.count();
     logger.info(`Total queries found: ${totalQueries}`);
-    
-    const successfulQueries = await metricsModel.count({ 
-      where: { success: true } 
+
+    const successfulQueries = await metricsModel.count({
+      where: { success: true }
     });
-    
-    const failedQueries = await metricsModel.count({ 
-      where: { success: false } 
+
+    const failedQueries = await metricsModel.count({
+      where: { success: false }
     });
-    
+
     // Get average response time - adjust the query to avoid the Op.gt error
     let avgResponseTime = 0;
     try {
@@ -334,68 +408,68 @@ const getSystemInsightMetrics = async () => {
         FROM "InsightMetrics"
         WHERE "responseTime" > 100
       `, { type: sequelize.QueryTypes.SELECT });
-      
-      avgResponseTime = avgResponse && avgResponse[0] 
-        ? parseInt(avgResponse[0].avgTime) || 0 
+
+      avgResponseTime = avgResponse && avgResponse[0]
+        ? parseInt(avgResponse[0].avgTime) || 0
         : 0;
     } catch (avgError) {
       logger.error('Error calculating average response time:', avgError);
     }
-    
+
     // Get today's queries
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     let todayQueries = 0;
-    
+
     try {
       todayQueries = await sequelize.query(`
         SELECT COUNT(*) as "count"
         FROM "InsightMetrics"
         WHERE "createdAt" >= :today
-      `, { 
+      `, {
         replacements: { today: today.toISOString() },
-        type: sequelize.QueryTypes.SELECT 
+        type: sequelize.QueryTypes.SELECT
       }).then(result => parseInt(result[0]?.count || 0));
     } catch (todayError) {
       logger.error('Error calculating today\'s queries:', todayError);
     }
-    
+
     // Get min and max response times using plain SQL
     let minResponseTime = 250;
     let maxResponseTime = 1250;
-    
+
     try {
       const minResult = await sequelize.query(`
         SELECT MIN("responseTime") as "minTime"
         FROM "InsightMetrics"
         WHERE "responseTime" > 100
       `, { type: sequelize.QueryTypes.SELECT });
-      
+
       minResponseTime = minResult && minResult[0]
         ? parseInt(minResult[0].minTime) || 250
         : 250;
-        
+
       const maxResult = await sequelize.query(`
         SELECT MAX("responseTime") as "maxTime"
         FROM "InsightMetrics"
         WHERE "responseTime" > 100
       `, { type: sequelize.QueryTypes.SELECT });
-      
+
       maxResponseTime = maxResult && maxResult[0]
         ? parseInt(maxResult[0].maxTime) || 1250
         : 1250;
     } catch (minMaxError) {
       logger.error('Error calculating min/max response times:', minMaxError);
     }
-    
+
     // Get query type distribution
     const queryTypeDistribution = await getQueryTypeMetrics();
-    
+
     // Calculate success rate
-    const successRate = totalQueries > 0 
-      ? `${((successfulQueries / totalQueries) * 100).toFixed(1)}%` 
+    const successRate = totalQueries > 0
+      ? `${((successfulQueries / totalQueries) * 100).toFixed(1)}%`
       : '0.0%';
-    
+
     return {
       totalQueries,
       successfulQueries,
@@ -410,14 +484,14 @@ const getSystemInsightMetrics = async () => {
     };
   } catch (error) {
     logger.error('Error getting system insight metrics:', error);
-    
+
     // Fall back to in-memory metrics
     return {
       totalQueries: inMemoryMetrics.total,
       successfulQueries: inMemoryMetrics.success,
       failedQueries: inMemoryMetrics.failed,
-      successRate: inMemoryMetrics.total > 0 
-        ? `${((inMemoryMetrics.success / inMemoryMetrics.total) * 100).toFixed(1)}%` 
+      successRate: inMemoryMetrics.total > 0
+        ? `${((inMemoryMetrics.success / inMemoryMetrics.total) * 100).toFixed(1)}%`
         : '0.0%',
       avgResponseTime: 0,
       todayQueries: 0,
@@ -434,16 +508,16 @@ const getSystemInsightMetrics = async () => {
 const getHistoricalInsightMetrics = async (days = 7) => {
   try {
     const metricsModel = await initializeMetricsModel();
-    
+
     if (!metricsModel) {
       logger.warn('Using empty array as fallback for historical metrics');
       return [];
     }
-    
+
     // Calculate start date
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - days);
-    
+
     // Get historical data grouped by day
     const results = await sequelize.query(`
       SELECT 
@@ -456,42 +530,42 @@ const getHistoricalInsightMetrics = async (days = 7) => {
       WHERE "createdAt" >= :startDate
       GROUP BY DATE_TRUNC('day', "createdAt")
       ORDER BY DATE_TRUNC('day', "createdAt") ASC
-    `, { 
+    `, {
       replacements: { startDate: startDate.toISOString() },
-      type: sequelize.QueryTypes.SELECT 
+      type: sequelize.QueryTypes.SELECT
     });
-    
+
     // Log the raw results for debugging
     logger.info(`Historical data query returned ${results.length} days of data`);
-    
+
     // Transform the results
     const historicalData = results.map(day => {
       const totalQueries = parseInt(day.totalQueries);
       const successfulQueries = parseInt(day.successfulQueries);
       const failedQueries = parseInt(day.failedQueries);
-      
+
       return {
         date: new Date(day.date).toISOString().split('T')[0],
         totalQueries,
         successfulQueries,
         failedQueries,
-        successRate: totalQueries > 0 
+        successRate: totalQueries > 0
           ? ((successfulQueries / totalQueries) * 100).toFixed(1)
           : '0.0',
         avgResponseTime: parseInt(day.avgResponseTime) || 0,
         responseTime: parseInt(day.avgResponseTime) || 0,
       };
     });
-    
+
     // If we don't have enough data points, pad with empty days
     if (historicalData.length < days) {
       const existingDates = new Set(historicalData.map(day => day.date));
-      
+
       for (let i = 0; i < days; i++) {
         const date = new Date(startDate);
         date.setDate(date.getDate() + i);
         const dateString = date.toISOString().split('T')[0];
-        
+
         if (!existingDates.has(dateString)) {
           historicalData.push({
             date: dateString,
@@ -504,11 +578,11 @@ const getHistoricalInsightMetrics = async (days = 7) => {
           });
         }
       }
-      
+
       // Sort by date
       historicalData.sort((a, b) => new Date(a.date) - new Date(b.date));
     }
-    
+
     return historicalData;
   } catch (error) {
     logger.error('Error getting historical insight metrics:', error);
@@ -531,11 +605,11 @@ const getHistoricalInsightMetrics = async (days = 7) => {
 const getUserInsightMetrics = async () => {
   try {
     const metricsModel = await initializeMetricsModel();
-    
+
     if (!metricsModel) {
       return []; // Return empty array if model initialization fails
     }
-    
+
     // Get metrics data grouped by userId
     const results = await sequelize.query(`
       SELECT 
@@ -548,10 +622,10 @@ const getUserInsightMetrics = async () => {
       FROM "InsightMetrics"
       GROUP BY "userId"
     `, { type: sequelize.QueryTypes.SELECT });
-    
+
     // Now join with Users table to get names and emails
     const enhancedUserMetrics = [];
-    
+
     for (const record of results) {
       try {
         // Find the user in the Users table
@@ -564,7 +638,7 @@ const getUserInsightMetrics = async () => {
           type: sequelize.QueryTypes.SELECT,
           plain: true // Get a single result object instead of an array
         });
-        
+
         // Get most common query type for this user
         const queryTypes = await sequelize.query(`
           SELECT 
@@ -579,11 +653,11 @@ const getUserInsightMetrics = async () => {
           replacements: { userId: record.userId },
           type: sequelize.QueryTypes.SELECT
         });
-        
-        const mostCommonQueryType = queryTypes.length > 0 
-          ? queryTypes[0].queryType 
+
+        const mostCommonQueryType = queryTypes.length > 0
+          ? queryTypes[0].queryType
           : 'unknown';
-        
+
         // Get recent queries for this user
         const recentQueries = await sequelize.query(`
           SELECT 
@@ -601,12 +675,12 @@ const getUserInsightMetrics = async () => {
           replacements: { userId: record.userId },
           type: sequelize.QueryTypes.SELECT
         });
-        
+
         // Create activity by hour data
         const activityByHour = Array(24).fill(0);
         // Create activity by day data
         const activityByDay = Array(7).fill(0);
-        
+
         // Calculate activity distribution
         if (recentQueries.length > 0) {
           await sequelize.query(`
@@ -627,7 +701,7 @@ const getUserInsightMetrics = async () => {
               }
             });
           });
-          
+
           await sequelize.query(`
             SELECT 
               EXTRACT(DOW FROM "createdAt") AS day,
@@ -647,7 +721,7 @@ const getUserInsightMetrics = async () => {
             });
           });
         }
-        
+
         // Add user details to the metrics record
         enhancedUserMetrics.push({
           userId: record.userId,
@@ -677,7 +751,7 @@ const getUserInsightMetrics = async () => {
           failedCount: parseInt(record.failedCount),
           avgResponseTime: parseInt(record.avgResponseTime) || 0,
           successRate: (parseInt(record.queryCount) > 0)
-            ? ((parseInt(record.successCount) / parseInt(record.queryCount)) * 100).toFixed(1) 
+            ? ((parseInt(record.successCount) / parseInt(record.queryCount)) * 100).toFixed(1)
             : '0.0',
           lastActive: record.lastActive,
           name: 'Unknown',
@@ -689,7 +763,7 @@ const getUserInsightMetrics = async () => {
         });
       }
     }
-    
+
     return enhancedUserMetrics;
   } catch (error) {
     logger.error('Error getting user insight metrics:', error);
@@ -704,19 +778,19 @@ const getUserInsightMetrics = async () => {
 const getQueryTypeMetrics = async () => {
   try {
     const metricsModel = await initializeMetricsModel();
-    
+
     if (!metricsModel) {
       // Fall back to in-memory metrics
       logger.warn('Using in-memory metrics as fallback for query type metrics');
-      
+
       const queryTypeMetrics = {};
       for (const [type, count] of inMemoryMetrics.byQueryType.entries()) {
         queryTypeMetrics[type] = count;
       }
-      
+
       return queryTypeMetrics;
     }
-    
+
     // Query for query type distribution
     const results = await sequelize.query(`
       SELECT 
@@ -724,24 +798,39 @@ const getQueryTypeMetrics = async () => {
         COUNT(*) as "count"
       FROM "InsightMetrics"
       GROUP BY "queryType"
+      ORDER BY "count" DESC
     `, { type: sequelize.QueryTypes.SELECT });
-    
+
     // Format results
     const queryTypeMetrics = {};
     results.forEach(result => {
       queryTypeMetrics[result.queryType] = parseInt(result.count);
     });
-    
+
+    // Make sure all categories are represented in the metrics
+    const allQueryTypes = [
+      'general', 'budgeting', 'spending', 'saving', 'investing', 'debt',
+      'tax', 'insurance', 'retirement', 'banking', 'credit', 'planning',
+      'real_estate', 'crypto', 'market_analysis', 'education', 'income',
+      'transactions', 'security', 'forex', 'greeting', 'joke', 'harmful'
+    ];
+
+    allQueryTypes.forEach(type => {
+      if (!queryTypeMetrics[type]) {
+        queryTypeMetrics[type] = 0;
+      }
+    });
+
     return queryTypeMetrics;
   } catch (error) {
     logger.error('Error getting query type metrics:', error);
-    
+
     // Fall back to in-memory metrics
     const queryTypeMetrics = {};
     for (const [type, count] of inMemoryMetrics.byQueryType.entries()) {
       queryTypeMetrics[type] = count;
     }
-    
+
     return queryTypeMetrics;
   }
 };
