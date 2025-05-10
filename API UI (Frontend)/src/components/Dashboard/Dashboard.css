@@ -7,7 +7,8 @@
   color: white;
   min-height: 100vh;
   width: 100%;
-  overflow: hidden; /* Prevent horizontal scrolling */
+  overflow: hidden;
+  /* Prevent horizontal scrolling */
 }
 
 /* Sidebar styling */
@@ -70,7 +71,8 @@
 /* Main content area */
 .main-content {
   flex: 1;
-  margin-left: 250px; /* Match sidebar width */
+  margin-left: 250px;
+  /* Match sidebar width */
   width: calc(100% - 250px);
   overflow-x: hidden;
   min-height: 100vh;
@@ -123,13 +125,27 @@
 }
 
 @keyframes fadeIn {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 @keyframes typing-bounce {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-5px); }
+
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-5px);
+  }
 }
 
 .user-message {
@@ -314,6 +330,68 @@
   animation-delay: 320ms;
 }
 
+/* Typing cursor effect */
+.typing-cursor {
+  display: inline-block;
+  width: 1px;
+  height: 16px;
+  background-color: #28a745;
+  margin-left: 2px;
+  animation: blink 1s infinite;
+  vertical-align: middle;
+}
+
+@keyframes blink {
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0;
+  }
+}
+
+/* Chat message styling improvements */
+.message-content {
+  position: relative;
+  background-color: #1f1c1c;
+  padding: 1rem;
+  border-radius: 10px;
+  color: white;
+}
+
+.message-text {
+  margin: 0;
+  white-space: pre-wrap;
+  font-family: inherit;
+  background-color: transparent;
+  border: none;
+  padding: 0;
+  color: white;
+}
+
+.user-message .message-content {
+  background-color: #1f1c1c;
+}
+
+.assistant-message .message-avatar {
+  background-color: #28a745;
+}
+
+@keyframes blink {
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0;
+  }
+}
+
 /* API Status */
 .api-status {
   display: flex;
@@ -334,12 +412,12 @@
   .sidebar {
     width: 200px;
   }
-  
+
   .main-content {
     margin-left: 200px;
     width: calc(100% - 200px);
   }
-  
+
   .chat-container {
     padding: 1rem;
   }
