@@ -12,7 +12,11 @@
     "format": "prettier --write 'src/**/*.js'",
     "setup-rag": "node src/scripts/setup-postgres-rag.js",
     "fix-pg-rag": "node src/scripts/fix-postgres-rag.js",
-    "remove-rag": "node src/scripts/rag-cleanup.js"
+    "remove-rag": "node src/scripts/rag-cleanup.js",
+    "test:insights": "node src/tests/run-all-tests.js",
+    "test:plaid": "node src/tests/plaid-insight-test.js",
+    "test:mock": "node src/tests/mock-insights.js",
+    "test:api": "node src/tests/api-connectivity-test.js"
   },
   "keywords": [
     "finance",

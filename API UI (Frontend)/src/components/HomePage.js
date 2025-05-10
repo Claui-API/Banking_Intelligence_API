@@ -14,10 +14,10 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 
 const CodeBlock = ({ code, language = 'javascript' }) => (
-  <SyntaxHighlighter 
-    language={language} 
+  <SyntaxHighlighter
+    language={language}
     style={oneDark}
-    customStyle={{ 
+    customStyle={{
       fontSize: '0.9rem',
       background: 'transparent',
     }}
@@ -52,8 +52,8 @@ const step3 = `Step 3: Request insights
 // Animation variants
 const fadeIn = {
   hidden: { opacity: 0, y: 20 },
-  visible: { 
-    opacity: 1, 
+  visible: {
+    opacity: 1,
     y: 0,
     transition: { duration: 0.8, ease: "easeOut" }
   }
@@ -72,8 +72,8 @@ const staggerContainer = {
 
 const scaleIn = {
   hidden: { scale: 0.8, opacity: 0 },
-  visible: { 
-    scale: 1, 
+  visible: {
+    scale: 1,
     opacity: 1,
     transition: { duration: 0.7, ease: "easeOut" }
   }
@@ -83,18 +83,18 @@ const HomePage = () => {
   const { isAuthenticated } = useAuth();
   const controls = useAnimation();
   const [scrollY, setScrollY] = useState(0);
-  
+
   // Use our custom hook to delay animations until page is loaded
-  const animationsActive = useDelayedAnimation({ 
+  const animationsActive = useDelayedAnimation({
     initialDelay: 200, // Increased delay before starting animations
     disableOnMobile: false // Set to true to disable animations on mobile
   });
-  
+
   // References for animations
   const [featuresRef, featuresInView] = useInView({ threshold: 0.2, triggerOnce: true });
   const [howItWorksRef, howItWorksInView] = useInView({ threshold: 0.2, triggerOnce: true });
   const [ctaRef, ctaInView] = useInView({ threshold: 0.5, triggerOnce: true });
-  
+
   // Initialize particles with a ref to ensure it only loads once
   const particlesInitialized = useRef(false);
   const particlesInit = async (main) => {
@@ -103,24 +103,24 @@ const HomePage = () => {
       particlesInitialized.current = true;
     }
   };
-  
+
   // Handle scroll effects
   useEffect(() => {
     const handleScroll = () => {
       setScrollY(window.scrollY);
     };
-    
+
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
-  
+
   // Trigger animations when sections come into view
   useEffect(() => {
     if (featuresInView && animationsActive) {
       controls.start('visible');
     }
   }, [controls, featuresInView, animationsActive]);
-  
+
   return (
     <div className="home-page-container">
       {/* Particles Background - only show after animations are active */}
@@ -130,7 +130,7 @@ const HomePage = () => {
           init={particlesInit}
           options={{
             fullScreen: {
-              enable: true,
+              enable: false,
               zIndex: -1
             },
             particles: {
@@ -195,38 +195,46 @@ const HomePage = () => {
             },
             retina_detect: true
           }}
+          style={{
+            position: "absolute",
+            width: "100%",
+            height: "100%",
+            top: 0,
+            left: 0,
+            zIndex: -1
+          }}
         />
       )}
 
       {/* Header section with motion - only animate after page load */}
       <AnimatePresence>
         {animationsActive && (
-          <motion.div 
+          <motion.div
             className="text-center py-4"
             initial={{ opacity: 0, y: -25 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.8, ease: "easeOut", delay: 0.2 }}
           >
             <Container>
-              <motion.h1 
-                className="text-white mb-0" 
-                style={{ 
-                  fontSize: '3.5rem', 
-                  fontWeight: '900', 
+              <motion.h1
+                className="text-white mb-0"
+                style={{
+                  fontSize: '3.5rem',
+                  fontWeight: '900',
                   letterSpacing: '-0.03em',
                   fontFamily: "'Inter Display', 'Inter', sans-serif",
                   textTransform: 'none'
                 }}
-                animate={{ 
+                animate={{
                   textShadow: [
                     "0 0 5px rgba(40, 167, 69, 0.3)",
                     "0 0 15px rgba(40, 167, 69, 0.5)",
                     "0 0 5px rgba(40, 167, 69, 0.3)"
                   ]
                 }}
-                transition={{ 
-                  duration: 3, 
-                  ease: "easeInOut", 
+                transition={{
+                  duration: 3,
+                  ease: "easeInOut",
                   repeat: Infinity,
                   delay: 1.2 // Delay the glow effect
                 }}
@@ -242,21 +250,21 @@ const HomePage = () => {
       <Container className="py-4 text-center">
         <AnimatePresence>
           {animationsActive && (
-            <motion.div 
+            <motion.div
               className="mb-4"
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ duration: 0.8, delay: 0.6 }} // Increased delay
             >
-              <motion.div 
-                className="mx-auto mb-5" 
-                style={{ 
-                  maxWidth: '600px', 
-                  background: 'linear-gradient(90deg, #00c6ff, #ff00de)', 
+              <motion.div
+                className="mx-auto mb-5"
+                style={{
+                  maxWidth: '600px',
+                  background: 'linear-gradient(90deg, #00c6ff, #ff00de)',
                   padding: '2px',
                   borderRadius: '4px'
                 }}
-                whileHover={{ 
+                whileHover={{
                   boxShadow: "0 0 25px rgba(0, 198, 255, 0.5)"
                 }}
                 transition={{ duration: 0.3 }}
@@ -274,9 +282,9 @@ const HomePage = () => {
                   </div>
                 </div>
               </motion.div>
-              
-              <motion.p 
-                className="text-white mx-auto" 
+
+              <motion.p
+                className="text-white mx-auto"
                 style={{ maxWidth: '600px', fontSize: '1.5rem' }}
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
@@ -284,8 +292,8 @@ const HomePage = () => {
               >
                 Add AI-powered financial insights to your banking application with the CLAU Banking Intelligence API
               </motion.p>
-              
-              <motion.div 
+
+              <motion.div
                 className="d-flex justify-content-center gap-3 mt-4"
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -319,7 +327,7 @@ const HomePage = () => {
 
       {/* Stats Counter Section - only display counters after animations are active */}
       <Container className="py-4">
-        <motion.div 
+        <motion.div
           className="text-center stats-container"
           initial={{ opacity: 0 }}
           animate={animationsActive ? { opacity: 1 } : { opacity: 0 }}
@@ -371,13 +379,13 @@ const HomePage = () => {
           initial="hidden"
           animate={featuresInView && animationsActive ? "visible" : "hidden"}
         >
-          <motion.h2 
+          <motion.h2
             className="text-success text-center mb-5"
             variants={fadeIn}
           >
             Key Features
           </motion.h2>
-          
+
           <Row className="g-4">
             <Col md={4}>
               <motion.div variants={scaleIn}>
@@ -394,7 +402,7 @@ const HomePage = () => {
                 </Card>
               </motion.div>
             </Col>
-            
+
             <Col md={4}>
               <motion.div variants={scaleIn}>
                 <Card className="h-100 text-white border-secondary feature-card">
@@ -410,7 +418,7 @@ const HomePage = () => {
                 </Card>
               </motion.div>
             </Col>
-            
+
             <Col md={4}>
               <motion.div variants={scaleIn}>
                 <Card className="h-100 text-white border-secondary feature-card">
@@ -439,17 +447,17 @@ const HomePage = () => {
         className="py-5 rounded my-5"
       >
         <Container>
-          <motion.h2 
+          <motion.h2
             className="text-success text-center mb-5"
             variants={fadeIn}
           >
             How It Works
           </motion.h2>
-          
+
           <motion.div variants={fadeIn}>
             <Row className="align-items-center mb-5">
               <Col md={6}>
-                <motion.div 
+                <motion.div
                   className="bg-success p-4 rounded mb-3 mb-md-0 w-100"
                   whileHover={{ scale: 1.03 }}
                   transition={{ duration: 0.3 }}
@@ -459,7 +467,7 @@ const HomePage = () => {
                 </motion.div>
               </Col>
               <Col md={6}>
-                <motion.pre 
+                <motion.pre
                   className="bg-black p-4 rounded text-white code-block w-100"
                   initial={{ x: 50, opacity: 0 }}
                   animate={howItWorksInView && animationsActive ? { x: 0, opacity: 1 } : { x: 50, opacity: 0 }}
@@ -470,11 +478,11 @@ const HomePage = () => {
               </Col>
             </Row>
           </motion.div>
-          
+
           <motion.div variants={fadeIn}>
             <Row className="align-items-center mb-5">
-              <Col md={{span: 6, order: 'last'}}>
-                <motion.div 
+              <Col md={{ span: 6, order: 'last' }}>
+                <motion.div
                   className="bg-success p-4 rounded mb-3 mb-md-0 w-100"
                   whileHover={{ scale: 1.03 }}
                   transition={{ duration: 0.3 }}
@@ -484,7 +492,7 @@ const HomePage = () => {
                 </motion.div>
               </Col>
               <Col md={6}>
-                <motion.pre 
+                <motion.pre
                   className="bg-black p-3 rounded text-white code-block"
                   initial={{ x: -50, opacity: 0 }}
                   animate={howItWorksInView && animationsActive ? { x: 0, opacity: 1 } : { x: -50, opacity: 0 }}
@@ -495,11 +503,11 @@ const HomePage = () => {
               </Col>
             </Row>
           </motion.div>
-          
+
           <motion.div variants={fadeIn}>
             <Row className="align-items-center">
               <Col md={6}>
-                <motion.div 
+                <motion.div
                   className="bg-success p-4 rounded mb-3 mb-md-0 w-100"
                   whileHover={{ scale: 1.03 }}
                   transition={{ duration: 0.3 }}
@@ -509,7 +517,7 @@ const HomePage = () => {
                 </motion.div>
               </Col>
               <Col md={6}>
-                <motion.pre 
+                <motion.pre
                   className="bg-black p-3 rounded text-white code-block"
                   initial={{ x: 50, opacity: 0 }}
                   animate={howItWorksInView && animationsActive ? { x: 0, opacity: 1 } : { x: 50, opacity: 0 }}
@@ -532,16 +540,16 @@ const HomePage = () => {
         className="py-5 cta-section"
       >
         <Container className="text-center">
-          <motion.h2 
+          <motion.h2
             className="text-success mb-4"
-            animate={ctaInView && animationsActive ? 
+            animate={ctaInView && animationsActive ?
               { scale: [1, 1.05, 1], textShadow: "0 0 8px rgba(40, 167, 69, 0.5)" } : {}
             }
             transition={{ duration: 1.5, repeat: Infinity, repeatType: "reverse" }}
           >
             Ready to enhance your banking app?
           </motion.h2>
-          <motion.p 
+          <motion.p
             className="text-light mb-4"
             animate={ctaInView && animationsActive ? { opacity: [0.7, 1, 0.7] } : {}}
             transition={{ duration: 2, repeat: Infinity }}
