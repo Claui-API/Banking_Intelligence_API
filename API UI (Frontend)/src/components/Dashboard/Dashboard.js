@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Container, Row, Col, Card, Button, Nav, Form, InputGroup, Badge, Dropdown, Spinner } from 'react-bootstrap';
+import { Container, Row, Col, Card, Button, Nav, Form, InputGroup, Badge, Dropdown, Spinner, Alert } from 'react-bootstrap';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { insightsService } from '../../services/insights';
@@ -8,6 +8,8 @@ import Documentation from '../Documentation/Documentation';
 import './Dashboard.css';
 import APIKeysManagement from '../APITokenManagement';
 import { EventSourcePolyfill } from 'event-source-polyfill';
+import PlaidLinkButton from '../Plaid/PlaidLinkButton';
+import logger from '../../utils/logger';
 
 // Example code for the playground
 const apiExampleCode = `// Example: Generate financial insights
@@ -55,12 +57,25 @@ const Dashboard = () => {
   const latestRequestIdRef = useRef(null);
   const chatEndRef = useRef(null);
 
+  // Add Plaid connection state
+  const [connected, setConnected] = useState(false);
+  const [institution, setInstitution] = useState('');
+  const [connectionSuccess, setConnectionSuccess] = useState(false);
+
   // Sample suggested prompts
   const suggestedPrompts = [
     "How much did I spend on dining out last month?",
     "What are my top expense categories?",
     "How can I improve my savings rate?",
     "Am I on track with my budget this month?"
+  ];
+
+  // Connected account prompts
+  const connectedPrompts = [
+    "How much did I spend on dining out last month?",
+    "What's my current account balance?",
+    "How can I improve my savings?",
+    "Am I spending more on groceries than average?"
   ];
 
   useEffect(() => {
@@ -71,6 +86,46 @@ const Dashboard = () => {
   // Generate a unique request ID
   const generateRequestId = () => {
     return `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  };
+
+  // Handle Plaid connection success
+  const handlePlaidSuccess = ({ itemId, metadata }) => {
+    try {
+      // Save institution name for display
+      setInstitution(metadata.institution.name);
+
+      // Mark as connected
+      setConnected(true);
+
+      // Show success message
+      setConnectionSuccess(true);
+      setTimeout(() => setConnectionSuccess(false), 5000); // Hide after 5 seconds
+
+      logger.info('Bank account connected successfully', {
+        institution: metadata.institution.name,
+        accounts: metadata.accounts.length
+      });
+
+      // Add a system message showing connection success
+      setChatMessages(prev => [
+        ...prev,
+        {
+          role: 'assistant',
+          content: `I've successfully connected to your accounts at ${metadata.institution.name}. You can now ask questions about your actual financial data!`,
+          timestamp: new Date().toISOString()
+        }
+      ]);
+
+    } catch (err) {
+      console.error('Plaid Success Handling Error', err);
+    }
+  };
+
+  // Handle Plaid exit (user canceled or error)
+  const handlePlaidExit = (err, metadata) => {
+    if (err) {
+      console.error('Plaid Exit Error:', err.message);
+    }
   };
 
   // Stream insights with EventSource
@@ -105,6 +160,7 @@ const Dashboard = () => {
       latestRequestIdRef.current = requestId;
 
       // First, submit the query via regular API call but with streaming flag
+      // Add a parameter indicating if we're using real connected data
       const response = await fetch('/api/insights/stream-prepare', {
         method: 'POST',
         headers: {
@@ -113,7 +169,8 @@ const Dashboard = () => {
         },
         body: JSON.stringify({
           query: inputQuery,
-          requestId
+          requestId,
+          useConnectedData: connected // Add this flag
         })
       });
 
@@ -143,6 +200,17 @@ const Dashboard = () => {
             ));
             eventSource.close();
             return;
+          }
+
+          // Special handling for the real-data marker
+          if (data.chunk === '<using-real-data>') {
+            // Set a flag to render the message with the "real data" badge
+            setChatMessages(prev => prev.map(msg =>
+              msg.id === tempMessageId
+                ? { ...msg, usingRealData: true }
+                : msg
+            ));
+            return; // Skip this chunk
           }
 
           // Update message with new content
@@ -207,7 +275,7 @@ const Dashboard = () => {
           // Update existing message
           return prev.map(msg =>
             msg.id === tempMessageId
-              ? { ...msg, content: insightText, isStreaming: false }
+              ? { ...msg, content: insightText, isStreaming: false, usingRealData: connected }
               : msg
           );
         } else {
@@ -217,6 +285,7 @@ const Dashboard = () => {
             role: 'assistant',
             content: insightText,
             isStreaming: false,
+            usingRealData: connected,
             timestamp: new Date().toISOString()
           }];
         }
@@ -329,18 +398,57 @@ const Dashboard = () => {
             <div className="playground-header">
               <div className="d-flex justify-content-between align-items-center">
                 <h2 className="text-white">Banking Intelligence Playground</h2>
-                <div className="api-status">
-                  <Badge bg="success" className="d-flex align-items-center">
-                    <span className="status-indicator me-1"></span>
-                    API Status: Online
-                  </Badge>
+                <div className="d-flex align-items-center">
+                  {/* Add Plaid connection button/status */}
+                  <div className="d-flex align-items-center me-3">
+                    <Badge bg={connected ? "success" : "warning"} className="d-flex align-items-center">
+                      <span className="status-indicator me-1"></span>
+                      {connected ? "Accounts Connected" : "No Accounts Connected"}
+                    </Badge>
+                    {!connected && (
+                      <PlaidLinkButton
+                        onSuccess={handlePlaidSuccess}
+                        onExit={handlePlaidExit}
+                        buttonText="Connect Bank"
+                        className="ms-2 btn-sm"
+                      />
+                    )}
+                  </div>
+                  <div className="api-status">
+                    <Badge bg="success" className="d-flex align-items-center">
+                      <span className="status-indicator me-1"></span>
+                      API Status: Online
+                    </Badge>
+                  </div>
                 </div>
               </div>
             </div>
 
+            {/* Success message when accounts connected */}
+            {connectionSuccess && (
+              <Alert
+                variant="success"
+                className="mx-4 mt-2"
+                onClose={() => setConnectionSuccess(false)}
+                dismissible
+              >
+                <i className="bi bi-check-circle-fill me-2"></i>
+                Successfully connected accounts from <strong>{institution}</strong>! You can now ask questions about your financial data.
+              </Alert>
+            )}
+
             {/* Chat Interface */}
             <div className="chat-container">
               <div className="chat-messages">
+                {connected && (
+                  <div className="text-center mb-3">
+                    <Badge bg="success" className="py-2 px-3">
+                      <i className="bi bi-bank me-2"></i>
+                      Connected to {institution}
+                    </Badge>
+                  </div>
+                )}
+
                 {chatMessages.map((message, index) => (
                   <div
                     key={index}
@@ -377,7 +485,12 @@ const Dashboard = () => {
                           </div>
                         </>
                       ) : (
-                        <pre className="message-text">{message.content}</pre>
+                        <>
+                          {message.usingRealData && (
+                            <Badge bg="info" className="mb-2">Using Connected Bank Data</Badge>
+                          )}
+                          <pre className="message-text">{message.content}</pre>
+                        </>
                       )}
                       <div className="message-timestamp">
                         {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -391,9 +504,13 @@ const Dashboard = () => {
               {/* Suggested Prompts */}
               {chatMessages.length < 3 && (
                 <div className="suggested-prompts">
-                  <p className="text-white mb-2">Try asking:</p>
+                  <p className="text-white mb-2">
+                    {connected
+                      ? "Try asking about your connected accounts:"
+                      : "Try asking:"}
+                  </p>
                   <div className="d-flex flex-wrap gap-2">
-                    {suggestedPrompts.map((prompt, index) => (
+                    {(connected ? connectedPrompts : suggestedPrompts).map((prompt, index) => (
                       <Button
                         key={index}
                         variant="outline-success"

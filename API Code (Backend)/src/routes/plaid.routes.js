@@ -12,22 +12,22 @@ const logger = require('../utils/logger');
 router.post('/create-link-token', authMiddleware, async (req, res) => {
   try {
     const { userId } = req.auth;
-    
+
     if (!userId) {
       return res.status(400).json({
         success: false,
         message: 'User ID is required'
       });
     }
-    
+
     const products = req.body.products || ['transactions'];
-    
+
     // Here you would implement your Plaid Link token creation logic
     // For now, just return a mock response
     const mockLinkToken = `link-sandbox-${Date.now()}-${Math.random().toString(36).substring(2, 10)}`;
-    
+
     logger.info(`Created Plaid Link token for user ${userId}`);
-    
+
     return res.status(200).json({
       success: true,
       data: {
@@ -53,21 +53,21 @@ router.post('/exchange-public-token', authMiddleware, async (req, res) => {
   try {
     const { userId } = req.auth;
     const { publicToken } = req.body;
-    
+
     if (!publicToken) {
       return res.status(400).json({
         success: false,
         message: 'Public token is required'
       });
     }
-    
+
     // Here you would implement your public token exchange logic
     // For now, just return a mock response
     const mockAccessToken = `access-sandbox-${Date.now()}-${Math.random().toString(36).substring(2, 10)}`;
     const mockItemId = `item-sandbox-${Date.now()}-${Math.random().toString(36).substring(2, 10)}`;
-    
+
     logger.info(`Exchanged public token for user ${userId}`);
-    
+
     return res.status(200).json({
       success: true,
       message: 'Bank account connected successfully',
@@ -92,9 +92,9 @@ router.post('/exchange-public-token', authMiddleware, async (req, res) => {
 router.get('/accounts', authMiddleware, async (req, res) => {
   try {
     const { userId } = req.auth;
-    
+
     logger.info(`Getting accounts for user ${userId}`);
-    
+
     // Here you would implement your get accounts logic
     // For now, just return mock accounts
     const mockAccounts = [
@@ -126,7 +126,7 @@ router.get('/accounts', authMiddleware, async (req, res) => {
         currency: 'USD'
       }
     ];
-    
+
     return res.status(200).json({
       success: true,
       data: mockAccounts,
@@ -134,7 +134,7 @@ router.get('/accounts', authMiddleware, async (req, res) => {
     });
   } catch (error) {
     logger.error('Error getting accounts:', error);
-    
+
     // Return mock accounts on error for development
     return res.status(200).json({
       success: true,
@@ -162,9 +162,9 @@ router.get('/transactions', authMiddleware, async (req, res) => {
   try {
     const { userId } = req.auth;
     const { startDate, endDate } = req.query;
-    
+
     logger.info(`Getting transactions for user ${userId}`);
-    
+
     // Here you would implement your get transactions logic
     // For now, just return mock transactions
     const mockTransactions = [
@@ -196,7 +196,7 @@ router.get('/transactions', authMiddleware, async (req, res) => {
         merchantName: 'Amazon'
       }
     ];
-    
+
     return res.status(200).json({
       success: true,
       data: mockTransactions,
@@ -204,7 +204,7 @@ router.get('/transactions', authMiddleware, async (req, res) => {
     });
   } catch (error) {
     logger.error('Error getting transactions:', error);
-    
+
     // Return mock transactions on error for development
     return res.status(200).json({
       success: true,

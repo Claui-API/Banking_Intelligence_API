@@ -68,7 +68,7 @@ router.get('/metrics/:metric', authMiddleware, authorize('admin'), (req, res) =>
  */
 router.post('/stream-prepare', authMiddleware, (req, res) => {
   try {
-    const { query, requestId } = req.body;
+    const { query, requestId, useConnectedData } = req.body;
     const userId = req.auth.userId;
 
     if (!query || !requestId) {
@@ -81,13 +81,15 @@ router.post('/stream-prepare', authMiddleware, (req, res) => {
     logger.info('Stream preparation', {
       userId,
       requestId,
-      query: query.substring(0, 30) // Log only the beginning for privacy
+      query: query.substring(0, 30), // Log only the beginning for privacy
+      useConnectedData: !!useConnectedData // Log whether to use connected data
     });
 
     // Store query for streaming
     streamingQueries.set(requestId, {
       query,
       userId,
+      useConnectedData: !!useConnectedData, // Store this flag
       timestamp: Date.now(),
       processed: false
     });
@@ -220,11 +222,26 @@ router.get('/stream', authMiddleware, (req, res) => {
  * Process streaming insights
  */
 async function processStreamingInsight(query, userId, requestId, callback) {
+  // Get the stored query data to check if we should use connected data
+  const queryData = streamingQueries.get(requestId) || {};
+  const useConnectedData = queryData.useConnectedData || false;
+
   // Get user financial data first
   let userData;
   try {
-    userData = await databaseService.getUserFinancialData(userId);
-    logger.info('Retrieved financial data for streaming', { userId });
+    if (useConnectedData) {
+      // If using connected data, prioritize getting real data
+      userData = await databaseService.getUserFinancialData(userId);
+      logger.info('Retrieved REAL connected financial data for streaming', { userId });
+
+      // Send a special marker to indicate we're using real data
+      // This will be intercepted by the frontend to add the badge
+      callback('<using-real-data>', false);
+    } else {
+      // Standard flow - try to get data, fall back to mock if needed
+      userData = await databaseService.getUserFinancialData(userId);
+      logger.info('Retrieved financial data for streaming', { userId });
+    }
   } catch (error) {
     logger.warn('Error getting user data', error);
 
@@ -246,7 +263,8 @@ async function processStreamingInsight(query, userId, requestId, callback) {
       ...userData,
       query,
       queryType,
-      requestId
+      requestId,
+      useConnectedData // Pass this flag to indicate real data is being used
     });
 
     // Break response into smaller parts for streaming
