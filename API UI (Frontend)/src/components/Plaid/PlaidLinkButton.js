@@ -9,7 +9,7 @@ const PlaidLinkButton = ({
   onSuccess,
   onExit,
   buttonText = 'Connect your bank account',
-  className = '' // Accept a className prop for styling
+  className = ''
 }) => {
   const [linkToken, setLinkToken] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -21,13 +21,22 @@ const PlaidLinkButton = ({
       setLoading(true);
       setError('');
 
-      const response = await api.post('plaid/create-link-token');
+      logger.info('Requesting Plaid link token');
 
-      if (response.data.success) {
-        setLinkToken(response.data.data.link_token);
-        logger.info('Link token created successfully');
+      const response = await api.post('/plaid/create-link-token');
+
+      logger.info('Plaid link token API response received', {
+        status: response.status,
+        hasData: !!response.data,
+        success: response.data?.success
+      });
+
+      if (response.data && response.data.success) {
+        const linkToken = response.data.data.link_token;
+        logger.info(`Link token created: ${linkToken.substring(0, 10)}...`);
+        setLinkToken(linkToken);
       } else {
-        throw new Error(response.data.message || 'Failed to create link token');
+        throw new Error(response.data?.message || 'Failed to create link token');
       }
     } catch (err) {
       logger.logError('Link Token Error', err);
@@ -48,23 +57,24 @@ const PlaidLinkButton = ({
       setLoading(true);
 
       logger.info('Plaid Link success', {
-        institution: metadata.institution.name,
-        accounts: metadata.accounts.length
+        institution: metadata.institution?.name,
+        accounts: metadata.accounts?.length
       });
 
-      // Exchange public token for access token (server-side)
-      const response = await api.post('/api/plaid/exchange-public-token', {
-        publicToken
+      // Exchange public token
+      const response = await api.post('/plaid/exchange-public-token', {
+        publicToken,
+        metadata  // Include the metadata about the institution and accounts
       });
 
-      if (response.data.success) {
+      if (response.data && response.data.success) {
         // Call the onSuccess callback with the item ID and metadata
         onSuccess && onSuccess({
           itemId: response.data.data.itemId,
           metadata
         });
       } else {
-        throw new Error(response.data.message || 'Token exchange failed');
+        throw new Error(response.data?.message || 'Token exchange failed');
       }
     } catch (err) {
       logger.logError('Public Token Exchange Error', err);
@@ -89,12 +99,7 @@ const PlaidLinkButton = ({
     token: linkToken,
     onSuccess: handleSuccess,
     onExit: handleExit,
-    // Optional: Customize the Plaid Link experience
-    // https://plaid.com/docs/link/customization/
   });
-
-  // If we want a custom style for the button based on the passed className
-  const buttonStyle = className ? className : "d-flex align-items-center justify-content-center";
 
   return (
     <>
@@ -102,8 +107,8 @@ const PlaidLinkButton = ({
         variant="primary"
         disabled={!ready || loading || !linkToken}
         onClick={() => open()}
-        className={buttonStyle}
-        size={className.includes('btn-sm') ? "sm" : ""}
+        className={className || "d-flex align-items-center justify-content-center"}
+        size={className?.includes('btn-sm') ? "sm" : ""}
       >
         {loading ? (
           <>

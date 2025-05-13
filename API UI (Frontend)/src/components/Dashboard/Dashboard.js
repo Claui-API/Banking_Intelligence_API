@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react'; // Added useCallback
 import { Container, Row, Col, Card, Button, Nav, Form, InputGroup, Badge, Dropdown, Spinner, Alert } from 'react-bootstrap';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
@@ -10,6 +10,7 @@ import APIKeysManagement from '../APITokenManagement';
 import { EventSourcePolyfill } from 'event-source-polyfill';
 import PlaidLinkButton from '../Plaid/PlaidLinkButton';
 import logger from '../../utils/logger';
+import api from '../../services/api'; // Added missing API import
 
 // Example code for the playground
 const apiExampleCode = `// Example: Generate financial insights
@@ -33,6 +34,49 @@ fetch('https://bankingintelligenceapi.com/api/insights/generate', {
     }
   })
 })`;
+
+// Simple API Status component
+const PlaidApiStatus = () => {
+  const [status, setStatus] = useState('checking');
+
+  useEffect(() => {
+    const checkApi = async () => {
+      try {
+        // First try the health endpoint since /plaid/status might not exist yet
+        const response = await api.get('/health');
+
+        if (response.data && response.status === 200) {
+          setStatus('connected');
+
+          // Also try to check plaid status, but don't fail if it's not available
+          try {
+            await api.get('/plaid/status');
+          } catch (plaidErr) {
+            // Just log this error, don't change the status
+            console.log('Plaid status endpoint not available yet');
+          }
+        } else {
+          setStatus('error');
+        }
+      } catch (error) {
+        console.error('API health check failed:', error);
+        setStatus('error');
+      }
+    };
+
+    checkApi();
+  }, []);
+
+  return (
+    <Badge
+      bg={status === 'checking' ? 'secondary' : status === 'connected' ? 'success' : 'danger'}
+      className="d-flex align-items-center"
+    >
+      <span className="status-indicator me-1"></span>
+      API: {status === 'checking' ? 'Checking...' : status === 'connected' ? 'Online' : 'Error'}
+    </Badge>
+  );
+};
 
 const Dashboard = () => {
   const { user, clientStatus } = useAuth();
@@ -61,6 +105,32 @@ const Dashboard = () => {
   const [connected, setConnected] = useState(false);
   const [institution, setInstitution] = useState('');
   const [connectionSuccess, setConnectionSuccess] = useState(false);
+
+  // Add state for tracking Plaid connection status
+  const [plaidStatus, setPlaidStatus] = useState('ready'); // ready, connecting, success, error
+  const [plaidError, setPlaidError] = useState(null);
+
+  // Add this function to check Plaid availability
+  const checkPlaidStatus = useCallback(async () => {
+    try {
+      const response = await api.get('/plaid/status');
+      if (response.data.success) {
+        logger.info('Plaid service is available');
+      } else {
+        setPlaidStatus('error');
+        setPlaidError('Plaid service is currently unavailable');
+        logger.error('Plaid service unavailable:', response.data);
+      }
+    } catch (error) {
+      logger.error('Error checking Plaid status:', error);
+      // Don't show an error to the user - just log it
+    }
+  }, []);
+
+  // Call this in a useEffect
+  useEffect(() => {
+    checkPlaidStatus();
+  }, [checkPlaidStatus]);
 
   // Sample suggested prompts
   const suggestedPrompts = [
@@ -91,6 +161,13 @@ const Dashboard = () => {
   // Handle Plaid connection success
   const handlePlaidSuccess = ({ itemId, metadata }) => {
     try {
+      // Log detailed success info
+      logger.info('Bank account connected successfully', {
+        institution: metadata.institution.name,
+        accountCount: metadata.accounts.length,
+        itemId: itemId
+      });
+
       // Save institution name for display
       setInstitution(metadata.institution.name);
 
@@ -101,11 +178,6 @@ const Dashboard = () => {
       setConnectionSuccess(true);
       setTimeout(() => setConnectionSuccess(false), 5000); // Hide after 5 seconds
 
-      logger.info('Bank account connected successfully', {
-        institution: metadata.institution.name,
-        accounts: metadata.accounts.length
-      });
-
       // Add a system message showing connection success
       setChatMessages(prev => [
         ...prev,
@@ -115,16 +187,39 @@ const Dashboard = () => {
           timestamp: new Date().toISOString()
         }
       ]);
-
     } catch (err) {
-      console.error('Plaid Success Handling Error', err);
+      logger.logError('Plaid Success Handling Error', err);
+      // Show error to user
+      setConnectionSuccess(false);
+      alert(`Error processing bank connection: ${err.message}`);
     }
   };
 
   // Handle Plaid exit (user canceled or error)
   const handlePlaidExit = (err, metadata) => {
     if (err) {
-      console.error('Plaid Exit Error:', err.message);
+      logger.logError('Plaid Exit Error:', {
+        message: err.message,
+        metadata: metadata
+      });
+
+      if (err.error_code) {
+        switch (err.error_code) {
+          case 'INVALID_LINK_TOKEN':
+            alert('Invalid link token. Please try again later.');
+            break;
+          case 'INVALID_REQUEST':
+            alert('There was a problem with the request. Please try again.');
+            break;
+          case 'INSTITUTION_ERROR':
+            alert('There was a problem connecting to this institution. Please try again later.');
+            break;
+          default:
+            alert(`Error: ${err.message || 'Unknown error'}`);
+        }
+      }
+    } else {
+      logger.info('Plaid Link flow exited', metadata);
     }
   };
 
@@ -407,22 +502,36 @@ const Dashboard = () => {
                     </Badge>
                     {!connected && (
                       <PlaidLinkButton
-                        onSuccess={handlePlaidSuccess}
-                        onExit={handlePlaidExit}
+                        onSuccess={(linkData) => {
+                          setPlaidStatus('success');
+                          handlePlaidSuccess(linkData);
+                        }}
+                        onExit={(err, metadata) => {
+                          if (err) {
+                            setPlaidStatus('error');
+                            setPlaidError(err.message || 'Error connecting to bank');
+                          } else {
+                            setPlaidStatus('ready');
+                          }
+                          handlePlaidExit(err, metadata);
+                        }}
                         buttonText="Connect Bank"
                         className="ms-2 btn-sm"
                       />
                     )}
                   </div>
-                  <div className="api-status">
-                    <Badge bg="success" className="d-flex align-items-center">
-                      <span className="status-indicator me-1"></span>
-                      API Status: Online
-                    </Badge>
-                  </div>
+                  <PlaidApiStatus />
                 </div>
               </div>
             </div>
+
+            {/* Display Plaid error if present */}
+            {plaidError && (
+              <div className="text-danger mt-2 mx-4 small">
+                <i className="bi bi-exclamation-triangle me-1"></i>
+                {plaidError}
+              </div>
+            )}
 
             {/* Success message when accounts connected */}
             {connectionSuccess && (

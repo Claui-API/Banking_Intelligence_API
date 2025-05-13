@@ -5,11 +5,13 @@ const logger = require('../utils/logger');
 
 dotenv.config();
 
-/**
- * Service for interacting with Plaid API
- */
 class PlaidService {
   constructor() {
+    // Check for required environment variables
+    if (!process.env.PLAID_CLIENT_ID || !process.env.PLAID_SECRET) {
+      logger.error('Missing required Plaid API credentials');
+    }
+
     // Configure Plaid client based on environment
     const configuration = new Configuration({
       basePath: this._getPlaidEnvironment(),
@@ -21,17 +23,23 @@ class PlaidService {
         },
       },
     });
-    
+
     this.client = new PlaidApi(configuration);
+
+    logger.info('Plaid service initialized with environment:', {
+      environment: process.env.PLAID_ENV || 'sandbox',
+      clientIdSet: !!process.env.PLAID_CLIENT_ID,
+      secretSet: !!process.env.PLAID_SECRET
+    });
   }
-  
+
   /**
    * Get Plaid environment based on NODE_ENV
    * @returns {string} - Plaid environment URL
    */
   _getPlaidEnvironment() {
     const env = process.env.PLAID_ENV || 'sandbox';
-    
+
     switch (env) {
       case 'sandbox':
         return PlaidEnvironments.sandbox;
@@ -43,7 +51,7 @@ class PlaidService {
         return PlaidEnvironments.sandbox;
     }
   }
-  
+
   /**
    * Create a link token for a user
    * @param {string} userId - User ID
@@ -62,17 +70,17 @@ class PlaidService {
         country_codes: ['US'],
         webhook: process.env.PLAID_WEBHOOK_URL
       };
-      
+
       const response = await this.client.linkTokenCreate(request);
       logger.info(`Link token created for user: ${userId}`);
-      
+
       return response.data;
     } catch (error) {
       logger.error('Error creating link token:', error);
       throw new Error(`Failed to create link token: ${error.message}`);
     }
   }
-  
+
   /**
    * Exchange public token for access token
    * @param {string} publicToken - Public token from Plaid Link
@@ -83,10 +91,10 @@ class PlaidService {
       const request = {
         public_token: publicToken
       };
-      
+
       const response = await this.client.itemPublicTokenExchange(request);
       logger.info('Public token exchanged for access token');
-      
+
       return {
         accessToken: response.data.access_token,
         itemId: response.data.item_id
@@ -96,7 +104,7 @@ class PlaidService {
       throw new Error(`Failed to exchange public token: ${error.message}`);
     }
   }
-  
+
   /**
    * Get bank account information for a user
    * @param {string} accessToken - Plaid access token
@@ -107,10 +115,10 @@ class PlaidService {
       const request = {
         access_token: accessToken
       };
-      
+
       const response = await this.client.accountsGet(request);
       logger.info(`Retrieved ${response.data.accounts.length} accounts`);
-      
+
       // Transform to our account model format
       return response.data.accounts.map(account => ({
         accountId: account.account_id,
@@ -128,7 +136,7 @@ class PlaidService {
       throw new Error(`Failed to get accounts: ${error.message}`);
     }
   }
-  
+
   /**
    * Get transactions for a user
    * @param {string} accessToken - Plaid access token
@@ -147,25 +155,25 @@ class PlaidService {
           offset: 0
         }
       };
-      
+
       // Initialize an empty array to store all transactions
       let allTransactions = [];
       let hasMore = true;
       let offset = 0;
-      
+
       // Paginate through all transactions
       while (hasMore) {
         request.options.offset = offset;
         const response = await this.client.transactionsGet(request);
-        
+
         allTransactions = [...allTransactions, ...response.data.transactions];
-        
+
         hasMore = response.data.total_transactions > allTransactions.length;
         offset += response.data.transactions.length;
       }
-      
+
       logger.info(`Retrieved ${allTransactions.length} transactions`);
-      
+
       // Transform to our transaction model format
       return allTransactions.map(transaction => ({
         transactionId: transaction.transaction_id,
@@ -185,7 +193,7 @@ class PlaidService {
       throw new Error(`Failed to get transactions: ${error.message}`);
     }
   }
-  
+
   /**
    * Map Plaid account type to our account type
    * @param {string} plaidType - Plaid account type
@@ -199,10 +207,10 @@ class PlaidService {
       'investment': 'Investment',
       'other': 'Other'
     };
-    
+
     return typeMap[plaidType] || 'Other';
   }
-  
+
   /**
    * Map Plaid transaction to our transaction type
    * @param {Object} transaction - Plaid transaction
@@ -212,13 +220,13 @@ class PlaidService {
     if (transaction.amount <= 0) {
       return 'income';
     }
-    
-    if (transaction.category && 
-      (transaction.category.includes('Transfer') || 
-       transaction.category.includes('Payment'))) {
+
+    if (transaction.category &&
+      (transaction.category.includes('Transfer') ||
+        transaction.category.includes('Payment'))) {
       return 'transfer';
     }
-    
+
     return 'expense';
   }
 }
