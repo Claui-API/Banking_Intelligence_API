@@ -1,4 +1,5 @@
-// src/components/Auth/Login.js
+// src/components/Auth/Login.js - Updated with 2FA integration
+
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
@@ -21,26 +22,37 @@ const Login = () => {
   const [showTokenModal, setShowTokenModal] = useState(false);
   const [generatedToken, setGeneratedToken] = useState(null);
   const [loginMethod, setLoginMethod] = useState('user'); // 'user' or 'api'
+
+  // 2FA State
   const [requireTwoFactor, setRequireTwoFactor] = useState(false);
   const [twoFactorData, setTwoFactorData] = useState(null);
 
-  const { login } = useAuth();
+  const { login, updateAuth } = useAuth();
   const navigate = useNavigate();
 
   /**
    * Handle successful 2FA verification
    */
   const handleTwoFactorSuccess = (authResult) => {
+    logger.info('2FA verification successful, completing login');
     setLoading(false);
     setRequireTwoFactor(false);
 
-    // Store the token and navigate to dashboard
+    // Ensure tokens are stored
     localStorage.setItem('token', authResult.accessToken);
     if (authResult.refreshToken) {
       localStorage.setItem('refreshToken', authResult.refreshToken);
     }
 
-    navigate('/dashboard');
+    // Update auth context
+    if (updateAuth) {
+      updateAuth(); // If you have an update function in your auth context
+    }
+
+    // Navigate to dashboard with a small delay to ensure context updates
+    setTimeout(() => {
+      navigate('/dashboard');
+    }, 100);
   };
 
   /**
@@ -49,6 +61,7 @@ const Login = () => {
   const handleTwoFactorCancel = () => {
     setRequireTwoFactor(false);
     setTwoFactorData(null);
+    setError('');
   };
 
   const handleSubmit = async (e) => {
@@ -69,14 +82,18 @@ const Login = () => {
         throw new Error('Client ID and Client Secret are required');
       }
 
+      // Attempt login
       const loginResult = await login(credentials);
 
       // Check if 2FA is required
       if (loginResult.requireTwoFactor) {
+        logger.info('2FA verification required');
+
         setTwoFactorData({
           userId: loginResult.userId,
-          email: loginResult.email
+          email: loginResult.email || email
         });
+
         setRequireTwoFactor(true);
         setLoading(false);
         return;
@@ -87,14 +104,14 @@ const Login = () => {
         // Show modal for token generation
         setGeneratedToken(loginResult.token);
         setShowTokenModal(true);
+        setLoading(false);
       } else {
         // Standard login - navigate to dashboard
         navigate('/dashboard');
       }
     } catch (err) {
-      logger.logError('Login Error', err);
+      logger.error('Login Error', err);
       setError(err.message || 'Failed to log in');
-    } finally {
       setLoading(false);
     }
   };
@@ -140,6 +157,7 @@ const Login = () => {
                   {error}
                 </Alert>
               )}
+
               <div className="mb-4">
                 <ul className="nav nav-tabs d-flex justify-content-center gap-2">
                   <li className="nav-item">

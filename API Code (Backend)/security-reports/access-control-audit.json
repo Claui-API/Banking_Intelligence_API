@@ -1,5 +1,5 @@
 {
-  "lastAudit": "2025-05-14T17:01:59.541Z",
+  "lastAudit": "2025-05-14T19:10:18.567Z",
   "accessControls": [
     {
       "type": "middleware",
@@ -15,8 +15,8 @@
     },
     {
       "type": "middleware",
-      "name": "apiTokenMiddleware",
-      "description": "Auth middleware: apiTokenMiddleware",
+      "name": "authorize",
+      "description": "Auth middleware: authorize",
       "controls": [
         "Token Validation",
         "Role-Based Access Control",
@@ -27,8 +27,8 @@
     },
     {
       "type": "middleware",
-      "name": "authorize",
-      "description": "Auth middleware: authorize",
+      "name": "require2FA",
+      "description": "Auth middleware: require2FA",
       "controls": [
         "Token Validation",
         "Role-Based Access Control",
@@ -100,7 +100,7 @@
       ]
     },
     {
-      "name": "apiTokenMiddleware",
+      "name": "authorize",
       "file": "src/middleware/auth.js",
       "checks": {
         "token": true,
@@ -116,7 +116,7 @@
       ]
     },
     {
-      "name": "authorize",
+      "name": "require2FA",
       "file": "src/middleware/auth.js",
       "checks": {
         "token": true,

@@ -8,7 +8,7 @@
         "internal": "172.31.2.102",
         "external": "3.131.131.48"
       },
-      "lastSeen": "2025-05-14T17:01:54.510Z",
+      "lastSeen": "2025-05-14T19:10:13.332Z",
       "osInfo": {
         "type": "Linux",
         "platform": "linux",
@@ -31,10 +31,10 @@
       "platform": "linux",
       "osType": "Linux",
       "osRelease": "6.1.132-147.221.amzn2023.x86_64",
-      "lastSeen": "2025-05-14T17:01:57.287Z"
+      "lastSeen": "2025-05-14T19:10:16.460Z"
     }
   },
-  "lastUpdated": "2025-05-14T17:01:57.287Z",
+  "lastUpdated": "2025-05-14T19:10:16.460Z",
   "stats": {
     "total": 2,
     "active": 2,

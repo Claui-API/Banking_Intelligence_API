@@ -1,4 +1,5 @@
-// server.js - Updated with safe route mounting
+// server.js - Fixed twoFactorLimiter reference error
+
 const express = require('express');
 const path = require('path');
 const helmet = require('helmet');
@@ -46,6 +47,33 @@ function safeMount(path, routeModule, name) {
   }
 }
 
+// General API rate limiter
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: function (req, res) {
+    return req.auth && req.auth.role === 'admin';
+  },
+  keyGenerator: function (req) {
+    if (req.auth && req.auth.userId) {
+      return req.auth.userId;
+    }
+    return req.ip;
+  },
+  message: { success: false, message: 'Too many requests, please try again later.' }
+});
+
+// Define twoFactorLimiter here, BEFORE trying to use it
+const twoFactorLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // Stricter limit for 2FA attempts
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: 'Too many 2FA verification attempts, please try again later.' }
+});
+
 // Safely import and mount all routes
 const routes = [
   { path: '/api/auth', name: 'Auth', importPath: './routes/auth.routes' },
@@ -61,6 +89,10 @@ const routes = [
   { path: '/api/v1/sync', name: 'Sync', importPath: './routes/sync.routes' },
   { path: '/api/v1/mobile', name: 'Mobile Insights', importPath: './routes/insights.mobile.routes' }
 ];
+
+// Apply 2FA rate limiter to specific endpoint
+// Note: This must come AFTER the limiter is defined
+app.use('/api/auth/verify-2fa', twoFactorLimiter);
 
 // Test insights metrics on startup
 const initializeMetrics = async () => {
@@ -79,24 +111,6 @@ const initializeMetrics = async () => {
 
 // Run initialization
 initializeMetrics();
-
-// General API rate limiter
-const apiLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100,
-  standardHeaders: true,
-  legacyHeaders: false,
-  skip: function (req, res) {
-    return req.auth && req.auth.role === 'admin';
-  },
-  keyGenerator: function (req) {
-    if (req.auth && req.auth.userId) {
-      return req.auth.userId;
-    }
-    return req.ip;
-  },
-  message: { success: false, message: 'Too many requests, please try again later.' }
-});
 
 // Apply middleware
 app.use(helmet());

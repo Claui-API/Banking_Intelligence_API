@@ -3,6 +3,7 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
 const { User, Client } = require('../models/User');
 const Token = require('../models/Token');
+const twoFactorService = require('./twoFactor.service');
 const logger = require('../utils/logger');
 
 // Get environment variables
@@ -18,19 +19,19 @@ const authService = {
   // Register a new user with client credentials
   register: async (userData) => {
     const transaction = await User.sequelize.transaction();
-    
+
     try {
       // Validate email uniqueness
       const existingUser = await User.findOne({
         where: { email: userData.email },
         transaction
       });
-      
+
       if (existingUser) {
         await transaction.rollback();
         throw new Error('Email already in use');
       }
-      
+
       // Create the user
       const user = await User.create({
         clientName: userData.clientName,
@@ -38,16 +39,16 @@ const authService = {
         passwordHash: userData.password, // Will be hashed by hooks
         description: userData.description
       }, { transaction });
-      
+
       // Generate client credentials
       const credentials = Client.generateCredentials();
-      
+
       // Calculate resetDate - the first day of next month
       const resetDate = new Date();
       resetDate.setMonth(resetDate.getMonth() + 1);
       resetDate.setDate(1);
       resetDate.setHours(0, 0, 0, 0);
-      
+
       // Create the client - explicitly set resetDate
       const client = await Client.create({
         userId: user.id,
@@ -58,19 +59,34 @@ const authService = {
         usageQuota: 1000,     // Set default usage quota
         usageCount: 0         // Initialize usage count
       }, { transaction });
-      
+
+      // Generate 2FA secret and backup codes to auto-enable 2FA
+      const twoFactorService = require('./twoFactor.service');
+      const secretData = await twoFactorService.generateSecret(user);
+      const backupCodes = twoFactorService.generateBackupCodes();
+
+      // Update user with 2FA enabled
+      user.twoFactorEnabled = true;
+      user.twoFactorSecret = secretData.secret;
+      user.backupCodes = backupCodes;
+      await user.save({ transaction });
+
       await transaction.commit();
-      
-      logger.info(`User registered successfully: ${user.email}`);
-      
-      // Return credentials but not the full user object
+
+      logger.info(`User registered successfully with 2FA enabled: ${user.email}`);
+
+      // Return credentials with 2FA setup info
       return {
         success: true,
         data: {
           clientId: client.clientId,
           clientSecret: client.clientSecret,
           userId: user.id,
-          status: client.status // Include status so client knows they need approval
+          status: client.status,
+          twoFactorEnabled: true,
+          twoFactorSecret: secretData.secret,
+          twoFactorQrCode: secretData.qrCodeUrl,
+          backupCodes: backupCodes
         }
       };
     } catch (error) {
@@ -79,45 +95,45 @@ const authService = {
       throw error;
     }
   },
-  
+
   // Login with email/password or clientId/clientSecret
   login: async (credentials, req) => {
     try {
       const { email, password, clientId, clientSecret } = credentials;
       let user = null;
       let client = null;
-      
+
       // Determine login method
       if (email && password) {
         // Email/password login
-        user = await User.findOne({ 
+        user = await User.findOne({
           where: { email, status: 'active' },
           include: [{ model: Client, where: { status: 'active' }, required: false }]
         });
-        
+
         if (!user) {
           throw new Error('Invalid email or password');
         }
-        
+
         // Verify password
         const isValidPassword = await user.comparePassword(password);
         if (!isValidPassword) {
           throw new Error('Invalid email or password');
         }
-        
+
         // Get the first active client for this user
         client = user.Clients?.[0];
-        
+
         // If user doesn't have any active clients, check for pending ones
         if (!client) {
           const pendingClient = await Client.findOne({
             where: { userId: user.id, status: 'pending' }
           });
-          
+
           if (pendingClient) {
             throw new Error('Your API access is pending approval. Please contact the administrator.');
           }
-          
+
           // If no pending clients either, create one that will need approval
           const credentials = Client.generateCredentials();
           client = await Client.create({
@@ -127,77 +143,94 @@ const authService = {
             description: 'Auto-generated client',
             status: 'pending' // Will need admin approval
           });
-          
+
           throw new Error('A new API client has been created for you, but it requires administrator approval.');
         }
       } else if (clientId && clientSecret) {
         // Client credentials login
-        client = await Client.findOne({ 
+        client = await Client.findOne({
           where: { clientId, clientSecret },
           include: [{ model: User, where: { status: 'active' }, required: true }]
         });
-        
+
         if (!client) {
           throw new Error('Invalid client credentials');
         }
-        
+
         // Check client status
         if (client.status !== 'active') {
           throw new Error(`Your API access is ${client.status}. Please contact the administrator for approval.`);
         }
-        
+
         user = client.User;
       } else {
         throw new Error('Invalid credentials format');
       }
-      
+
       // Update login timestamp
       user.lastLoginAt = new Date();
       await user.save();
-      
+
       client.lastUsedAt = new Date();
       await client.save();
-      
+
+      // Check if 2FA is enabled for this user
+      if (user.twoFactorEnabled === true) {
+        logger.info(`2FA required for user ${user.id}`);
+
+        // Return a partial authentication response for 2FA verification
+        return {
+          requireTwoFactor: true,
+          userId: user.id,
+          email: user.email,
+          clientId: client.clientId
+        };
+      }
+
+      logger.info(`2FA not enabled for user ${user.id}, proceeding with standard login`);
+
       // Generate tokens
       const accessToken = await authService.generateToken(user, client, 'access');
       const refreshToken = await authService.generateToken(user, client, 'refresh');
-      
+
       return {
         accessToken,
         refreshToken,
         userId: user.id,
         clientId: client.clientId,
         role: user.role, // Include user role in response
-        expiresIn: parseInt(JWT_EXPIRY) || 3600
+        expiresIn: parseInt(JWT_EXPIRY) || 3600,
+        clientStatus: client.status // Include client status in response
       };
     } catch (error) {
       logger.error(`Login failed: ${error.message}`, { stack: error.stack });
       throw error;
     }
   },
-  
+
   // Generate a JWT token and store in database
   generateToken: async (user, client, type = 'access') => {
     // Determine token details based on type
     const secret = type === 'refresh' ? JWT_REFRESH_SECRET : JWT_SECRET;
     const expiresIn = type === 'refresh' ? JWT_REFRESH_EXPIRY : JWT_EXPIRY;
-    
+
     // Create token payload
     const payload = {
       userId: user.id,
       email: user.email,
       clientId: client.clientId,
       role: user.role, // Include user role in token
+      twoFactorEnabled: user.twoFactorEnabled, // Include 2FA status in token
       type
     };
-    
+
     // Sign the token
     const token = jwt.sign(payload, secret, { expiresIn });
-    
+
     // Calculate expiration date
     const decoded = jwt.decode(token);
     const expiresAt = new Date(decoded.exp * 1000);
-    
+
     // Store token in database
     await Token.create({
       userId: user.id,
@@ -208,35 +241,35 @@ const authService = {
       ipAddress: null, // In a real app, get from request
       userAgent: null  // In a real app, get from request
     });
-    
+
     return token;
   },
-  
+
   // Refresh an access token using a refresh token
   refreshToken: async (refreshToken) => {
     try {
       // Verify token exists and is valid
       const tokenRecord = await Token.findValidToken(refreshToken, 'refresh');
-      
+
       if (!tokenRecord) {
         throw new Error('Invalid or expired refresh token');
       }
-      
+
       // Get associated user and client
       const user = await User.findByPk(tokenRecord.userId);
       const client = await Client.findOne({ where: { clientId: tokenRecord.clientId } });
-      
+
       if (!user || !client || user.status !== 'active' || client.status !== 'active') {
         throw new Error('User or client inactive');
       }
-      
+
       // Generate new access token
       const accessToken = await authService.generateToken(user, client, 'access');
-      
+
       // Update refresh token last used timestamp
       tokenRecord.lastUsedAt = new Date();
       await tokenRecord.save();
-      
+
       return {
         accessToken,
         expiresIn: parseInt(JWT_EXPIRY) || 3600
@@ -246,53 +279,53 @@ const authService = {
       throw error;
     }
   },
-  
+
   // Verify a token
   verifyToken: async (token, type = 'access') => {
     try {
       // Find token in database
       const tokenRecord = await Token.findValidToken(token, type);
-      
+
       if (!tokenRecord) {
         return null;
       }
-      
+
       // Verify JWT signature
       const secret = type === 'refresh' ? JWT_REFRESH_SECRET : JWT_SECRET;
       const decoded = jwt.verify(token, secret);
-      
+
       // Update last used timestamp
       tokenRecord.lastUsedAt = new Date();
       await tokenRecord.save();
-      
+
       return decoded;
     } catch (error) {
       logger.error(`Token verification failed: ${error.message}`);
       return null;
     }
   },
-  
+
   // Revoke a token
   revokeToken: async (token, type = 'access') => {
     try {
       const tokenRecord = await Token.findOne({
         where: { token, tokenType: type }
       });
-      
+
       if (!tokenRecord) {
         return false;
       }
-      
+
       tokenRecord.isRevoked = true;
       await tokenRecord.save();
-      
+
       return true;
     } catch (error) {
       logger.error(`Token revocation failed: ${error.message}`);
       throw error;
     }
   },
-  
+
   // Generate a new API token
   generateApiToken: async (clientId, clientSecret) => {
     try {
@@ -301,33 +334,34 @@ const authService = {
         where: { clientId, clientSecret },
         include: [{ model: User, where: { status: 'active' }, required: true }]
       });
-      
+
       if (!client) {
         throw new Error('Invalid client credentials');
       }
-      
+
       // Check if client is approved
       if (client.status !== 'active') {
         throw new Error(`Client status is ${client.status}. Cannot generate API token until approved.`);
       }
-      
+
       const user = client.User;
-      
+
       // Generate a long-lived token
       const payload = {
         userId: user.id,
         clientId: client.clientId,
         role: user.role,
+        twoFactorEnabled: user.twoFactorEnabled, // Include 2FA status
         type: 'api'
       };
-      
+
       // API tokens could have longer expiry
       const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '30d' });
-      
+
       // Calculate expiration date
       const decoded = jwt.decode(token);
       const expiresAt = new Date(decoded.exp * 1000);
-      
+
       // Store token in database
       await Token.create({
         userId: user.id,
@@ -336,7 +370,7 @@ const authService = {
         token,
         expiresAt
       });
-      
+
       return {
         token,
         expiresAt: expiresAt.toISOString()
@@ -346,41 +380,41 @@ const authService = {
       throw error;
     }
   },
-  
+
   // Change user password
   changePassword: async (userId, currentPassword, newPassword) => {
     const transaction = await User.sequelize.transaction();
-    
+
     try {
       const user = await User.findByPk(userId, { transaction });
-      
+
       if (!user) {
         await transaction.rollback();
         throw new Error('User not found');
       }
-      
+
       // Verify current password
       const isValid = await user.comparePassword(currentPassword);
       if (!isValid) {
         await transaction.rollback();
         throw new Error('Current password is incorrect');
       }
-      
+
       // Set and hash new password
       user.passwordHash = newPassword;
       await user.save({ transaction });
-      
+
       // Revoke all refresh tokens for this user
       await Token.update(
         { isRevoked: true },
-        { 
+        {
           where: { userId, tokenType: 'refresh' },
           transaction
         }
       );
-      
+
       await transaction.commit();
-      
+
       return true;
     } catch (error) {
       await transaction.rollback();
@@ -388,44 +422,146 @@ const authService = {
       throw error;
     }
   },
-  
+
   // Change client secret
   changeClientSecret: async (clientId, currentSecret) => {
     const transaction = await Client.sequelize.transaction();
-    
+
     try {
       const client = await Client.findOne({
         where: { clientId, clientSecret: currentSecret },
         transaction
       });
-      
+
       if (!client) {
         await transaction.rollback();
         throw new Error('Invalid client ID or secret');
       }
-      
+
       // Generate new secret
       const newSecret = Client.generateCredentials().clientSecret;
-      
+
       // Update client
       client.clientSecret = newSecret;
       await client.save({ transaction });
-      
+
       // Revoke all existing tokens for this client
       await Token.update(
         { isRevoked: true },
-        { 
+        {
           where: { clientId, tokenType: ['access', 'refresh', 'api'] },
           transaction
         }
       );
-      
+
       await transaction.commit();
-      
+
       return { clientId, clientSecret: newSecret };
     } catch (error) {
       await transaction.rollback();
       logger.error(`Client secret change failed: ${error.message}`);
+      throw error;
+    }
+  },
+
+  // Verify 2FA token
+  verify2FA: async (userId, token) => {
+    try {
+      const user = await User.findByPk(userId);
+
+      if (!user) {
+        throw new Error('User not found');
+      }
+
+      if (!user.twoFactorEnabled || !user.twoFactorSecret) {
+        throw new Error('Two-factor authentication is not enabled for this user');
+      }
+
+      // Verify the token
+      const isValid = twoFactorService.verifyToken(token, user.twoFactorSecret);
+
+      if (!isValid) {
+        // Log the attempt for security monitoring
+        logger.warn(`Failed 2FA verification attempt for user ${userId}`);
+        throw new Error('Invalid verification code');
+      }
+
+      // Find the user's client for token generation
+      const client = await Client.findOne({
+        where: { userId: user.id, status: 'active' }
+      });
+
+      if (!client) {
+        throw new Error('No active client found for this user');
+      }
+
+      // Generate tokens
+      const accessToken = await authService.generateToken(user, client, 'access');
+      const refreshToken = await authService.generateToken(user, client, 'refresh');
+
+      // Return the tokens
+      return {
+        accessToken,
+        refreshToken,
+        userId: user.id,
+        clientId: client.clientId,
+        role: user.role,
+        expiresIn: parseInt(JWT_EXPIRY) || 3600,
+        clientStatus: client.status
+      };
+    } catch (error) {
+      logger.error(`2FA verification failed: ${error.message}`);
+      throw error;
+    }
+  },
+
+  // Verify using a backup code
+  verifyBackupCode: async (userId, backupCode) => {
+    try {
+      const user = await User.findByPk(userId);
+
+      if (!user) {
+        throw new Error('User not found');
+      }
+
+      if (!user.twoFactorEnabled || !user.backupCodes || !Array.isArray(user.backupCodes)) {
+        throw new Error('Two-factor authentication is not properly configured for this user');
+      }
+
+      // Verify the backup code
+      const isValid = await twoFactorService.verifyBackupCode(userId, backupCode);
+
+      if (!isValid) {
+        // Log the attempt for security monitoring
+        logger.warn(`Failed backup code verification attempt for user ${userId}`);
+        throw new Error('Invalid backup code');
+      }
+
+      // Find the user's client for token generation
+      const client = await Client.findOne({
+        where: { userId: user.id, status: 'active' }
+      });
+
+      if (!client) {
+        throw new Error('No active client found for this user');
+      }
+
+      // Generate tokens
+      const accessToken = await authService.generateToken(user, client, 'access');
+      const refreshToken = await authService.generateToken(user, client, 'refresh');
+
+      // Return the tokens
+      return {
+        accessToken,
+        refreshToken,
+        userId: user.id,
+        clientId: client.clientId,
+        role: user.role,
+        expiresIn: parseInt(JWT_EXPIRY) || 3600,
+        clientStatus: client.status
+      };
+    } catch (error) {
+      logger.error(`Backup code verification failed: ${error.message}`);
       throw error;
     }
   }
