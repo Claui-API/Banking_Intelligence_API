@@ -64,7 +64,7 @@ class AuthController {
       });
     } catch (error) {
       logger.error('Error registering user:', error);
-      
+
       // Handle specific errors
       if (error.message.includes('already in use')) {
         return res.status(409).json({
@@ -72,7 +72,7 @@ class AuthController {
           message: error.message
         });
       }
-      
+
       return res.status(500).json({
         success: false,
         message: 'Failed to register user',
@@ -112,7 +112,7 @@ class AuthController {
       });
     } catch (error) {
       logger.error('Error during login:', error);
-      
+
       // Determine appropriate status code
       let statusCode = 500;
       if (
@@ -122,7 +122,7 @@ class AuthController {
       ) {
         statusCode = 401;
       }
-      
+
       return res.status(statusCode).json({
         success: false,
         message: error.message
@@ -154,7 +154,7 @@ class AuthController {
       });
     } catch (error) {
       logger.error('Error refreshing token:', error);
-      
+
       return res.status(401).json({
         success: false,
         message: error.message
@@ -170,23 +170,23 @@ class AuthController {
   async logout(req, res) {
     try {
       const token = req.headers.authorization?.split(' ')[1];
-      
+
       if (token) {
         await authService.revokeToken(token, 'access');
       }
-      
+
       const { refreshToken } = req.body;
       if (refreshToken) {
         await authService.revokeToken(refreshToken, 'refresh');
       }
-      
+
       return res.status(200).json({
         success: true,
         message: 'Logged out successfully'
       });
     } catch (error) {
       logger.error('Error during logout:', error);
-      
+
       return res.status(500).json({
         success: false,
         message: 'Logout failed'
@@ -234,7 +234,7 @@ class AuthController {
       });
     } catch (error) {
       logger.error('Error changing password:', error);
-      
+
       // Determine appropriate status code
       let statusCode = 500;
       if (error.message.includes('incorrect')) {
@@ -242,7 +242,7 @@ class AuthController {
       } else if (error.message.includes('not found')) {
         statusCode = 404;
       }
-      
+
       return res.status(statusCode).json({
         success: false,
         message: error.message
@@ -288,7 +288,7 @@ class AuthController {
       });
     } catch (error) {
       logger.error('Error changing client secret:', error);
-      
+
       return res.status(500).json({
         success: false,
         message: error.message
@@ -325,11 +325,234 @@ class AuthController {
       });
     } catch (error) {
       logger.error('Error generating API token:', error);
-      
+
       return res.status(500).json({
         success: false,
         message: 'Failed to generate API token',
         error: error.message
+      });
+    }
+  }
+
+  /**
+   * Generate 2FA secret for a user
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   */
+  async generate2FASecret(req, res) {
+    try {
+      const { userId } = req.auth;
+
+      if (!userId) {
+        return res.status(400).json({
+          success: false,
+          message: 'User ID is required'
+        });
+      }
+
+      // Get the two-factor service
+      const twoFactorService = require('../services/twoFactor.service');
+
+      // Get user information
+      const { User } = require('../models/User');
+      const user = await User.findByPk(userId);
+
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          message: 'User not found'
+        });
+      }
+
+      // Generate secret and QR code
+      const { secret, qrCodeUrl } = await twoFactorService.generateSecret(user);
+
+      return res.status(200).json({
+        success: true,
+        data: {
+          secret,
+          qrCodeUrl
+        }
+      });
+    } catch (error) {
+      logger.error('Error generating 2FA secret:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to generate 2FA secret',
+        error: error.message
+      });
+    }
+  }
+
+  /**
+   * Enable 2FA for a user
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   */
+  async enable2FA(req, res) {
+    try {
+      const { userId } = req.auth;
+      const { secret, token } = req.body;
+
+      if (!userId || !secret || !token) {
+        return res.status(400).json({
+          success: false,
+          message: 'User ID, secret, and token are required'
+        });
+      }
+
+      // Get the two-factor service
+      const twoFactorService = require('../services/twoFactor.service');
+
+      // Verify token before enabling
+      const isValid = twoFactorService.verifyToken(token, secret);
+
+      if (!isValid) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid 2FA token'
+        });
+      }
+
+      // Enable 2FA
+      const result = await twoFactorService.enable2FA(userId, secret);
+
+      if (!result) {
+        return res.status(500).json({
+          success: false,
+          message: 'Failed to enable 2FA'
+        });
+      }
+
+      // Get backup codes to return
+      const { User } = require('../models/User');
+      const user = await User.findByPk(userId);
+
+      return res.status(200).json({
+        success: true,
+        message: '2FA enabled successfully',
+        data: {
+          backupCodes: user.backupCodes
+        }
+      });
+    } catch (error) {
+      logger.error('Error enabling 2FA:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to enable 2FA',
+        error: error.message
+      });
+    }
+  }
+
+  /**
+   * Disable 2FA for a user
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   */
+  async disable2FA(req, res) {
+    try {
+      const { userId } = req.auth;
+      const { token } = req.body;
+
+      if (!userId) {
+        return res.status(400).json({
+          success: false,
+          message: 'User ID is required'
+        });
+      }
+
+      // Get the two-factor service
+      const twoFactorService = require('../services/twoFactor.service');
+
+      // Get user information
+      const { User } = require('../models/User');
+      const user = await User.findByPk(userId);
+
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          message: 'User not found'
+        });
+      }
+
+      if (!user.twoFactorEnabled) {
+        return res.status(400).json({
+          success: false,
+          message: '2FA is not enabled for this user'
+        });
+      }
+
+      // Verify token before disabling
+      if (token) {
+        const isValid = twoFactorService.verifyToken(token, user.twoFactorSecret);
+
+        if (!isValid) {
+          return res.status(400).json({
+            success: false,
+            message: 'Invalid 2FA token'
+          });
+        }
+      }
+
+      // Disable 2FA
+      const result = await twoFactorService.disable2FA(userId);
+
+      if (!result) {
+        return res.status(500).json({
+          success: false,
+          message: 'Failed to disable 2FA'
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: '2FA disabled successfully'
+      });
+    } catch (error) {
+      logger.error('Error disabling 2FA:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to disable 2FA',
+        error: error.message
+      });
+    }
+  }
+
+  /**
+   * Verify 2FA token
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   */
+  async verify2FA(req, res) {
+    try {
+      const { userId, token, backupCode } = req.body;
+
+      if (!userId || (!token && !backupCode)) {
+        return res.status(400).json({
+          success: false,
+          message: 'User ID and either token or backup code are required'
+        });
+      }
+
+      let authResult;
+
+      // Use either token or backup code
+      if (token) {
+        authResult = await authService.verify2FA(userId, token);
+      } else {
+        authResult = await authService.verifyBackupCode(userId, backupCode);
+      }
+
+      return res.status(200).json({
+        success: true,
+        data: authResult
+      });
+    } catch (error) {
+      logger.error('Error verifying 2FA:', error);
+      return res.status(400).json({
+        success: false,
+        message: error.message || 'Failed to verify 2FA'
       });
     }
   }

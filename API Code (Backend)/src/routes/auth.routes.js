@@ -54,4 +54,33 @@ router.post('/change-secret', authMiddleware, authController.changeClientSecret)
  */
 router.post('/generate-token', authController.generateApiToken);
 
+
+/**
+ * @route POST /api/auth/verify-2fa
+ * @desc Verify 2FA token and complete authentication
+ * @access Public (with userId from initial login)
+ */
+router.post('/verify-2fa', authController.verify2FA);
+
+/**
+ * @route POST /api/auth/generate-2fa
+ * @desc Generate 2FA secret for a user
+ * @access Private
+ */
+router.post('/generate-2fa', authMiddleware, authController.generate2FASecret);
+
+/**
+ * @route POST /api/auth/enable-2fa
+ * @desc Enable 2FA for a user
+ * @access Private
+ */
+router.post('/enable-2fa', authMiddleware, authController.enable2FA);
+
+/**
+ * @route POST /api/auth/disable-2fa
+ * @desc Disable 2FA for a user
+ * @access Private
+ */
+router.post('/disable-2fa', authMiddleware, authController.disable2FA);
+
 module.exports = router;

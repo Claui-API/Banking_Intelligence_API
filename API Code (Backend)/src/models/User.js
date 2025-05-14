@@ -10,6 +10,18 @@ const User = sequelize.define('User', {
     defaultValue: DataTypes.UUIDV4,
     primaryKey: true
   },
+  twoFactorEnabled: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: false
+  },
+  twoFactorSecret: {
+    type: DataTypes.STRING,
+    allowNull: true
+  },
+  backupCodes: {
+    type: DataTypes.JSON,
+    allowNull: true
+  },
   clientName: {
     type: DataTypes.STRING,
     allowNull: false
@@ -62,7 +74,7 @@ const User = sequelize.define('User', {
 });
 
 // Instance method to compare passwords
-User.prototype.comparePassword = async function(password) {
+User.prototype.comparePassword = async function (password) {
   return bcrypt.compare(password, this.passwordHash);
 };
 
@@ -150,7 +162,7 @@ User.hasMany(Client, { foreignKey: 'approvedBy', as: 'ApprovedClients' });
 Client.belongsTo(User, { foreignKey: 'approvedBy', as: 'Approver' });
 
 // Generate client credentials
-Client.generateCredentials = function() {
+Client.generateCredentials = function () {
   return {
     clientId: crypto.randomUUID(),
     clientSecret: crypto.randomBytes(32).toString('hex')
