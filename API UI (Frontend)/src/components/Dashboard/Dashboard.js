@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Container, Row, Col, Card, Button, Nav, Form, InputGroup, Badge, Dropdown, Spinner } from 'react-bootstrap';
+import React, { useState, useEffect, useRef, useCallback } from 'react'; // Added useCallback
+import { Container, Row, Col, Card, Button, Nav, Form, InputGroup, Badge, Dropdown, Spinner, Alert } from 'react-bootstrap';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { insightsService } from '../../services/insights';
@@ -8,6 +8,9 @@ import Documentation from '../Documentation/Documentation';
 import './Dashboard.css';
 import APIKeysManagement from '../APITokenManagement';
 import { EventSourcePolyfill } from 'event-source-polyfill';
+import PlaidLinkButton from '../Plaid/PlaidLinkButton';
+import logger from '../../utils/logger';
+import api from '../../services/api'; // Added missing API import
 
 // Example code for the playground
 const apiExampleCode = `// Example: Generate financial insights
@@ -32,6 +35,49 @@ fetch('https://bankingintelligenceapi.com/api/insights/generate', {
   })
 })`;
 
+// Simple API Status component
+const PlaidApiStatus = () => {
+  const [status, setStatus] = useState('checking');
+
+  useEffect(() => {
+    const checkApi = async () => {
+      try {
+        // First try the health endpoint since /plaid/status might not exist yet
+        const response = await api.get('/health');
+
+        if (response.data && response.status === 200) {
+          setStatus('connected');
+
+          // Also try to check plaid status, but don't fail if it's not available
+          try {
+            await api.get('/plaid/status');
+          } catch (plaidErr) {
+            // Just log this error, don't change the status
+            console.log('Plaid status endpoint not available yet');
+          }
+        } else {
+          setStatus('error');
+        }
+      } catch (error) {
+        console.error('API health check failed:', error);
+        setStatus('error');
+      }
+    };
+
+    checkApi();
+  }, []);
+
+  return (
+    <Badge
+      bg={status === 'checking' ? 'secondary' : status === 'connected' ? 'success' : 'danger'}
+      className="d-flex align-items-center"
+    >
+      <span className="status-indicator me-1"></span>
+      API: {status === 'checking' ? 'Checking...' : status === 'connected' ? 'Online' : 'Error'}
+    </Badge>
+  );
+};
+
 const Dashboard = () => {
   const { user, clientStatus } = useAuth();
   const [activeSection, setActiveSection] = useState('home');
@@ -55,12 +101,51 @@ const Dashboard = () => {
   const latestRequestIdRef = useRef(null);
   const chatEndRef = useRef(null);
 
+  // Add Plaid connection state
+  const [connected, setConnected] = useState(false);
+  const [institution, setInstitution] = useState('');
+  const [connectionSuccess, setConnectionSuccess] = useState(false);
+
+  // Add state for tracking Plaid connection status
+  const [plaidStatus, setPlaidStatus] = useState('ready'); // ready, connecting, success, error
+  const [plaidError, setPlaidError] = useState(null);
+
+  // Add this function to check Plaid availability
+  const checkPlaidStatus = useCallback(async () => {
+    try {
+      const response = await api.get('/plaid/status');
+      if (response.data.success) {
+        logger.info('Plaid service is available');
+      } else {
+        setPlaidStatus('error');
+        setPlaidError('Plaid service is currently unavailable');
+        logger.error('Plaid service unavailable:', response.data);
+      }
+    } catch (error) {
+      logger.error('Error checking Plaid status:', error);
+      // Don't show an error to the user - just log it
+    }
+  }, []);
+
+  // Call this in a useEffect
+  useEffect(() => {
+    checkPlaidStatus();
+  }, [checkPlaidStatus]);
+
   // Sample suggested prompts
   const suggestedPrompts = [
     "How much did I spend on dining out last month?",
     "What are my top expense categories?",
     "How can I improve my savings rate?",
     "Am I on track with my budget this month?"
+  ];
+
+  // Connected account prompts
+  const connectedPrompts = [
+    "How much did I spend on dining out last month?",
+    "What's my current account balance?",
+    "How can I improve my savings?",
+    "Am I spending more on groceries than average?"
   ];
 
   useEffect(() => {
@@ -71,6 +156,71 @@ const Dashboard = () => {
   // Generate a unique request ID
   const generateRequestId = () => {
     return `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  };
+
+  // Handle Plaid connection success
+  const handlePlaidSuccess = ({ itemId, metadata }) => {
+    try {
+      // Log detailed success info
+      logger.info('Bank account connected successfully', {
+        institution: metadata.institution.name,
+        accountCount: metadata.accounts.length,
+        itemId: itemId
+      });
+
+      // Save institution name for display
+      setInstitution(metadata.institution.name);
+
+      // Mark as connected
+      setConnected(true);
+
+      // Show success message
+      setConnectionSuccess(true);
+      setTimeout(() => setConnectionSuccess(false), 5000); // Hide after 5 seconds
+
+      // Add a system message showing connection success
+      setChatMessages(prev => [
+        ...prev,
+        {
+          role: 'assistant',
+          content: `I've successfully connected to your accounts at ${metadata.institution.name}. You can now ask questions about your actual financial data!`,
+          timestamp: new Date().toISOString()
+        }
+      ]);
+    } catch (err) {
+      logger.logError('Plaid Success Handling Error', err);
+      // Show error to user
+      setConnectionSuccess(false);
+      alert(`Error processing bank connection: ${err.message}`);
+    }
+  };
+
+  // Handle Plaid exit (user canceled or error)
+  const handlePlaidExit = (err, metadata) => {
+    if (err) {
+      logger.logError('Plaid Exit Error:', {
+        message: err.message,
+        metadata: metadata
+      });
+
+      if (err.error_code) {
+        switch (err.error_code) {
+          case 'INVALID_LINK_TOKEN':
+            alert('Invalid link token. Please try again later.');
+            break;
+          case 'INVALID_REQUEST':
+            alert('There was a problem with the request. Please try again.');
+            break;
+          case 'INSTITUTION_ERROR':
+            alert('There was a problem connecting to this institution. Please try again later.');
+            break;
+          default:
+            alert(`Error: ${err.message || 'Unknown error'}`);
+        }
+      }
+    } else {
+      logger.info('Plaid Link flow exited', metadata);
+    }
   };
 
   // Stream insights with EventSource
@@ -105,6 +255,7 @@ const Dashboard = () => {
       latestRequestIdRef.current = requestId;
 
       // First, submit the query via regular API call but with streaming flag
+      // Add a parameter indicating if we're using real connected data
       const response = await fetch('/api/insights/stream-prepare', {
         method: 'POST',
         headers: {
@@ -113,7 +264,8 @@ const Dashboard = () => {
         },
         body: JSON.stringify({
           query: inputQuery,
-          requestId
+          requestId,
+          useConnectedData: connected // Add this flag
         })
       });
 
@@ -143,6 +295,17 @@ const Dashboard = () => {
             ));
             eventSource.close();
             return;
+          }
+
+          // Special handling for the real-data marker
+          if (data.chunk === '<using-real-data>') {
+            // Set a flag to render the message with the "real data" badge
+            setChatMessages(prev => prev.map(msg =>
+              msg.id === tempMessageId
+                ? { ...msg, usingRealData: true }
+                : msg
+            ));
+            return; // Skip this chunk
           }
 
           // Update message with new content
@@ -207,7 +370,7 @@ const Dashboard = () => {
           // Update existing message
           return prev.map(msg =>
             msg.id === tempMessageId
-              ? { ...msg, content: insightText, isStreaming: false }
+              ? { ...msg, content: insightText, isStreaming: false, usingRealData: connected }
               : msg
           );
         } else {
@@ -217,6 +380,7 @@ const Dashboard = () => {
             role: 'assistant',
             content: insightText,
             isStreaming: false,
+            usingRealData: connected,
             timestamp: new Date().toISOString()
           }];
         }
@@ -329,18 +493,71 @@ const Dashboard = () => {
             <div className="playground-header">
               <div className="d-flex justify-content-between align-items-center">
                 <h2 className="text-white">Banking Intelligence Playground</h2>
-                <div className="api-status">
-                  <Badge bg="success" className="d-flex align-items-center">
-                    <span className="status-indicator me-1"></span>
-                    API Status: Online
-                  </Badge>
+                <div className="d-flex align-items-center">
+                  {/* Add Plaid connection button/status */}
+                  <div className="d-flex align-items-center me-3">
+                    <Badge bg={connected ? "success" : "warning"} className="d-flex align-items-center">
+                      <span className="status-indicator me-1"></span>
+                      {connected ? "Accounts Connected" : "No Accounts Connected"}
+                    </Badge>
+                    {!connected && (
+                      <PlaidLinkButton
+                        onSuccess={(linkData) => {
+                          setPlaidStatus('success');
+                          handlePlaidSuccess(linkData);
+                        }}
+                        onExit={(err, metadata) => {
+                          if (err) {
+                            setPlaidStatus('error');
+                            setPlaidError(err.message || 'Error connecting to bank');
+                          } else {
+                            setPlaidStatus('ready');
+                          }
+                          handlePlaidExit(err, metadata);
+                        }}
+                        buttonText="Connect Bank"
+                        className="ms-2 btn-sm"
+                      />
+                    )}
+                  </div>
+                  <PlaidApiStatus />
                 </div>
               </div>
             </div>
 
+            {/* Display Plaid error if present */}
+            {plaidError && (
+              <div className="text-danger mt-2 mx-4 small">
+                <i className="bi bi-exclamation-triangle me-1"></i>
+                {plaidError}
+              </div>
+            )}
+
+            {/* Success message when accounts connected */}
+            {connectionSuccess && (
+              <Alert
+                variant="success"
+                className="mx-4 mt-2"
+                onClose={() => setConnectionSuccess(false)}
+                dismissible
+              >
+                <i className="bi bi-check-circle-fill me-2"></i>
+                Successfully connected accounts from <strong>{institution}</strong>! You can now ask questions about your financial data.
+              </Alert>
+            )}
+
             {/* Chat Interface */}
             <div className="chat-container">
               <div className="chat-messages">
+                {connected && (
+                  <div className="text-center mb-3">
+                    <Badge bg="success" className="py-2 px-3">
+                      <i className="bi bi-bank me-2"></i>
+                      Connected to {institution}
+                    </Badge>
+                  </div>
+                )}
+
                 {chatMessages.map((message, index) => (
                   <div
                     key={index}
@@ -377,7 +594,12 @@ const Dashboard = () => {
                           </div>
                         </>
                       ) : (
-                        <pre className="message-text">{message.content}</pre>
+                        <>
+                          {message.usingRealData && (
+                            <Badge bg="info" className="mb-2">Using Connected Bank Data</Badge>
+                          )}
+                          <pre className="message-text">{message.content}</pre>
+                        </>
                       )}
                       <div className="message-timestamp">
                         {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -391,9 +613,13 @@ const Dashboard = () => {
               {/* Suggested Prompts */}
               {chatMessages.length < 3 && (
                 <div className="suggested-prompts">
-                  <p className="text-white mb-2">Try asking:</p>
+                  <p className="text-white mb-2">
+                    {connected
+                      ? "Try asking about your connected accounts:"
+                      : "Try asking:"}
+                  </p>
                   <div className="d-flex flex-wrap gap-2">
-                    {suggestedPrompts.map((prompt, index) => (
+                    {(connected ? connectedPrompts : suggestedPrompts).map((prompt, index) => (
                       <Button
                         key={index}
                         variant="outline-success"

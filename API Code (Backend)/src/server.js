@@ -1,17 +1,11 @@
-// server.js - Updated to use standard Cohere service with insights metrics
+// server.js - Updated with safe route mounting
 const express = require('express');
 const path = require('path');
 const helmet = require('helmet');
 const cors = require('cors');
 const dotenv = require('dotenv');
 const rateLimit = require('express-rate-limit');
-const notificationRoutes = require('./routes/notification.routes');
-const syncRoutes = require('./routes/sync.routes');
-const mobileInsightsRoutes = require('./routes/insights.mobile.routes');
-const adminRoutes = require('./routes/admin.routes');
-const clientRoutes = require('./routes/client.routes');
-// Remove RAG metrics import and use insights metrics
-const insightMetricsRoutes = require('./routes/insights-metrics.routes');
+const jwt = require('jsonwebtoken');
 
 // Load .env variables
 dotenv.config();
@@ -23,29 +17,56 @@ const logger = require('./utils/logger');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Import routes & middleware
-const insightsRoutes = require('./routes/insights.routes');
-const authRoutes = require('./routes/auth.routes');
-const healthRoutes = require('./routes/health.routes');
-const plaidRoutes = require('./routes/plaid.routes');
-const webhookRoutes = require('./routes/plaid.webhook.routes');
-const diagnosticsRoutes = require('./routes/diagnostics.routes');
+// Import middleware
 const { errorHandler, notFoundHandler } = require('./middleware/errorHandler');
 const requestLogger = require('./middleware/requestLogger');
 const { authMiddleware, authorize } = require('./middleware/auth');
 const { validateInsightsRequest } = require('./middleware/validation');
-
-// Import insights metrics middleware
 const { insightMetricsMiddleware, initializeMetricsModel } = require('./middleware/insights-metrics.middleware');
+
+// Helper function to safely mount routes
+function safeMount(path, routeModule, name) {
+  try {
+    if (!routeModule) {
+      logger.error(`${name} routes module is undefined`);
+      return false;
+    }
+
+    if (typeof routeModule === 'function' || (routeModule && typeof routeModule.use === 'function')) {
+      app.use(path, routeModule);
+      logger.info(`Mounted ${name} routes at ${path}`);
+      return true;
+    }
+
+    logger.error(`${name} is not a valid Express router`);
+    return false;
+  } catch (error) {
+    logger.error(`Error mounting ${name} routes:`, error);
+    return false;
+  }
+}
+
+// Safely import and mount all routes
+const routes = [
+  { path: '/api/auth', name: 'Auth', importPath: './routes/auth.routes' },
+  { path: '/api/insights', name: 'Insights', importPath: './routes/insights.routes', middleware: authMiddleware },
+  { path: '/api/plaid', name: 'Plaid', importPath: './routes/plaid.routes' },
+  { path: '/api/webhooks', name: 'Plaid Webhooks', importPath: './routes/plaid.webhook.routes' },
+  { path: '/api', name: 'Health', importPath: './routes/health.routes' },
+  { path: '/api/diagnostics', name: 'Diagnostics', importPath: './routes/diagnostics.routes' },
+  { path: '/api/admin', name: 'Admin', importPath: './routes/admin.routes' },
+  { path: '/api/clients', name: 'Clients', importPath: './routes/client.routes' },
+  { path: '/api/insights-metrics', name: 'Insight Metrics', importPath: './routes/insights-metrics.routes' },
+  { path: '/api/v1/notifications', name: 'Notifications', importPath: './routes/notification.routes' },
+  { path: '/api/v1/sync', name: 'Sync', importPath: './routes/sync.routes' },
+  { path: '/api/v1/mobile', name: 'Mobile Insights', importPath: './routes/insights.mobile.routes' }
+];
 
 // Test insights metrics on startup
 const initializeMetrics = async () => {
   try {
-    // Initialize the metrics model
     const metricsModel = await initializeMetricsModel();
-    
     if (metricsModel) {
-      // Count total records
       const count = await metricsModel.count();
       console.log(`✅ Initialized metrics system with ${count} records`);
     } else {
@@ -65,85 +86,90 @@ const apiLimiter = rateLimit({
   max: 100,
   standardHeaders: true,
   legacyHeaders: false,
-  // Skip rate limiting for admin users
   skip: function (req, res) {
     return req.auth && req.auth.role === 'admin';
   },
-  // Custom key generator to separate limits by user
   keyGenerator: function (req) {
-    // If authenticated, use userId for rate limit key
     if (req.auth && req.auth.userId) {
       return req.auth.userId;
     }
-    // Otherwise use IP address (default behavior)
     return req.ip;
   },
   message: { success: false, message: 'Too many requests, please try again later.' }
 });
 
+// Apply middleware
 app.use(helmet());
 app.use(cors({
   origin: process.env.NODE_ENV === 'production'
     ? 'https://bankingintelligenceapi.com'
     : ['http://localhost:3001', 'http://127.0.0.1:3001'],
-  methods: ['GET','POST','PUT','DELETE'],
-  allowedHeaders: ['Content-Type','Authorization'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true
 }));
 app.use(express.json());
 app.use(requestLogger(logger));
-
-// Apply insights metrics middleware (instead of RAG metrics)
 app.use(insightMetricsMiddleware);
 
 // Apply rate limiting to /api except webhooks
 app.use('/api', (req, res, next) => {
-  // Skip for webhooks
   if (req.path.startsWith('/webhooks')) return next();
-  
-  // For paths that need authentication, parse auth token first for rate limit decisions
+
   const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith('Bearer ') && 
-      !req.path.startsWith('/auth/login') && 
-      !req.path.startsWith('/auth/register')) {
-    
-    // Parse but don't validate the token yet - just to get the role
+  if (authHeader && authHeader.startsWith('Bearer ') &&
+    !req.path.startsWith('/auth/login') &&
+    !req.path.startsWith('/auth/register')) {
+
     try {
       const token = authHeader.split(' ')[1];
       const decodedToken = jwt.decode(token);
       if (decodedToken && decodedToken.role === 'admin') {
-        // Skip rate limiting for admin users
         return next();
       }
     } catch (e) {
       // If token parsing fails, continue with rate limiting
     }
   }
-  
-  // Apply rate limiting for non-admin users
+
   return apiLimiter(req, res, next);
 });
 
-// Core routes
-app.use('/api/auth', authRoutes);
-app.use('/api/insights', authMiddleware, insightsRoutes);
-app.use('/api/plaid', plaidRoutes);
-app.use('/api/webhooks', webhookRoutes);
-app.use('/api', healthRoutes);
-app.use('/api/diagnostics', diagnosticsRoutes);
-app.use('/api/admin', adminRoutes);
-app.use('/api/clients', clientRoutes);
+// Mount routes safely
+logger.info('Mounting API routes...');
+routes.forEach(route => {
+  try {
+    let routeModule = null;
 
-// Use the new insights metrics routes
-app.use('/api/insights-metrics', insightMetricsRoutes);
+    try {
+      routeModule = require(route.importPath);
+    } catch (importError) {
+      logger.error(`Failed to import ${route.name} routes:`, importError);
+      // Create fallback route
+      const router = express.Router();
+      router.all('*', (req, res) => {
+        res.status(503).json({ success: false, message: `${route.name} routes unavailable` });
+      });
+      routeModule = router;
+    }
 
-// Mobile v1 routes
-app.use('/api/v1/notifications', notificationRoutes);
-app.use('/api/v1/sync', syncRoutes);
-app.use('/api/v1/mobile', mobileInsightsRoutes);
+    if (route.middleware) {
+      safeMount(route.path, route.middleware, `${route.name} Middleware`);
+    }
 
-// Insights validation
-app.use('/api/insights/generate', validateInsightsRequest);
+    safeMount(route.path, routeModule, route.name);
+  } catch (error) {
+    logger.error(`Error processing ${route.name} routes:`, error);
+  }
+});
+
+// Make sure we still handle insights validation
+try {
+  app.use('/api/insights/generate', validateInsightsRequest);
+  logger.info('Insights validation middleware mounted');
+} catch (error) {
+  logger.error('Failed to mount insights validation middleware:', error);
+}
 
 // 404 handler for API
 app.use('/api', notFoundHandler);
@@ -171,8 +197,7 @@ const mobileRateLimiter = rateLimit({
 });
 app.use('/api/v1', mobileRateLimiter);
 
-// ─── HERE: SERVE YOUR FRONTEND ────────────────────────────────
-// only in production, after all /api routes
+// Serve frontend in production
 if (process.env.NODE_ENV === 'production') {
   const clientBuildPath = path.resolve(
     __dirname,
@@ -181,10 +206,7 @@ if (process.env.NODE_ENV === 'production') {
     'build'
   );
 
-  // serve static assets
   app.use(express.static(clientBuildPath));
-
-  // catch-all (skip any /api requests)
   app.get('*', (req, res, next) => {
     if (req.path.startsWith('/api')) {
       return next();
@@ -198,9 +220,7 @@ app.use(errorHandler);
 
 // Start server
 const server = app.listen(PORT, () => {
-  logger.info(
-    `Server running on port ${PORT} in ${process.env.NODE_ENV || 'development'} mode`
-  );
+  logger.info(`Server running on port ${PORT} in ${process.env.NODE_ENV || 'development'} mode`);
 });
 
 // Graceful shutdown on unhandled rejections
