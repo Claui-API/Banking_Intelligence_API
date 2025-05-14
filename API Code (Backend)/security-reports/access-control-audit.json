@@ -1,0 +1,213 @@
+{
+  "lastAudit": "2025-05-14T17:01:59.541Z",
+  "accessControls": [
+    {
+      "type": "middleware",
+      "name": "authMiddleware",
+      "description": "Auth middleware: authMiddleware",
+      "controls": [
+        "Token Validation",
+        "Role-Based Access Control",
+        "Account Status Validation",
+        "Usage Quota Enforcement"
+      ],
+      "access": "role-based"
+    },
+    {
+      "type": "middleware",
+      "name": "apiTokenMiddleware",
+      "description": "Auth middleware: apiTokenMiddleware",
+      "controls": [
+        "Token Validation",
+        "Role-Based Access Control",
+        "Account Status Validation",
+        "Usage Quota Enforcement"
+      ],
+      "access": "role-based"
+    },
+    {
+      "type": "middleware",
+      "name": "authorize",
+      "description": "Auth middleware: authorize",
+      "controls": [
+        "Token Validation",
+        "Role-Based Access Control",
+        "Account Status Validation",
+        "Usage Quota Enforcement"
+      ],
+      "access": "role-based"
+    },
+    {
+      "type": "database",
+      "name": "PlaidItem.js",
+      "description": "Database controls in PlaidItem.js",
+      "controls": [
+        "Data Association Controls",
+        "User-Based Data Filtering",
+        "Parameterized Queries (SQL Injection Protection)"
+      ],
+      "access": "user-filtered"
+    },
+    {
+      "type": "database",
+      "name": "Token.js",
+      "description": "Database controls in Token.js",
+      "controls": [
+        "Data Association Controls",
+        "User-Based Data Filtering",
+        "Parameterized Queries (SQL Injection Protection)"
+      ],
+      "access": "user-filtered"
+    },
+    {
+      "type": "database",
+      "name": "User.js",
+      "description": "Database controls in User.js",
+      "controls": [
+        "Data Association Controls",
+        "User-Based Data Filtering",
+        "Parameterized Queries (SQL Injection Protection)"
+      ],
+      "access": "user-filtered"
+    },
+    {
+      "type": "database",
+      "name": "database.js",
+      "description": "Database controls in database.js",
+      "controls": [
+        "Parameterized Queries (SQL Injection Protection)"
+      ],
+      "access": "unknown"
+    }
+  ],
+  "apiRoutes": [],
+  "adminRoutes": [],
+  "authMiddleware": [
+    {
+      "name": "authMiddleware",
+      "file": "src/middleware/auth.js",
+      "checks": {
+        "token": true,
+        "role": true,
+        "status": true,
+        "quota": true
+      },
+      "securityFeatures": [
+        "Token Validation",
+        "Role-Based Access Control",
+        "Account Status Validation",
+        "Usage Quota Enforcement"
+      ]
+    },
+    {
+      "name": "apiTokenMiddleware",
+      "file": "src/middleware/auth.js",
+      "checks": {
+        "token": true,
+        "role": true,
+        "status": true,
+        "quota": true
+      },
+      "securityFeatures": [
+        "Token Validation",
+        "Role-Based Access Control",
+        "Account Status Validation",
+        "Usage Quota Enforcement"
+      ]
+    },
+    {
+      "name": "authorize",
+      "file": "src/middleware/auth.js",
+      "checks": {
+        "token": true,
+        "role": true,
+        "status": true,
+        "quota": true
+      },
+      "securityFeatures": [
+        "Token Validation",
+        "Role-Based Access Control",
+        "Account Status Validation",
+        "Usage Quota Enforcement"
+      ]
+    }
+  ],
+  "databaseControls": [
+    {
+      "file": "src/models/PlaidItem.js",
+      "isModel": true,
+      "accessControls": {
+        "hasRoleField": false,
+        "hasStatusField": false,
+        "hasAssociations": true,
+        "hasFilterByUser": true,
+        "usesParamQueries": true
+      },
+      "securityFeatures": [
+        "Data Association Controls",
+        "User-Based Data Filtering",
+        "Parameterized Queries (SQL Injection Protection)"
+      ]
+    },
+    {
+      "file": "src/models/Token.js",
+      "isModel": true,
+      "accessControls": {
+        "hasRoleField": false,
+        "hasStatusField": false,
+        "hasAssociations": true,
+        "hasFilterByUser": true,
+        "usesParamQueries": true
+      },
+      "securityFeatures": [
+        "Data Association Controls",
+        "User-Based Data Filtering",
+        "Parameterized Queries (SQL Injection Protection)"
+      ]
+    },
+    {
+      "file": "src/models/User.js",
+      "isModel": true,
+      "accessControls": {
+        "hasRoleField": false,
+        "hasStatusField": false,
+        "hasAssociations": true,
+        "hasFilterByUser": true,
+        "usesParamQueries": true
+      },
+      "securityFeatures": [
+        "Data Association Controls",
+        "User-Based Data Filtering",
+        "Parameterized Queries (SQL Injection Protection)"
+      ]
+    },
+    {
+      "file": "src/config/database.js",
+      "isModel": false,
+      "accessControls": {
+        "hasRoleField": false,
+        "hasStatusField": false,
+        "hasAssociations": false,
+        "hasFilterByUser": false,
+        "usesParamQueries": true
+      },
+      "securityFeatures": [
+        "Parameterized Queries (SQL Injection Protection)"
+      ]
+    }
+  ],
+  "summary": {
+    "total": 7,
+    "api": 0,
+    "admin": 0,
+    "middleware": 3,
+    "database": 4,
+    "recommendations": {
+      "total": 0,
+      "high": 0,
+      "medium": 0,
+      "low": 0
+    }
+  },
+  "recommendations": []
+}
