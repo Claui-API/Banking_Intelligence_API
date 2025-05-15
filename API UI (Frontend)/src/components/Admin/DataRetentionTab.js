@@ -181,11 +181,18 @@ const DataRetentionTab = () => {
 		try {
 			setActionLoading(true);
 
-			const response = await api.delete(`/admin/retention/users/${selectedUser.id}/force`, {
+			const response = await api({
+				method: 'delete',
+				url: `/admin/retention/users/${selectedUser.id}/force`,
 				data: {
 					confirmDeletion: deleteConfirmation,
 					deletionReason: deleteReason
 				}
+			});
+			console.log('Sending deletion request:', {
+				confirmDeletion: deleteConfirmation,
+				deletionReason: deleteReason,
+				url: `/admin/retention/users/${selectedUser.id}/force`
 			});
 
 			if (response.data && response.data.success) {
@@ -685,6 +692,10 @@ const DataRetentionTab = () => {
 									placeholder="Provide a detailed reason for this deletion..."
 									required
 								/>
+								<Form.Text className={`${deleteReason.length < 10 ? "text-danger" : "text-muted"}`}>
+									Deletion reason must be at least 10 characters long.
+									Currently: {deleteReason.length}/10 characters
+								</Form.Text>
 								<Form.Text className="text-muted">
 									This reason will be permanently recorded in the admin logs.
 								</Form.Text>
