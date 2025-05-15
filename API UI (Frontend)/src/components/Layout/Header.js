@@ -1,4 +1,4 @@
-// src/components/Layout/Header.js
+// src/components/Layout/Header.js - Updated with Data Settings Option
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
@@ -43,6 +43,8 @@ const Header = () => {
                     <Dropdown.Item as={Link} to="/dashboard">Dashboard</Dropdown.Item>
                     <Dropdown.Item as={Link} to="/api-tokens">API Tokens</Dropdown.Item>
                     <Dropdown.Item as={Link} to="/security">Security Settings</Dropdown.Item>
+                    {/* Add new Data Settings link */}
+                    <Dropdown.Item as={Link} to="/data-settings">Data Settings</Dropdown.Item>
                     <Dropdown.Item as={Link} to="/docs">Documentation</Dropdown.Item>
                     <Dropdown.Divider />
                     <Dropdown.Item onClick={logout}>Sign Out</Dropdown.Item>

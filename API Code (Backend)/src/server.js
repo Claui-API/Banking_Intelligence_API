@@ -1,4 +1,4 @@
-// server.js - Fixed twoFactorLimiter reference error
+// server.js - Fixed with proper sequelize import
 
 const express = require('express');
 const path = require('path');
@@ -7,6 +7,9 @@ const cors = require('cors');
 const dotenv = require('dotenv');
 const rateLimit = require('express-rate-limit');
 const jwt = require('jsonwebtoken');
+// Add the sequelize import
+const { sequelize } = require('./config/database');
+const dataRetentionService = require('./services/data-retention.service');
 
 // Load .env variables
 dotenv.config();
@@ -20,6 +23,7 @@ const PORT = process.env.PORT || 3000;
 
 // Import middleware
 const { errorHandler, notFoundHandler } = require('./middleware/errorHandler');
+const retentionLoggingMiddleware = require('./middleware/retention-logging.middleware');
 const requestLogger = require('./middleware/requestLogger');
 const { authMiddleware, authorize } = require('./middleware/auth');
 const { validateInsightsRequest } = require('./middleware/validation');
@@ -74,6 +78,25 @@ const twoFactorLimiter = rateLimit({
   message: { success: false, message: 'Too many 2FA verification attempts, please try again later.' }
 });
 
+// Initialize data retention service
+(async () => {
+  try {
+    // Initialize the data retention service
+    await dataRetentionService.initialize();
+    logger.info('Data retention service initialized');
+
+    // Apply retention logging middleware
+    app.use(retentionLoggingMiddleware(sequelize));
+
+  } catch (error) {
+    logger.error('Error initializing data retention service:', error);
+  }
+})();
+
+// Import data retention routes
+const dataRetentionRoutes = require('./routes/data-retention.routes');
+const adminRetentionRoutes = require('./routes/admin.retention.routes');
+
 // Safely import and mount all routes
 const routes = [
   { path: '/api/auth', name: 'Auth', importPath: './routes/auth.routes' },
@@ -89,6 +112,12 @@ const routes = [
   { path: '/api/v1/sync', name: 'Sync', importPath: './routes/sync.routes' },
   { path: '/api/v1/mobile', name: 'Mobile Insights', importPath: './routes/insights.mobile.routes' }
 ];
+
+// Mount data retention routes
+safeMount('/api/v1/data', dataRetentionRoutes, 'Data Retention');
+
+// Mount admin retention routes as part of admin routes
+safeMount('/api/admin/retention', adminRetentionRoutes, 'Admin Retention');
 
 // Apply 2FA rate limiter to specific endpoint
 // Note: This must come AFTER the limiter is defined

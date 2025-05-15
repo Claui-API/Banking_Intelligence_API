@@ -1,4 +1,4 @@
-// src/models/PlaidItem.js
+// src/models/PlaidItem.js - Updated with data retention fields
 const { DataTypes } = require('sequelize');
 const { sequelize } = require('../config/database');
 
@@ -44,6 +44,17 @@ const PlaidItem = sequelize.define('PlaidItem', {
 	lastSyncedAt: {
 		type: DataTypes.DATE,
 		allowNull: true
+	},
+	// Add fields for data retention
+	disconnectedAt: {
+		type: DataTypes.DATE,
+		allowNull: true,
+		comment: 'When the Plaid connection was disconnected by user'
+	},
+	deletionScheduledAt: {
+		type: DataTypes.DATE,
+		allowNull: true,
+		comment: 'When the Plaid data is scheduled to be deleted'
 	},
 	error: {
 		type: DataTypes.JSON,

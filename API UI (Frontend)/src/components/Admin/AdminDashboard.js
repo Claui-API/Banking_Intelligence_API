@@ -1,15 +1,14 @@
 // src/components/Admin/AdminDashboard.js
-
-// src/components/Admin/AdminDashboard.js - Update imports
 import React, { useState, useEffect } from 'react';
 import { Container, Row, Col, Card, Table, Button, Badge, Spinner, Alert, Tabs, Tab } from 'react-bootstrap';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { adminService } from '../../services/admin';
 import ClientStatusBadge from './ClientStatusBadge';
-import InsightMetricsPanel from './InsightMetricsPanel'; // Updated import
-import UserInsightMetrics from './UserInsightMetrics'; // Updated import
+import InsightMetricsPanel from './InsightMetricsPanel';
+import UserInsightMetrics from './UserInsightMetrics';
 import AiInsightsTab from './AiInsightsTab';
+import DataRetentionTab from './DataRetentionTab';
 import logger from '../../utils/logger';
 import './AdminDashboard.css';
 
@@ -376,6 +375,11 @@ const AdminDashboard = () => {
     </Row>
   );
 
+  // Add Data Retention Tab render function
+  const renderDataRetention = () => (
+    <DataRetentionTab />
+  );
+
   // New tab for AI Insights Analytics
   const renderAiAnalytics = () => (
     <AiInsightsTab />
@@ -405,6 +409,9 @@ const AdminDashboard = () => {
         </Tab>
         <Tab eventKey="ai-analytics" title="AI Insights Analytics">
           {renderAiAnalytics()}
+        </Tab>
+        <Tab eventKey="data-retention" title="Data Retention">
+          {renderDataRetention()}
         </Tab>
       </Tabs>
     </Container>

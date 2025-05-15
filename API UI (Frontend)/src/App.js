@@ -1,4 +1,4 @@
-// App.js
+// src/components/App.js - Updated Routes with Data Settings
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
@@ -17,6 +17,7 @@ import HomePage from './components/HomePage';
 import APITokenManagement from './components/APITokenManagement';
 import Documentation from './components/Documentation/Documentation';
 import SecuritySettings from './components/Account/SecuritySettings';
+import DataRetention from './components/Account/DataRetention'; // Import the new component
 
 // Admin Components
 import AdminDashboard from './components/Admin/AdminDashboard';
@@ -57,6 +58,7 @@ const App = () => {
             <Route path="/transactions" element={<Layout><div>Transactions Page</div></Layout>} />
             <Route path="/insights" element={<Layout><div>Insights Page</div></Layout>} />
             <Route path="/security" element={<Layout><SecuritySettings /></Layout>} />
+            <Route path="/data-settings" element={<Layout><DataRetention /></Layout>} /> {/* Add new Data Settings route */}
             <Route path="/docs" element={<Layout><Documentation /></Layout>} />
 
             {/* API Token Management Route */}
