@@ -1,4 +1,4 @@
-// src/controllers/data-retention.controller.js - Fixed version for getRetentionLogs method
+// src/controllers/data-retention.controller.js
 const { Op } = require('sequelize'); // Import Op explicitly
 const dataRetentionService = require('../services/data-retention.service');
 const logger = require('../utils/logger');
