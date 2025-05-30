@@ -1,4 +1,4 @@
-// src/components/Layout/Header.js
+// src/components/Layout/Header.js - Updated with Data Settings Option
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
@@ -6,15 +6,15 @@ import { Navbar, Nav, Container, Button, Image, Dropdown } from 'react-bootstrap
 
 const Header = () => {
   const { isAuthenticated, isAdmin, logout } = useAuth();
-  
+
   return (
     <Navbar variant="light" expand="lg">
       <Container>
         <Navbar.Brand as={Link} to="/" className='text-white d-flex align-items-center'>
-          <Image 
-            src="/images/1-back.png" 
-            alt="CLAU Logo" 
-            className="me-2" 
+          <Image
+            src="/images/1-back.png"
+            alt="CLAU Logo"
+            className="me-2"
             style={{ width: '32px', height: '32px' }}
           />
           CLAU API
@@ -25,16 +25,16 @@ const Header = () => {
             {isAuthenticated ? (
               <>
                 {isAdmin && (
-                  <Button 
-                    as={Link} 
-                    to="/admin" 
-                    variant="success" 
+                  <Button
+                    as={Link}
+                    to="/admin"
+                    variant="success"
                     className="me-2"
                   >
                     Admin Dashboard
                   </Button>
                 )}
-                
+
                 <Dropdown align="end" className="me-2" menuVariant="light">
                   <Dropdown.Toggle variant="outline-light" id="dropdown-menu">
                     Account
@@ -42,6 +42,9 @@ const Header = () => {
                   <Dropdown.Menu>
                     <Dropdown.Item as={Link} to="/dashboard">Dashboard</Dropdown.Item>
                     <Dropdown.Item as={Link} to="/api-tokens">API Tokens</Dropdown.Item>
+                    <Dropdown.Item as={Link} to="/security">Security Settings</Dropdown.Item>
+                    {/* Add new Data Settings link */}
+                    <Dropdown.Item as={Link} to="/data-settings">Data Settings</Dropdown.Item>
                     <Dropdown.Item as={Link} to="/docs">Documentation</Dropdown.Item>
                     <Dropdown.Divider />
                     <Dropdown.Item onClick={logout}>Sign Out</Dropdown.Item>
@@ -50,18 +53,18 @@ const Header = () => {
               </>
             ) : (
               <>
-                <Button 
-                  as={Link} 
-                  to="/login" 
-                  variant="light" 
+                <Button
+                  as={Link}
+                  to="/login"
+                  variant="light"
                   className="ms-2"
                 >
                   Sign In
                 </Button>
-                <Button 
-                  as={Link} 
-                  to="/register" 
-                  variant="light" 
+                <Button
+                  as={Link}
+                  to="/register"
+                  variant="light"
                   className="ms-2"
                 >
                   Register

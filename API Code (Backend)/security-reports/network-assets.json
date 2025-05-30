@@ -1,0 +1,46 @@
+{
+  "assets": {
+    "ip-172-31-2-102.us-east-2.compute.internal": {
+      "hostname": "ip-172-31-2-102.us-east-2.compute.internal",
+      "platform": "linux",
+      "type": "workstation",
+      "ip": {
+        "internal": "172.31.2.102",
+        "external": "3.131.131.48"
+      },
+      "lastSeen": "2025-05-14T19:10:13.332Z",
+      "osInfo": {
+        "type": "Linux",
+        "platform": "linux",
+        "release": "6.1.132-147.221.amzn2023.x86_64",
+        "arch": "x64"
+      },
+      "cpu": "Intel(R) Xeon(R) Platinum 8375C CPU @ 2.90GHz",
+      "memory": {
+        "total": "8 GB",
+        "free": "6 GB"
+      }
+    },
+    "local-host-ip-172-31-2-102-us-east-2-compute-internal": {
+      "id": "local-host-ip-172-31-2-102-us-east-2-compute-internal",
+      "name": "ip-172-31-2-102.us-east-2.compute.internal",
+      "type": "workstation",
+      "ip": {
+        "internal": "172.31.2.102"
+      },
+      "platform": "linux",
+      "osType": "Linux",
+      "osRelease": "6.1.132-147.221.amzn2023.x86_64",
+      "lastSeen": "2025-05-14T19:10:16.460Z"
+    }
+  },
+  "lastUpdated": "2025-05-14T19:10:16.460Z",
+  "stats": {
+    "total": 2,
+    "active": 2,
+    "inactive": 0,
+    "byType": {
+      "workstation": 2
+    }
+  }
+}

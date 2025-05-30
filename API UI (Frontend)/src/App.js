@@ -1,4 +1,4 @@
-// App.js
+// src/components/App.js - Updated Routes with Data Settings
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
@@ -9,13 +9,15 @@ import './index.css';
 // Components
 import Layout from './components/Layout/Layout';
 import PrivateRoute from './components/Layout/PrivateRoute';
-import AdminRoute from './components/Layout/AdminRoute'; // We'll create this
+import AdminRoute from './components/Layout/AdminRoute';
 import Login from './components/Auth/Login';
 import Register from './components/Auth/Register';
 import Dashboard from './components/Dashboard/Dashboard';
 import HomePage from './components/HomePage';
 import APITokenManagement from './components/APITokenManagement';
 import Documentation from './components/Documentation/Documentation';
+import SecuritySettings from './components/Account/SecuritySettings';
+import DataRetention from './components/Account/DataRetention'; // Import the new component
 
 // Admin Components
 import AdminDashboard from './components/Admin/AdminDashboard';
@@ -24,13 +26,13 @@ import ClientDetailPage from './components/Admin/ClientDetailPage';
 // Error Page Component
 const ErrorPage = () => {
   logger.warn('404 Page Not Found');
-  
+
   return (
     <div className="container text-center mt-5">
       <h1 className="display-4 text-danger">404 - Page Not Found</h1>
       <p className="lead">The page you are looking for does not exist.</p>
-      <button 
-        onClick={() => window.location.href = '/'} 
+      <button
+        onClick={() => window.location.href = '/'}
         className="btn btn-primary mt-3"
       >
         Return to Home
@@ -48,25 +50,27 @@ const App = () => {
           <Route path="/" element={<Layout><HomePage /></Layout>} />
           <Route path="/login" element={<Layout><Login /></Layout>} />
           <Route path="/register" element={<Layout><Register /></Layout>} />
-          
+
           {/* Protected routes */}
           <Route element={<PrivateRoute />}>
             <Route path="/dashboard" element={<Layout><Dashboard /></Layout>} />
             <Route path="/accounts" element={<Layout><div>Accounts Page</div></Layout>} />
             <Route path="/transactions" element={<Layout><div>Transactions Page</div></Layout>} />
             <Route path="/insights" element={<Layout><div>Insights Page</div></Layout>} />
+            <Route path="/security" element={<Layout><SecuritySettings /></Layout>} />
+            <Route path="/data-settings" element={<Layout><DataRetention /></Layout>} /> {/* Add new Data Settings route */}
             <Route path="/docs" element={<Layout><Documentation /></Layout>} />
-            
+
             {/* API Token Management Route */}
             <Route path="/api-tokens" element={<Layout><APITokenManagement /></Layout>} />
           </Route>
-          
+
           {/* Admin routes */}
           <Route element={<AdminRoute />}>
             <Route path="/admin" element={<Layout><AdminDashboard /></Layout>} />
             <Route path="/admin/clients/:clientId" element={<Layout><ClientDetailPage /></Layout>} />
           </Route>
-          
+
           {/* Catch-all route for undefined paths */}
           <Route path="*" element={<Layout><ErrorPage /></Layout>} />
         </Routes>

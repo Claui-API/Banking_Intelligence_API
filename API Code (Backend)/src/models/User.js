@@ -1,4 +1,5 @@
-// src/models/User.js
+// src/models/User.js - Updated with 2FA fields
+
 const { DataTypes } = require('sequelize');
 const { sequelize } = require('../config/database');
 const bcrypt = require('bcrypt');
@@ -9,6 +10,44 @@ const User = sequelize.define('User', {
     type: DataTypes.UUID,
     defaultValue: DataTypes.UUIDV4,
     primaryKey: true
+  },
+  markedForDeletionAt: {
+    type: DataTypes.DATE,
+    allowNull: true,
+    comment: 'When the user was marked for deletion'
+  },
+  inactivityWarningDate: {
+    type: DataTypes.DATE,
+    allowNull: true,
+    comment: 'When the inactivity warning was sent'
+  },
+  deletionReason: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    comment: 'Reason for deletion (user-requested, inactivity, etc.)'
+  },
+  dataRetentionPreferences: {
+    type: DataTypes.JSON,
+    allowNull: true,
+    defaultValue: {
+      transactionRetentionDays: 730, // 24 months
+      insightRetentionDays: 365, // 12 months
+      emailNotifications: true,
+      analyticalDataUse: true
+    },
+    comment: 'User preferences for data retention'
+  },
+  twoFactorEnabled: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: false
+  },
+  twoFactorSecret: {
+    type: DataTypes.STRING,
+    allowNull: true
+  },
+  backupCodes: {
+    type: DataTypes.JSON,
+    allowNull: true
   },
   clientName: {
     type: DataTypes.STRING,
@@ -62,7 +101,7 @@ const User = sequelize.define('User', {
 });
 
 // Instance method to compare passwords
-User.prototype.comparePassword = async function(password) {
+User.prototype.comparePassword = async function (password) {
   return bcrypt.compare(password, this.passwordHash);
 };
 
@@ -150,7 +189,7 @@ User.hasMany(Client, { foreignKey: 'approvedBy', as: 'ApprovedClients' });
 Client.belongsTo(User, { foreignKey: 'approvedBy', as: 'Approver' });
 
 // Generate client credentials
-Client.generateCredentials = function() {
+Client.generateCredentials = function () {
   return {
     clientId: crypto.randomUUID(),
     clientSecret: crypto.randomBytes(32).toString('hex')

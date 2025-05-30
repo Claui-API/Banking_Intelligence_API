@@ -1,22 +1,21 @@
 // src/components/Admin/AdminDashboard.js
-
-// src/components/Admin/AdminDashboard.js - Update imports
 import React, { useState, useEffect } from 'react';
 import { Container, Row, Col, Card, Table, Button, Badge, Spinner, Alert, Tabs, Tab } from 'react-bootstrap';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { adminService } from '../../services/admin';
 import ClientStatusBadge from './ClientStatusBadge';
-import InsightMetricsPanel from './InsightMetricsPanel'; // Updated import
-import UserInsightMetrics from './UserInsightMetrics'; // Updated import
+import InsightMetricsPanel from './InsightMetricsPanel';
+import UserInsightMetrics from './UserInsightMetrics';
 import AiInsightsTab from './AiInsightsTab';
+import DataRetentionTab from './DataRetentionTab';
 import logger from '../../utils/logger';
 import './AdminDashboard.css';
 
 const AdminDashboard = () => {
   const { isAdmin } = useAuth();
   const navigate = useNavigate();
-  
+
   const [stats, setStats] = useState(null);
   const [clients, setClients] = useState([]);
   const [pendingClients, setPendingClients] = useState([]);
@@ -24,14 +23,14 @@ const AdminDashboard = () => {
   const [loadingClients, setLoadingClients] = useState(true);
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState('overview');
-  
+
   // Fetch system stats
   useEffect(() => {
     if (!isAdmin) {
       navigate('/dashboard');
       return;
     }
-    
+
     const fetchStats = async () => {
       try {
         setLoadingStats(true);
@@ -45,10 +44,10 @@ const AdminDashboard = () => {
         setLoadingStats(false);
       }
     };
-    
+
     fetchStats();
   }, [isAdmin, navigate]);
-  
+
   // Fetch clients
   useEffect(() => {
     const fetchClients = async () => {
@@ -56,11 +55,11 @@ const AdminDashboard = () => {
         setLoadingClients(true);
         const result = await adminService.listClients(1, 10);
         setClients(result.clients);
-        
+
         // Fetch pending clients separately
         const pendingResult = await adminService.listClients(1, 5, 'pending');
         setPendingClients(pendingResult.clients);
-        
+
         setError('');
       } catch (err) {
         setError(`Error loading clients: ${err.message}`);
@@ -69,64 +68,64 @@ const AdminDashboard = () => {
         setLoadingClients(false);
       }
     };
-    
+
     fetchClients();
   }, []);
-  
+
   // Handle client approval
   const handleApproveClient = async (clientId) => {
     try {
       await adminService.approveClient(clientId);
-      
+
       // Update pending clients list
       setPendingClients(prev => prev.filter(client => client.clientId !== clientId));
-      
+
       // Update all clients list if the client is in there
-      setClients(prev => 
-        prev.map(client => 
-          client.clientId === clientId 
-            ? { ...client, status: 'active' } 
+      setClients(prev =>
+        prev.map(client =>
+          client.clientId === clientId
+            ? { ...client, status: 'active' }
             : client
         )
       );
-      
+
       logger.info(`Approved client ${clientId}`);
     } catch (err) {
       setError(`Error approving client: ${err.message}`);
       logger.error(`Failed to approve client ${clientId}:`, err);
     }
   };
-  
+
   // Handle client suspension
   const handleSuspendClient = async (clientId) => {
     try {
       const reason = prompt('Please enter a reason for suspending this client:');
       if (!reason) return; // Cancelled
-      
+
       await adminService.suspendClient(clientId, reason);
-      
+
       // Update clients list
-      setClients(prev => 
-        prev.map(client => 
-          client.clientId === clientId 
-            ? { ...client, status: 'suspended' } 
+      setClients(prev =>
+        prev.map(client =>
+          client.clientId === clientId
+            ? { ...client, status: 'suspended' }
             : client
         )
       );
-      
+
       logger.info(`Suspended client ${clientId}`);
     } catch (err) {
       setError(`Error suspending client: ${err.message}`);
       logger.error(`Failed to suspend client ${clientId}:`, err);
     }
   };
-  
+
   // Format date for display
   const formatDate = (dateString) => {
     if (!dateString) return 'N/A';
     return new Date(dateString).toLocaleString();
   };
-  
+
   // Render dashboard overview
   const renderOverview = () => (
     <>
@@ -160,7 +159,7 @@ const AdminDashboard = () => {
                       <p className="text-muted">Total API Calls</p>
                     </div>
                   </Col>
-                  
+
                   <Col xs={12}>
                     <h5 className="mt-4 mb-3">Client Status Breakdown</h5>
                     <Row>
@@ -197,7 +196,7 @@ const AdminDashboard = () => {
             </Card.Body>
           </Card>
         </Col>
-        
+
         <Col md={12} lg={4}>
           <Card className="mb-4">
             <Card.Header className="bg-white">
@@ -222,13 +221,13 @@ const AdminDashboard = () => {
                         <td>
                           <div className="d-flex flex-column">
                             <small className="text-success">{client.clientId}</small>
-                            <span>{client.user.name}</span>
-                            <small className="text-muted">{client.user.email}</small>
+                            <span className='text-success'>{client.user.name}</span>
+                            <small className="text-white">{client.user.email}</small>
                           </div>
                         </td>
                         <td className="text-end">
-                          <Button 
-                            size="sm" 
+                          <Button
+                            size="sm"
                             variant="success"
                             onClick={() => handleApproveClient(client.clientId)}
                           >
@@ -247,7 +246,7 @@ const AdminDashboard = () => {
               )}
             </Card.Body>
           </Card>
-          
+
           <Card>
             <Card.Header className="bg-white">Recent Activity</Card.Header>
             <Card.Body>
@@ -277,7 +276,7 @@ const AdminDashboard = () => {
           </Card>
         </Col>
       </Row>
-      
+
       {/* InsightMetricsPanel - Updated component */}
       <Row className="mt-4">
         <Col xs={12}>
@@ -286,7 +285,7 @@ const AdminDashboard = () => {
       </Row>
     </>
   );
-  
+
   // Render client management tab
   const renderClientManagement = () => (
     <Row className="mt-4">
@@ -333,27 +332,27 @@ const AdminDashboard = () => {
                       <td>
                         <div className="d-flex gap-2">
                           {client.status === 'pending' && (
-                            <Button 
-                              size="sm" 
+                            <Button
+                              size="sm"
                               variant="success"
                               onClick={() => handleApproveClient(client.clientId)}
                             >
                               Approve
                             </Button>
                           )}
-                          
+
                           {client.status === 'active' && (
-                            <Button 
-                              size="sm" 
+                            <Button
+                              size="sm"
                               variant="warning"
                               onClick={() => handleSuspendClient(client.clientId)}
                             >
                               Suspend
                             </Button>
                           )}
-                          
-                          <Button 
-                            size="sm" 
+
+                          <Button
+                            size="sm"
                             variant="info"
                             onClick={() => navigate(`/admin/clients/${client.clientId}`)}
                           >
@@ -375,23 +374,28 @@ const AdminDashboard = () => {
       </Col>
     </Row>
   );
-  
+
+  // Add Data Retention Tab render function
+  const renderDataRetention = () => (
+    <DataRetentionTab />
+  );
+
   // New tab for AI Insights Analytics
   const renderAiAnalytics = () => (
     <AiInsightsTab />
   );
-  
+
   return (
     <Container fluid className="py-4 px-md-4 admin-dashboard-container">
       <h1 className="mb-4 text-white">Admin Dashboard</h1>
-      
+
       {error && (
         <Alert variant="danger">
           <i className="bi bi-exclamation-triangle-fill me-2"></i>
           {error}
         </Alert>
       )}
-      
+
       <Tabs
         activeKey={activeTab}
         onSelect={(k) => setActiveTab(k)}
@@ -405,6 +409,9 @@ const AdminDashboard = () => {
         </Tab>
         <Tab eventKey="ai-analytics" title="AI Insights Analytics">
           {renderAiAnalytics()}
+        </Tab>
+        <Tab eventKey="data-retention" title="Data Retention">
+          {renderDataRetention()}
         </Tab>
       </Tabs>
     </Container>

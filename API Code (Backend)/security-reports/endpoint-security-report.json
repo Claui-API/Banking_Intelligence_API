@@ -1,0 +1,79 @@
+{
+  "lastCheck": "2025-05-14T19:10:18.466Z",
+  "endpoints": {
+    "ip-172-31-2-102.us-east-2.compute.internal": {
+      "hostname": "ip-172-31-2-102.us-east-2.compute.internal",
+      "platform": "linux",
+      "arch": "x64",
+      "type": "Linux",
+      "release": "6.1.132-147.221.amzn2023.x86_64",
+      "checkTime": "2025-05-14T19:10:18.466Z",
+      "securityComponents": {
+        "antivirus": {
+          "installed": false,
+          "running": false,
+          "name": "",
+          "details": "No specific antivirus detected"
+        },
+        "firewall": {
+          "enabled": "unknown",
+          "details": "Failed to check firewall status"
+        },
+        "updates": {
+          "upToDate": true,
+          "packageManager": "yum",
+          "details": "System is up to date"
+        },
+        "encryption": {
+          "encrypted": false,
+          "type": "LUKS",
+          "details": "No LUKS encryption detected"
+        }
+      },
+      "securityIssues": [
+        {
+          "component": "antivirus",
+          "issue": "No antivirus software detected",
+          "severity": "high",
+          "recommendation": "Install and enable antivirus software"
+        },
+        {
+          "component": "encryption",
+          "issue": "Disk encryption is not enabled",
+          "severity": "medium",
+          "recommendation": "Enable LUKS disk encryption"
+        }
+      ],
+      "secureComponents": {
+        "antivirus": false,
+        "firewall": false,
+        "updates": true,
+        "encryption": false
+      },
+      "overallSecure": false
+    }
+  },
+  "summary": {
+    "total": 1,
+    "secure": 0,
+    "issues": 2,
+    "componentStatus": {
+      "antivirus": {
+        "secure": 0,
+        "issues": 1
+      },
+      "firewall": {
+        "secure": 0,
+        "issues": 0
+      },
+      "updates": {
+        "secure": 1,
+        "issues": 0
+      },
+      "encryption": {
+        "secure": 0,
+        "issues": 1
+      }
+    }
+  }
+}
