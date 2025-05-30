@@ -1,6 +1,7 @@
-// src/context/AuthContext.js
+// src/context/AuthContext.js - Properly fixed logout function for frontend
 import React, { createContext, useState, useEffect, useContext, useRef } from 'react';
 import { authService } from '../services/auth';
+import api from '../services/api'; // Import API service instead
 import logger from '../utils/logger';
 
 const AuthContext = createContext();
@@ -30,6 +31,11 @@ export const AuthProvider = ({ children }) => {
         if (auth) {
           // If authenticated, get user info from token
           const userData = authService.getUserFromToken();
+
+          // Store the user ID in localStorage for validation checks
+          if (userData && userData.id) {
+            localStorage.setItem('userId', userData.id);
+          }
 
           setUser({
             ...userData,
@@ -109,7 +115,6 @@ export const AuthProvider = ({ children }) => {
       lastRefreshTime.current = now;
 
       // Make an API call to get the current client status
-      const api = await import('../services/api').then(module => module.default);
       const response = await api.get(`/clients/status/${user.clientId}`);
 
       if (response.data && response.data.success) {
@@ -178,6 +183,11 @@ export const AuthProvider = ({ children }) => {
 
       setUser(userInfo);
 
+      // Store the user ID in localStorage for validation
+      if (userData && userData.id) {
+        localStorage.setItem('userId', userData.id);
+      }
+
       // Check if user is admin
       setIsAdmin(userData.role === 'admin');
 
@@ -213,15 +223,54 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const logout = () => {
-    authService.logout();
-    setIsAuthenticated(false);
-    setUser(null);
-    setIsAdmin(false);
-    setClientStatus('unknown');
-    localStorage.removeItem('token');
-    localStorage.removeItem('refreshToken');
-    // Don't remove clientId so users can log back in easily
+  // Improved logout that properly clears frontend state and notifies backend
+  const logout = async () => {
+    try {
+      // Get the user ID before we clear auth state
+      const currentUserId = user?.id;
+
+      // Clear any client-side financial data
+      sessionStorage.removeItem('plaidConnected');
+      sessionStorage.removeItem('plaidAccounts');
+      localStorage.removeItem('financialData');
+
+      // Notify the backend to clear server-side user data (if user is logged in)
+      if (currentUserId) {
+        try {
+          await api.post('/users/session/clear');
+          logger.info(`Notified server to clear session data for user ${currentUserId}`);
+        } catch (apiError) {
+          // Log but continue with logout even if API call fails
+          logger.error('Failed to notify server about logout:', apiError);
+        }
+      }
+
+      // Standard logout actions
+      authService.logout();
+      setIsAuthenticated(false);
+      setUser(null);
+      setIsAdmin(false);
+      setClientStatus('unknown');
+
+      // Remove tokens from local storage
+      localStorage.removeItem('token');
+      localStorage.removeItem('refreshToken');
+
+      // Remove user ID from local storage
+      localStorage.removeItem('userId');
+
+      logger.info('User logged out successfully');
+    } catch (error) {
+      logger.error('Error during logout:', error);
+      // Still clear state on error
+      setIsAuthenticated(false);
+      setUser(null);
+
+      // Force removal of tokens
+      localStorage.removeItem('token');
+      localStorage.removeItem('refreshToken');
+      localStorage.removeItem('userId');
+    }
   };
 
   const updateToken = (token) => {
@@ -232,6 +281,11 @@ export const AuthProvider = ({ children }) => {
         ...userData,
         token
       });
+
+      // Store the user ID in localStorage for validation
+      if (userData && userData.id) {
+        localStorage.setItem('userId', userData.id);
+      }
 
       // Update admin status if needed
       setIsAdmin(userData.role === 'admin');
@@ -258,6 +312,12 @@ export const AuthProvider = ({ children }) => {
         ...userData,
         token
       });
+
+      // Store the user ID in localStorage for validation
+      if (userData && userData.id) {
+        localStorage.setItem('userId', userData.id);
+      }
+
       setIsAdmin(userData.role === 'admin');
       setClientStatus(userData.clientStatus || 'active');
     }

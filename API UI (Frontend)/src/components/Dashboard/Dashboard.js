@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react'; // Added useCallback
+// src/components/Dashboard/Dashboard.js - Fixed version with proper data isolation
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Container, Row, Col, Card, Button, Nav, Form, InputGroup, Badge, Dropdown, Spinner, Alert } from 'react-bootstrap';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
@@ -10,30 +11,8 @@ import APIKeysManagement from '../APITokenManagement';
 import { EventSourcePolyfill } from 'event-source-polyfill';
 import PlaidLinkButton from '../Plaid/PlaidLinkButton';
 import logger from '../../utils/logger';
-import api from '../../services/api'; // Added missing API import
-
-// Example code for the playground
-const apiExampleCode = `// Example: Generate financial insights
-fetch('https://bankingintelligenceapi.com/api/insights/generate', {
-  method: 'POST',
-  headers: {
-    'Content-Type': 'application/json',
-    'Authorization': 'Bearer \${apiKey}'
-  },
-  body: JSON.stringify({
-    query: 'How can I improve my savings?',
-    userData: {
-      accounts: [
-        { accountId: 'acc-1', type: 'Checking', balance: 1250.50 },
-        { accountId: 'acc-2', type: 'Savings', balance: 5000.00 }
-      ],
-      transactions: [
-        { transactionId: 'txn-1', date: '2025-03-15', description: 'Grocery Store', amount: -85.20 },
-        { transactionId: 'txn-2', date: '2025-03-14', description: 'Salary Deposit', amount: 3000.00 }
-      ]
-    }
-  })
-})`;
+import api from '../../services/api';
+import PlaidDataSidebar from '../Dashboard/PlaidDataSidebar';
 
 // Simple API Status component
 const PlaidApiStatus = () => {
@@ -79,7 +58,7 @@ const PlaidApiStatus = () => {
 };
 
 const Dashboard = () => {
-  const { user, clientStatus } = useAuth();
+  const { user, clientStatus, logout } = useAuth();
   const [activeSection, setActiveSection] = useState('home');
   const [apiKey, setApiKey] = useState(() => {
     return user?.token || localStorage.getItem('token') || 'No API key found';
@@ -106,31 +85,14 @@ const Dashboard = () => {
   const [institution, setInstitution] = useState('');
   const [connectionSuccess, setConnectionSuccess] = useState(false);
 
+  // Add state for the financial data sidebar
+  const [showDataSidebar, setShowDataSidebar] = useState(false);
+  const [financialData, setFinancialData] = useState(null);
+  const [loadingFinancialData, setLoadingFinancialData] = useState(false);
+
   // Add state for tracking Plaid connection status
-  const [plaidStatus, setPlaidStatus] = useState('ready'); // ready, connecting, success, error
+  const [plaidStatus, setPlaidStatus] = useState('ready');
   const [plaidError, setPlaidError] = useState(null);
-
-  // Add this function to check Plaid availability
-  const checkPlaidStatus = useCallback(async () => {
-    try {
-      const response = await api.get('/plaid/status');
-      if (response.data.success) {
-        logger.info('Plaid service is available');
-      } else {
-        setPlaidStatus('error');
-        setPlaidError('Plaid service is currently unavailable');
-        logger.error('Plaid service unavailable:', response.data);
-      }
-    } catch (error) {
-      logger.error('Error checking Plaid status:', error);
-      // Don't show an error to the user - just log it
-    }
-  }, []);
-
-  // Call this in a useEffect
-  useEffect(() => {
-    checkPlaidStatus();
-  }, [checkPlaidStatus]);
 
   // Sample suggested prompts
   const suggestedPrompts = [
@@ -148,21 +110,150 @@ const Dashboard = () => {
     "Am I spending more on groceries than average?"
   ];
 
+  // Reset all state when user changes - IMPORTANT for data isolation
+  useEffect(() => {
+    if (user) {
+      // Reset all financial data when user changes
+      setFinancialData(null);
+      setConnected(false);
+      setInstitution('');
+      setShowDataSidebar(false);
+
+      // Reset chat messages to initial state for new user
+      setChatMessages([
+        {
+          role: 'assistant',
+          content: `Hello ${user.email || ''}! I am CLAU, your Banking Intelligence Assistant. How can I help you with your financial data today?`,
+          timestamp: new Date().toISOString()
+        }
+      ]);
+
+      // Check for existing connections for THIS user
+      checkExistingConnections();
+    }
+  }, [user?.id]); // Only trigger when user ID changes
+
+  // Fetch financial data from Plaid
+  const fetchFinancialData = useCallback(async () => {
+    // Don't fetch if not connected or no user
+    if (!connected || !user?.id) return;
+
+    try {
+      setLoadingFinancialData(true);
+      logger.info(`Fetching financial data from Plaid for user ${user.id}`);
+
+      // Add auth timestamp to URL to prevent caching and ensure fresh data
+      const timestamp = Date.now();
+
+      // Fetch accounts data with user validation
+      const accountsResponse = await api.get(`/plaid/accounts?_t=${timestamp}`);
+
+      // Fetch transactions data with user validation
+      const transactionsResponse = await api.get(`/plaid/transactions?_t=${timestamp}`);
+
+      if (accountsResponse.data.success && transactionsResponse.data.success) {
+        const combinedData = {
+          accounts: accountsResponse.data.data || [],
+          transactions: transactionsResponse.data.data || [],
+          institution: institution,
+          lastUpdated: new Date().toISOString(),
+          userId: user.id // Store user ID with the data for validation
+        };
+
+        // Store the data in component state
+        setFinancialData(combinedData);
+        setShowDataSidebar(true);
+
+        logger.info(`Financial data fetched for user ${user.id}: ${combinedData.accounts.length} accounts, ${combinedData.transactions.length} transactions`);
+      } else {
+        throw new Error('Failed to retrieve complete financial data');
+      }
+    } catch (error) {
+      logger.error(`Error fetching financial data for user ${user.id}:`, error);
+      console.error('Error fetching financial data:', error);
+
+      // Don't disable sidebar if we have partial data
+      if (!financialData) {
+        setShowDataSidebar(false);
+      }
+    } finally {
+      setLoadingFinancialData(false);
+    }
+  }, [connected, institution, user?.id]);
+
+  // Check for existing Plaid connections on component mount or when user changes
+  const checkExistingConnections = useCallback(async () => {
+    if (!user?.id) return;
+
+    try {
+      logger.info(`Checking existing Plaid connections for user ${user.id}`);
+      // Check if we already have accounts for THIS user
+      const response = await api.get('/plaid/status');
+
+      if (response.data.success && response.data.data.connected) {
+        // We have existing accounts for this user, set the connected state
+        setConnected(true);
+        setShowDataSidebar(true);
+
+        // Get institution information if available
+        if (response.data.data.institution) {
+          setInstitution(response.data.data.institution);
+        }
+
+        // Fetch financial data for THIS user
+        fetchFinancialData();
+
+        logger.info(`Found existing Plaid connection for user ${user.id} to ${response.data.data.institution || 'a bank'}`);
+      } else {
+        // No connected accounts for this user
+        setConnected(false);
+        setShowDataSidebar(false);
+        setFinancialData(null);
+        logger.info(`No existing Plaid connections found for user ${user.id}`);
+      }
+    } catch (error) {
+      // No connected accounts or error fetching
+      logger.error(`Error checking existing connections for user ${user.id}:`, error);
+      setConnected(false);
+      setShowDataSidebar(false);
+      setFinancialData(null);
+    }
+  }, [user?.id, fetchFinancialData]);
+
   useEffect(() => {
     // Scroll to bottom of chat when messages change
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatMessages]);
 
+  // Check Plaid status and user's connections on mount and when user changes
+  useEffect(() => {
+    if (user?.id) {
+      checkExistingConnections();
+    }
+  }, [user?.id, checkExistingConnections]);
+
+  // Clean up function to clear state when component unmounts
+  useEffect(() => {
+    return () => {
+      // Clear any cached data when dashboard unmounts
+      setFinancialData(null);
+      setConnected(false);
+
+      // Clear any in-progress requests
+      latestRequestIdRef.current = null;
+    };
+  }, []);
+
   // Generate a unique request ID
   const generateRequestId = () => {
-    return `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    return `req_${user?.id || 'nouser'}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   };
 
   // Handle Plaid connection success
   const handlePlaidSuccess = ({ itemId, metadata }) => {
     try {
       // Log detailed success info
-      logger.info('Bank account connected successfully', {
+      logger.info(`Bank account connected successfully for user ${user?.id}`, {
         institution: metadata.institution.name,
         accountCount: metadata.accounts.length,
         itemId: itemId
@@ -173,6 +264,9 @@ const Dashboard = () => {
 
       // Mark as connected
       setConnected(true);
+
+      // Explicitly set showDataSidebar to true
+      setShowDataSidebar(true);
 
       // Show success message
       setConnectionSuccess(true);
@@ -187,9 +281,11 @@ const Dashboard = () => {
           timestamp: new Date().toISOString()
         }
       ]);
+
+      // Fetch financial data after successful connection
+      fetchFinancialData();
     } catch (err) {
-      logger.logError('Plaid Success Handling Error', err);
-      // Show error to user
+      logger.error(`Plaid Success Handling Error for user ${user?.id}:`, err);
       setConnectionSuccess(false);
       alert(`Error processing bank connection: ${err.message}`);
     }
@@ -198,7 +294,7 @@ const Dashboard = () => {
   // Handle Plaid exit (user canceled or error)
   const handlePlaidExit = (err, metadata) => {
     if (err) {
-      logger.logError('Plaid Exit Error:', {
+      logger.error(`Plaid Exit Error for user ${user?.id}:`, {
         message: err.message,
         metadata: metadata
       });
@@ -219,7 +315,7 @@ const Dashboard = () => {
         }
       }
     } else {
-      logger.info('Plaid Link flow exited', metadata);
+      logger.info(`Plaid Link flow exited for user ${user?.id}`, metadata);
     }
   };
 
@@ -250,7 +346,7 @@ const Dashboard = () => {
       setQuery('');
       chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
 
-      // Generate a request ID
+      // Generate a request ID that includes the user ID for traceability
       const requestId = generateRequestId();
       latestRequestIdRef.current = requestId;
 
@@ -265,7 +361,8 @@ const Dashboard = () => {
         body: JSON.stringify({
           query: inputQuery,
           requestId,
-          useConnectedData: connected // Add this flag
+          useConnectedData: connected, // Add this flag
+          userId: user?.id // Explicitly include user ID for validation
         })
       });
 
@@ -440,6 +537,7 @@ const Dashboard = () => {
     }
   };
 
+  // Handle key press in chat input
   const handleKeyPress = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -462,25 +560,36 @@ const Dashboard = () => {
     document.getElementById('chat-input')?.focus();
   };
 
-  // Handle insights request from insights panel
-  const handleInsightRequest = async (query, requestId) => {
-    setInsightLoading(true);
-    setInsightError(null);
-
+  // Handle improved logout
+  const handleLogout = async () => {
     try {
-      const data = await insightsService.generateInsights(query, requestId);
-      setInsightsData(data);
-    } catch (error) {
-      console.error('Error generating insights:', error);
-      setInsightError(error.message || 'Failed to generate insights');
-    } finally {
-      setInsightLoading(false);
-    }
-  };
+      // First clear Plaid data and financial state
+      setConnected(false);
+      setInstitution('');
+      setShowDataSidebar(false);
+      setFinancialData(null);
 
-  // Handle copy to clipboard
-  const handleCopyKey = () => {
-    navigator.clipboard.writeText(apiKey);
+      // Try to clear session data on server
+      if (user?.id) {
+        try {
+          await api.post('/users/session/clear');
+          logger.info(`Session data cleared on server for user ${user.id}`);
+        } catch (clearError) {
+          logger.error('Failed to clear session data on server:', clearError);
+          // Continue with logout even if this fails
+        }
+      }
+
+      // Finally, perform actual logout
+      await logout();
+
+      // Redirect to login
+      window.location.href = '/login';
+    } catch (error) {
+      console.error('Error during logout:', error);
+      // If error occurs, still try to logout
+      logout();
+    }
   };
 
   // Render sections based on active section
@@ -498,7 +607,7 @@ const Dashboard = () => {
                   <div className="d-flex align-items-center me-3">
                     <Badge bg={connected ? "success" : "warning"} className="d-flex align-items-center">
                       <span className="status-indicator me-1"></span>
-                      {connected ? "Accounts Connected" : "No Accounts Connected"}
+                      {connected ? `Connected to ${institution}` : "No Accounts Connected"}
                     </Badge>
                     {!connected && (
                       <PlaidLinkButton
@@ -546,120 +655,138 @@ const Dashboard = () => {
               </Alert>
             )}
 
-            {/* Chat Interface */}
+            {/* Chat Interface with Sidebar */}
             <div className="chat-container">
-              <div className="chat-messages">
-                {connected && (
-                  <div className="text-center mb-3">
-                    <Badge bg="success" className="py-2 px-3">
-                      <i className="bi bi-bank me-2"></i>
-                      Connected to {institution}
-                    </Badge>
-                  </div>
-                )}
+              <div className="chat-interface-wrapper">
+                {/* Main chat area */}
+                <div className={`chat-area ${showDataSidebar ? 'with-sidebar' : ''}`}>
+                  <div className="chat-messages">
+                    {connected && (
+                      <div className="text-center mb-3">
+                        <Badge bg="success" className="py-2 px-3">
+                          <i className="bi bi-bank me-2"></i>
+                          Connected to {institution}
+                        </Badge>
+                      </div>
+                    )}
 
-                {chatMessages.map((message, index) => (
-                  <div
-                    key={index}
-                    className={`message ${message.role === 'assistant' ? 'assistant-message' : 'user-message'}`}
-                  >
-                    <div className="message-avatar">
-                      {message.role === 'assistant' ? (
-                        <img src="/images/chat-icon.png" alt="AI Assistant" className="ai-avatar-image" />
-                      ) : 'You'}
-                    </div>
-                    <div className="message-content">
-                      {message.isStreaming ? (
-                        // Show typing effect for streaming messages
-                        <>
-                          <pre className="message-text">{message.content}</pre>
-                          <div className="typing-cursor"></div>
-                        </>
-                      ) : message.content && message.content.length > 200 && !message.fullyLoaded ? (
-                        // Progressive loading for long messages
-                        <>
-                          <pre className="message-text">{message.content.substring(0, 200)}...</pre>
-                          <div className="more-content">
-                            <Button
-                              variant="link"
-                              size="sm"
-                              onClick={() => {
-                                setChatMessages(prev => prev.map((msg, i) =>
-                                  i === index ? { ...msg, fullyLoaded: true } : msg
-                                ));
-                              }}
-                            >
-                              Show more
-                            </Button>
-                          </div>
-                        </>
-                      ) : (
-                        <>
-                          {message.usingRealData && (
-                            <Badge bg="info" className="mb-2">Using Connected Bank Data</Badge>
+                    {chatMessages.map((message, index) => (
+                      <div
+                        key={index}
+                        className={`message ${message.role === 'assistant' ? 'assistant-message' : 'user-message'}`}
+                      >
+                        <div className="message-avatar">
+                          {message.role === 'assistant' ? (
+                            <img src="/images/chat-icon.png" alt="AI Assistant" className="ai-avatar-image" />
+                          ) : 'You'}
+                        </div>
+                        <div className="message-content">
+                          {message.isStreaming ? (
+                            // Show typing effect for streaming messages
+                            <>
+                              <pre className="message-text">{message.content}</pre>
+                              <div className="typing-cursor"></div>
+                            </>
+                          ) : message.content && message.content.length > 200 && !message.fullyLoaded ? (
+                            // Progressive loading for long messages
+                            <>
+                              <pre className="message-text">{message.content.substring(0, 200)}...</pre>
+                              <div className="more-content">
+                                <Button
+                                  variant="link"
+                                  size="sm"
+                                  onClick={() => {
+                                    setChatMessages(prev => prev.map((msg, i) =>
+                                      i === index ? { ...msg, fullyLoaded: true } : msg
+                                    ));
+                                  }}
+                                >
+                                  Show more
+                                </Button>
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              {message.usingRealData && (
+                                <Badge bg="info" className="mb-2">Using Connected Bank Data</Badge>
+                              )}
+                              <pre className="message-text">{message.content}</pre>
+                            </>
                           )}
-                          <pre className="message-text">{message.content}</pre>
-                        </>
-                      )}
-                      <div className="message-timestamp">
-                        {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          <div className="message-timestamp">
+                            {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                    <div ref={chatEndRef} />
+                  </div>
+
+                  {/* Suggested Prompts */}
+                  {chatMessages.length < 3 && (
+                    <div className="suggested-prompts">
+                      <p className="text-white mb-2">
+                        {connected
+                          ? "Try asking about your connected accounts:"
+                          : "Try asking:"}
+                      </p>
+                      <div className="d-flex flex-wrap gap-2">
+                        {(connected ? connectedPrompts : suggestedPrompts).map((prompt, index) => (
+                          <Button
+                            key={index}
+                            variant="outline-success"
+                            size="sm"
+                            onClick={() => handleSuggestedPrompt(prompt)}
+                            className="suggested-prompt-btn"
+                          >
+                            {prompt}
+                          </Button>
+                        ))}
                       </div>
                     </div>
-                  </div>
-                ))}
-                <div ref={chatEndRef} />
-              </div>
+                  )}
 
-              {/* Suggested Prompts */}
-              {chatMessages.length < 3 && (
-                <div className="suggested-prompts">
-                  <p className="text-white mb-2">
-                    {connected
-                      ? "Try asking about your connected accounts:"
-                      : "Try asking:"}
-                  </p>
-                  <div className="d-flex flex-wrap gap-2">
-                    {(connected ? connectedPrompts : suggestedPrompts).map((prompt, index) => (
-                      <Button
-                        key={index}
-                        variant="outline-success"
-                        size="sm"
-                        onClick={() => handleSuggestedPrompt(prompt)}
-                        className="suggested-prompt-btn"
-                      >
-                        {prompt}
-                      </Button>
-                    ))}
+                  {/* Input Area */}
+                  <div className="chat-input-container">
+                    <Form.Control
+                      id="chat-input"
+                      as="textarea"
+                      rows={1}
+                      placeholder="Ask about your financial data..."
+                      value={query}
+                      onChange={(e) => setQuery(e.target.value)}
+                      onKeyPress={handleKeyPress}
+                      className="chat-input text-black"
+                    />
+                    <Button
+                      variant="success"
+                      className="send-button"
+                      disabled={!query.trim() || loading}
+                      onClick={handleSendMessage}
+                    >
+                      <i className="bi bi-send"></i>
+                    </Button>
+                  </div>
+
+                  <div className="chat-footer">
+                    <p className="text-white small mb-0">
+                      CLAU may produce inaccurate information about people, places, or financial advice.
+                    </p>
                   </div>
                 </div>
-              )}
 
-              {/* Input Area */}
-              <div className="chat-input-container">
-                <Form.Control
-                  id="chat-input"
-                  as="textarea"
-                  rows={1}
-                  placeholder="Ask about your financial data..."
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  onKeyPress={handleKeyPress}
-                  className="chat-input text-black"
-                />
-                <Button
-                  variant="success"
-                  className="send-button"
-                  disabled={!query.trim() || loading}
-                  onClick={handleSendMessage}
-                >
-                  <i className="bi bi-send"></i>
-                </Button>
-              </div>
-
-              <div className="chat-footer">
-                <p className="text-white small mb-0">
-                  CLAU may produce inaccurate information about people, places, or financial advice.
-                </p>
+                {/* Financial Data Sidebar */}
+                {showDataSidebar && (
+                  <div className="financial-data-sidebar">
+                    <PlaidDataSidebar
+                      userData={financialData}
+                      isVisible={showDataSidebar}
+                      isLoading={loadingFinancialData}
+                      onRefresh={fetchFinancialData}
+                      userId={user?.id} // Pass the user ID for validation
+                    />
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -702,7 +829,7 @@ const Dashboard = () => {
             <Row className="mb-5 justify-content-center">
               <Col md={10}>
                 <Card className="bg-black text-white">
-                  <Card.Body className=" bg-black p-4">
+                  <Card.Body className="bg-black p-4">
                     <h3 className="text-success justify-content-center mb-3">Getting Started</h3>
                     <p>
                       The Banking Intelligence API lets you enhance your application with AI-powered financial insights.
@@ -827,6 +954,11 @@ const Dashboard = () => {
                 className="sidebar-image-clau" />
             </a>
           </h4>
+          {user && (
+            <div className="text-white small mt-2">
+              <i className="bi bi-person-circle me-1"></i> {user.email}
+            </div>
+          )}
         </div>
 
         <Nav className="sidebar-nav">
@@ -857,6 +989,14 @@ const Dashboard = () => {
           >
             <i className="bi bi-key me-2"></i>
             API Keys
+          </Nav.Link>
+          <hr className="border-secondary my-2" />
+          <Nav.Link
+            onClick={handleLogout}
+            className="sidebar-link text-danger mt-auto"
+          >
+            <i className="bi bi-box-arrow-right me-2"></i>
+            Logout
           </Nav.Link>
         </Nav>
       </div>

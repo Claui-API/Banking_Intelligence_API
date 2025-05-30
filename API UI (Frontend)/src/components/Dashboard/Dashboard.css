@@ -485,3 +485,93 @@
     padding: 1rem;
   }
 }
+
+/* Chat interface with sidebar layout */
+.chat-interface-wrapper {
+  display: flex;
+  width: 100%;
+  height: calc(100vh - 73px);
+  /* Adjust based on your header height */
+  overflow: hidden;
+}
+
+.chat-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  transition: width 0.3s ease;
+}
+
+.chat-area.with-sidebar {
+  width: 65%;
+}
+
+.financial-data-sidebar {
+  width: 35%;
+  background-color: #1a1a1a;
+  border-left: 1px solid #333;
+  padding: 1rem;
+  height: 100%;
+  overflow-y: auto;
+}
+
+/* Table styling for financial data */
+.financial-data-sidebar .table {
+  color: white;
+  margin-bottom: 0;
+}
+
+.financial-data-sidebar .accordion-body {
+  background-color: #1a1a1a;
+  padding: 0;
+}
+
+.financial-data-sidebar .accordion-button {
+  background-color: #222;
+  color: white;
+}
+
+.financial-data-sidebar .accordion-button:not(.collapsed) {
+  background-color: #28a745;
+  color: white;
+}
+
+.financial-data-sidebar .card {
+  background-color: #222;
+}
+
+/* Responsive adjustments */
+@media (max-width: 992px) {
+  .chat-interface-wrapper {
+    flex-direction: column;
+  }
+
+  .chat-area.with-sidebar {
+    width: 100%;
+    height: 60%;
+  }
+
+  .financial-data-sidebar {
+    width: 100%;
+    height: 40%;
+    border-left: none;
+    border-top: 1px solid #333;
+  }
+}
+
+/* Animation for sidebar appearance */
+.financial-data-sidebar {
+  animation: slideIn 0.3s forwards;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(30px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}

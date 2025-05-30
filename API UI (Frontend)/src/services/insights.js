@@ -1,13 +1,15 @@
-// src/services/insights.js with improved API data handling
+// src/services/insights.js with improved API data handling and user validation
 import api from './api';
 import logger from '../utils/logger';
 
 export const insightsService = {
-  // Get financial summary
+  // Get financial summary with user validation
   getFinancialSummary: async () => {
     try {
       logger.info('Attempting to fetch financial summary');
-      const response = await api.get('/insights/summary');
+      // Add a unique timestamp to prevent caching
+      const timestamp = Date.now();
+      const response = await api.get(`/users/financial-data?_t=${timestamp}`);
 
       logger.info('Financial summary retrieved', {
         status: response.status,
@@ -27,6 +29,18 @@ export const insightsService = {
 
       // If response.data.data exists, use it, otherwise try to use response.data directly
       const resultData = response.data?.data || response.data;
+
+      // Get user ID from local storage for validation
+      const userId = localStorage.getItem('userId');
+
+      // Validate that the response contains the expected userId if present
+      if (resultData?.userId && userId && resultData.userId !== userId) {
+        logger.error('User ID mismatch in financial summary response', {
+          expected: userId,
+          received: resultData.userId
+        });
+        throw new Error('Data ownership validation failed');
+      }
 
       // Log the structure of what we're returning
       logger.info('Financial summary data structure', {
@@ -70,27 +84,34 @@ export const insightsService = {
       // In development mode, return hard-coded mock data as last resort
       if (process.env.NODE_ENV === 'development') {
         logger.info('Falling back to hard-coded mock data in frontend');
+
+        // Get user ID from local storage
+        const userId = localStorage.getItem('userId') || 'anonymous';
+
+        // Create a unique prefix based on userId to make mock data unique per user
+        const userPrefix = userId.substring(0, 4);
+
         return {
           totalBalance: 20000.25,
           netWorth: 35000.50,
           accountCount: 3,
           accounts: [
             {
-              accountId: "acc-mock-1",
+              accountId: `acc-mock-${userPrefix}-1`,
               name: "Mock Checking",
               type: "Checking",
               balance: 5000.75,
               currency: "USD"
             },
             {
-              accountId: "acc-mock-2",
+              accountId: `acc-mock-${userPrefix}-2`,
               name: "Mock Savings",
               type: "Savings",
               balance: 15000.50,
               currency: "USD"
             },
             {
-              accountId: "acc-mock-3",
+              accountId: `acc-mock-${userPrefix}-3`,
               name: "Mock Credit Card",
               type: "Credit Card",
               balance: -1200.25,
@@ -99,42 +120,43 @@ export const insightsService = {
           ],
           recentTransactions: [
             {
-              transactionId: "txn-mock-1",
+              transactionId: `txn-mock-${userPrefix}-1`,
               date: new Date().toISOString(),
               description: "Grocery Store",
               category: "Food",
               amount: -125.50
             },
             {
-              transactionId: "txn-mock-2",
+              transactionId: `txn-mock-${userPrefix}-2`,
               date: new Date().toISOString(),
               description: "Salary Deposit",
               category: "Income",
               amount: 3000.00
             },
             {
-              transactionId: "txn-mock-3",
+              transactionId: `txn-mock-${userPrefix}-3`,
               date: new Date().toISOString(),
               description: "Netflix",
               category: "Entertainment",
               amount: -15.99
             },
             {
-              transactionId: "txn-mock-4",
+              transactionId: `txn-mock-${userPrefix}-4`,
               date: new Date().toISOString(),
               description: "Gas Station",
               category: "Transportation",
               amount: -45.50
             },
             {
-              transactionId: "txn-mock-5",
+              transactionId: `txn-mock-${userPrefix}-5`,
               date: new Date().toISOString(),
               description: "Amazon",
               category: "Shopping",
               amount: -67.99
             }
           ],
-          timestamp: new Date().toISOString()
+          timestamp: new Date().toISOString(),
+          userId: userId // Include userId for validation
         };
       }
 
@@ -142,7 +164,7 @@ export const insightsService = {
     }
   },
 
-  // Generate personalized insights with request ID tracking and improved error handling
+  // Generate personalized insights with request ID tracking, user validation, and improved error handling
   generateInsights: async (query, requestId) => {
     try {
       logger.info('Generating insights', {
@@ -150,10 +172,14 @@ export const insightsService = {
         requestId
       });
 
-      // Include the requestId in the request body
+      // Get user ID from local storage for validation
+      const userId = localStorage.getItem('userId');
+
+      // Include the requestId and userId in the request body
       const response = await api.post('/insights/generate', {
         query,
-        requestId // Pass the requestId to the backend
+        requestId, // Pass the requestId to the backend
+        userId // Pass the userId for validation
       });
 
       logger.info('Insights generated', {
@@ -171,13 +197,24 @@ export const insightsService = {
         logger.warn('Invalid insights response structure: missing data property');
       }
 
+      // Validate that the response contains the expected userId if present
+      if (response.data?.data?.userId && userId && response.data.data.userId !== userId) {
+        logger.error('User ID mismatch in insights response', {
+          expected: userId,
+          received: response.data.data.userId
+        });
+        throw new Error('Data ownership validation failed');
+      }
+
       // If response has data.data, use it, otherwise try to use response.data directly
       const resultData = response.data?.data || response.data;
 
-      // Return the data with the requestId
+      // Return the data with the requestId and add security checks
       return {
         ...resultData,
-        requestId // Ensure the requestId is in the response
+        requestId, // Ensure the requestId is in the response
+        validated: true, // Flag to indicate data has been validated
+        timestamp: resultData.timestamp || new Date().toISOString()
       };
     } catch (error) {
       logger.logError('Insights Generation', error);
@@ -213,6 +250,41 @@ export const insightsService = {
 
       // Throw the enhanced error
       throw enhancedError;
+    }
+  },
+
+  // New method to clear cached user data for better security
+  clearUserCache: async () => {
+    try {
+      // Clear any locally cached data
+      logger.info('Clearing user data cache');
+
+      // Clear all user-specific data from localStorage except auth tokens
+      const keysToPreserve = ['token', 'refreshToken'];
+
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (!keysToPreserve.includes(key)) {
+          localStorage.removeItem(key);
+        }
+      }
+
+      // Clear all sessionStorage data
+      sessionStorage.clear();
+
+      // Try to call the server-side cache clearing endpoint
+      try {
+        await api.post('/users/session/clear');
+      } catch (clearError) {
+        logger.warn('Error clearing server-side cache:', clearError);
+        // Continue even if server-side clearing fails
+      }
+
+      return true;
+    } catch (error) {
+      logger.error('Error clearing user cache:', error);
+      // Return true anyway to allow logout to proceed
+      return true;
     }
   }
 };
