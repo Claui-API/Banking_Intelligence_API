@@ -99,6 +99,7 @@ const PlaidLinkButton = ({
     token: linkToken,
     onSuccess: handleSuccess,
     onExit: handleExit,
+    env: process.env.REACT_APP_PLAID_ENV || 'production'
   });
 
   return (

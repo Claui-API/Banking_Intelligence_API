@@ -1,4 +1,4 @@
-// services/plaid.service.js
+// src/services/plaid.service.js - Modified to fix environment issues
 const { Configuration, PlaidApi, PlaidEnvironments } = require('plaid');
 const dotenv = require('dotenv');
 const logger = require('../utils/logger');
@@ -12,9 +12,29 @@ class PlaidService {
       logger.error('Missing required Plaid API credentials');
     }
 
+    // Determine environment from token prefix
+    this.determineEnvironmentFromTokens();
+
+    // Initialize with default environment (will be updated if needed)
+    this.initializeClient(process.env.PLAID_ENV || 'sandbox');
+
+    logger.info('Plaid service initialized with environment:', {
+      environment: this.environment,
+      clientIdSet: !!process.env.PLAID_CLIENT_ID,
+      secretSet: !!process.env.PLAID_SECRET
+    });
+  }
+
+  /**
+   * Initialize client with specific environment
+   * @param {string} environment - 'sandbox', 'development', or 'production'
+   */
+  initializeClient(environment) {
+    this.environment = environment;
+
     // Configure Plaid client based on environment
     const configuration = new Configuration({
-      basePath: this._getPlaidEnvironment(),
+      basePath: this._getPlaidEnvironment(environment),
       baseOptions: {
         headers: {
           'PLAID-CLIENT-ID': process.env.PLAID_CLIENT_ID,
@@ -25,22 +45,49 @@ class PlaidService {
     });
 
     this.client = new PlaidApi(configuration);
-
-    logger.info('Plaid service initialized with environment:', {
-      environment: process.env.PLAID_ENV || 'sandbox',
-      clientIdSet: !!process.env.PLAID_CLIENT_ID,
-      secretSet: !!process.env.PLAID_SECRET
-    });
+    logger.info(`Plaid client reconfigured to use ${environment} environment`);
   }
 
   /**
-   * Get Plaid environment based on NODE_ENV
+   * Determine environment based on existing tokens in database
+   */
+  async determineEnvironmentFromTokens() {
+    try {
+      // Import models dynamically to avoid circular dependencies
+      const PlaidItem = require('../models/PlaidItem');
+
+      // Get the first active token
+      const firstItem = await PlaidItem.findOne({
+        where: { status: 'active' }
+      });
+
+      if (firstItem && firstItem.accessToken) {
+        // Detect environment from token prefix
+        const tokenPrefix = firstItem.accessToken.split('-')[0];
+
+        if (tokenPrefix === 'access-sandbox') {
+          logger.info('Detected sandbox tokens in database, using sandbox environment');
+          process.env.PLAID_ENV = 'sandbox';
+        } else if (tokenPrefix === 'access-development') {
+          logger.info('Detected development tokens in database, using development environment');
+          process.env.PLAID_ENV = 'development';
+        } else if (tokenPrefix === 'access-production') {
+          logger.info('Detected production tokens in database, using production environment');
+          process.env.PLAID_ENV = 'production';
+        }
+      }
+    } catch (error) {
+      logger.error('Error determining Plaid environment from tokens:', error);
+    }
+  }
+
+  /**
+   * Get Plaid environment based on environment string
+   * @param {string} env - Environment name
    * @returns {string} - Plaid environment URL
    */
-  _getPlaidEnvironment() {
-    const env = process.env.PLAID_ENV || 'sandbox';
-
-    switch (env) {
+  _getPlaidEnvironment(env = 'sandbox') {
+    switch (env.toLowerCase()) {
       case 'sandbox':
         return PlaidEnvironments.sandbox;
       case 'development':
@@ -112,6 +159,9 @@ class PlaidService {
    */
   async getAccounts(accessToken) {
     try {
+      // Check token environment vs client environment and switch if needed
+      this._validateTokenEnvironment(accessToken);
+
       const request = {
         access_token: accessToken
       };
@@ -132,7 +182,7 @@ class PlaidService {
         officialName: account.official_name
       }));
     } catch (error) {
-      logger.error('Error getting accounts:', error);
+      logger.error(`Error getting accounts for token: ${accessToken.substring(0, 10)}...`, error);
       throw new Error(`Failed to get accounts: ${error.message}`);
     }
   }
@@ -146,6 +196,9 @@ class PlaidService {
    */
   async getTransactions(accessToken, startDate, endDate) {
     try {
+      // Check token environment vs client environment and switch if needed
+      this._validateTokenEnvironment(accessToken);
+
       const request = {
         access_token: accessToken,
         start_date: startDate.toISOString().split('T')[0],
@@ -191,6 +244,47 @@ class PlaidService {
     } catch (error) {
       logger.error('Error getting transactions:', error);
       throw new Error(`Failed to get transactions: ${error.message}`);
+    }
+  }
+
+  /**
+   * Validate that the token environment matches client environment and switch if needed
+   * @param {string} accessToken - Plaid access token
+   */
+  _validateTokenEnvironment(accessToken) {
+    if (!accessToken) return;
+
+    // Extract environment from token
+    const parts = accessToken.split('-');
+    if (parts.length < 2) return;
+
+    const tokenEnv = parts[1];
+    let clientEnv = '';
+
+    // Determine client environment
+    if (this.environment === 'sandbox') {
+      clientEnv = 'sandbox';
+    } else if (this.environment === 'development') {
+      clientEnv = 'development';
+    } else if (this.environment === 'production') {
+      clientEnv = 'production';
+    }
+
+    // If mismatch, reconfigure client
+    if (tokenEnv !== clientEnv) {
+      logger.warn(`Token environment (${tokenEnv}) doesn't match client environment (${clientEnv}), switching client configuration`);
+
+      switch (tokenEnv) {
+        case 'sandbox':
+          this.initializeClient('sandbox');
+          break;
+        case 'development':
+          this.initializeClient('development');
+          break;
+        case 'production':
+          this.initializeClient('production');
+          break;
+      }
     }
   }
 

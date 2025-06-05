@@ -1,10 +1,10 @@
-// src/middleware/auth.js
+// src/middleware/auth.js - Improved with better security and session handling
 const authService = require('../services/auth');
 const { Client, User } = require('../models/User');
 const logger = require('../utils/logger');
 
 /**
- * Authentication middleware to validate JWT tokens
+ * Authentication middleware to validate JWT tokens with improved session tracking
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
  * @param {Function} next - Express next middleware function
@@ -40,8 +40,15 @@ const authMiddleware = async (req, res, next) => {
       email: decoded.email,
       clientId: decoded.clientId,
       role: decoded.role || 'user',
-      twoFactorEnabled: decoded.twoFactorEnabled || false  // Add 2FA status
+      twoFactorEnabled: decoded.twoFactorEnabled || false,  // Add 2FA status
+      sessionId: decoded.sessionId || `session_${Date.now()}` // Add unique session tracking
     };
+
+    // Add security headers to the response
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-XSS-Protection', '1; mode=block');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
 
     // Admin users bypass client status checks
     if (req.auth.role === 'admin') {
@@ -53,7 +60,8 @@ const authMiddleware = async (req, res, next) => {
     if (req.auth.clientId) {
       const client = await Client.findOne({
         where: {
-          clientId: req.auth.clientId
+          clientId: req.auth.clientId,
+          userId: req.auth.userId // Ensure client belongs to this user
         }
       });
 
@@ -89,7 +97,11 @@ const authMiddleware = async (req, res, next) => {
       req.client = client;
     }
 
-    logger.info(`Authenticated request for user: ${req.auth.userId}`);
+    logger.info(`Authenticated request for user: ${req.auth.userId}`, {
+      path: req.path,
+      method: req.method,
+      ip: req.ip
+    });
 
     next();
   } catch (error) {
@@ -102,7 +114,7 @@ const authMiddleware = async (req, res, next) => {
 };
 
 /**
- * Role-based authorization middleware
+ * Role-based authorization middleware with additional security checks
  * @param {Array|String} roles - Allowed roles
  * @returns {Function} Middleware function
  */
@@ -118,6 +130,13 @@ const authorize = (roles) => {
     const allowedRoles = Array.isArray(roles) ? roles : [roles];
 
     if (!allowedRoles.includes(req.auth.role)) {
+      // Log potential privilege escalation attempts
+      logger.warn(`Authorization failure: User ${req.auth.userId} with role ${req.auth.role} attempted to access resource requiring roles: ${allowedRoles.join(', ')}`, {
+        path: req.path,
+        method: req.method,
+        ip: req.ip
+      });
+
       return res.status(403).json({
         success: false,
         message: 'Access denied. Insufficient privileges.'
@@ -173,8 +192,40 @@ const require2FA = async (req, res, next) => {
   }
 };
 
+/**
+ * Check if request is for sensitive financial data and apply extra security
+ * @returns {Function} Middleware function
+ */
+const protectFinancialData = (req, res, next) => {
+  // Set stricter security headers for financial data endpoints
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Cache-Control', 'private, no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+
+  // Validate the user is properly authenticated
+  if (!req.auth || !req.auth.userId) {
+    return res.status(401).json({
+      success: false,
+      message: 'Authentication required to access financial data'
+    });
+  }
+
+  // Log sensitive data access for audit trail
+  logger.info(`Financial data access: User ${req.auth.userId} accessed ${req.path}`, {
+    method: req.method,
+    ip: req.ip,
+    userAgent: req.headers['user-agent']
+  });
+
+  next();
+};
+
 module.exports = {
   authMiddleware,
   authorize,
-  require2FA
+  require2FA,
+  protectFinancialData
 };

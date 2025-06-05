@@ -1,4 +1,4 @@
-// server.js - Fixed with proper sequelize import
+// server.js - Updated with user routes and improved security
 
 const express = require('express');
 const path = require('path');
@@ -7,7 +7,6 @@ const cors = require('cors');
 const dotenv = require('dotenv');
 const rateLimit = require('express-rate-limit');
 const jwt = require('jsonwebtoken');
-// Add the sequelize import
 const { sequelize } = require('./config/database');
 const dataRetentionService = require('./services/data-retention.service');
 
@@ -25,9 +24,10 @@ const PORT = process.env.PORT || 3000;
 const { errorHandler, notFoundHandler } = require('./middleware/errorHandler');
 const retentionLoggingMiddleware = require('./middleware/retention-logging.middleware');
 const requestLogger = require('./middleware/requestLogger');
-const { authMiddleware, authorize } = require('./middleware/auth');
+const { authMiddleware, authorize, protectFinancialData } = require('./middleware/auth');
 const { validateInsightsRequest } = require('./middleware/validation');
 const { insightMetricsMiddleware, initializeMetricsModel } = require('./middleware/insights-metrics.middleware');
+const mobileOptimizer = require('./middleware/mobile-optimizer');
 
 // Helper function to safely mount routes
 function safeMount(path, routeModule, name) {
@@ -97,11 +97,15 @@ const twoFactorLimiter = rateLimit({
 const dataRetentionRoutes = require('./routes/data-retention.routes');
 const adminRetentionRoutes = require('./routes/admin.retention.routes');
 
+// Import user routes - NEW
+const userRoutes = require('./routes/user.routes');
+
 // Safely import and mount all routes
 const routes = [
   { path: '/api/auth', name: 'Auth', importPath: './routes/auth.routes' },
   { path: '/api/insights', name: 'Insights', importPath: './routes/insights.routes', middleware: authMiddleware },
   { path: '/api/plaid', name: 'Plaid', importPath: './routes/plaid.routes' },
+  { path: '/api/users', name: 'Users', importPath: './routes/user.routes' }, // NEW: User routes
   { path: '/api/webhooks', name: 'Plaid Webhooks', importPath: './routes/plaid.webhook.routes' },
   { path: '/api', name: 'Health', importPath: './routes/health.routes' },
   { path: '/api/diagnostics', name: 'Diagnostics', importPath: './routes/diagnostics.routes' },
@@ -119,8 +123,10 @@ safeMount('/api/v1/data', dataRetentionRoutes, 'Data Retention');
 // Mount admin retention routes as part of admin routes
 safeMount('/api/admin/retention', adminRetentionRoutes, 'Admin Retention');
 
+// Mount user routes - NEW
+safeMount('/api/users', userRoutes, 'User Routes');
+
 // Apply 2FA rate limiter to specific endpoint
-// Note: This must come AFTER the limiter is defined
 app.use('/api/auth/verify-2fa', twoFactorLimiter);
 
 // Test insights metrics on startup
@@ -154,6 +160,7 @@ app.use(cors({
 app.use(express.json());
 app.use(requestLogger(logger));
 app.use(insightMetricsMiddleware);
+app.use(mobileOptimizer); // Add mobile optimization middleware
 
 // Apply rate limiting to /api except webhooks
 app.use('/api', (req, res, next) => {
