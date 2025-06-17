@@ -174,6 +174,43 @@ const Client = sequelize.define('Client', {
       return date;
     },
     allowNull: false
+  },
+  lastNotifiedThreshold: {
+    type: DataTypes.INTEGER,
+    defaultValue: 0,
+    allowNull: false
+  },
+  lastResetDate: {
+    type: DataTypes.DATE,
+    allowNull: true
+  },
+  statusReason: {
+    type: DataTypes.TEXT,
+    allowNull: true
+  },
+  statusChangedAt: {
+    type: DataTypes.DATE,
+    allowNull: true
+  },
+  statusChangedBy: {
+    type: DataTypes.UUID,
+    allowNull: true,
+    references: {
+      model: 'Users',
+      key: 'id'
+    }
+  },
+  quotaChangedAt: {
+    type: DataTypes.DATE,
+    allowNull: true
+  },
+  quotaChangedBy: {
+    type: DataTypes.UUID,
+    allowNull: true,
+    references: {
+      model: 'Users',
+      key: 'id'
+    }
   }
 }, {
   timestamps: true,
@@ -187,6 +224,13 @@ Client.belongsTo(User, { foreignKey: 'userId' });
 // Create associations for approvals
 User.hasMany(Client, { foreignKey: 'approvedBy', as: 'ApprovedClients' });
 Client.belongsTo(User, { foreignKey: 'approvedBy', as: 'Approver' });
+
+User.hasMany(Client, { foreignKey: 'statusChangedBy', as: 'StatusChangedClients' });
+Client.belongsTo(User, { foreignKey: 'statusChangedBy', as: 'StatusChanger' });
+
+// Set up quota change auditing
+User.hasMany(Client, { foreignKey: 'quotaChangedBy', as: 'QuotaChangedClients' });
+Client.belongsTo(User, { foreignKey: 'quotaChangedBy', as: 'QuotaChanger' });
 
 // Generate client credentials
 Client.generateCredentials = function () {

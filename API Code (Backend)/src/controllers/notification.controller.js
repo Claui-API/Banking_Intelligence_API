@@ -1,12 +1,9 @@
-// controllers/notification.controller.js
-const notificationService = require('../services/notification.service');
-const logger = require('../utils/logger');
+// src/controllers/notification.controller.js
+// Updated to use the unified notification service and NotificationPreference model
 
-/**
- * In-memory storage for device tokens
- * In a production environment, this would be replaced with a database
- */
-const deviceTokens = new Map();
+const unifiedNotificationService = require('../services/notification.service.unified');
+const NotificationPreference = require('../models/NotificationPreference');
+const logger = require('../utils/logger');
 
 class NotificationController {
   /**
@@ -18,58 +15,26 @@ class NotificationController {
     try {
       const { userId } = req.auth;
       const { token, platform, deviceInfo } = req.body;
-      
+
       if (!userId || !token || !platform) {
         return res.status(400).json({
           success: false,
           message: 'User ID, device token, and platform are required'
         });
       }
-      
+
       if (!['ios', 'android', 'web'].includes(platform)) {
         return res.status(400).json({
           success: false,
           message: 'Platform must be one of: ios, android, web'
         });
       }
-      
-      // Get user's devices or initialize empty array
-      const userKey = `user-${userId}`;
-      const userDevices = deviceTokens.get(userKey) || [];
-      
-      // Check if device token already exists
-      const existingTokenIndex = userDevices.findIndex(device => device.token === token);
-      
-      if (existingTokenIndex >= 0) {
-        // Update existing token
-        userDevices[existingTokenIndex] = {
-          ...userDevices[existingTokenIndex],
-          lastSeen: new Date(),
-          deviceInfo: { ...userDevices[existingTokenIndex].deviceInfo, ...deviceInfo }
-        };
-        
-        logger.info(`Updated existing device token for user ${userId}`);
-      } else {
-        // Add new token
-        userDevices.push({
-          token,
-          platform,
-          deviceInfo,
-          active: true,
-          createdAt: new Date(),
-          lastSeen: new Date(),
-          id: `device-${Date.now()}-${Math.random().toString(36).substring(2, 10)}`
-        });
-        
-        logger.info(`Registered new device token for user ${userId}`);
-      }
-      
-      // Save updated devices
-      deviceTokens.set(userKey, userDevices);
-      
-      // Get the device that was just added or updated
-      const deviceToken = userDevices[existingTokenIndex >= 0 ? existingTokenIndex : userDevices.length - 1];
-      
+
+      // Use the registerDevice method from the push notification service
+      const deviceToken = await unifiedNotificationService.pushService.registerDevice(
+        userId, token, platform, deviceInfo
+      );
+
       return res.status(200).json({
         success: true,
         message: 'Device registered successfully',
@@ -86,9 +51,9 @@ class NotificationController {
       });
     }
   }
-  
+
   /**
-   * Unregister a device token
+   * Unregister a device from push notifications
    * @param {Object} req - Express request object
    * @param {Object} res - Express response object
    */
@@ -96,35 +61,31 @@ class NotificationController {
     try {
       const { userId } = req.auth;
       const { token } = req.body;
-      
+
       if (!userId || !token) {
         return res.status(400).json({
           success: false,
           message: 'User ID and device token are required'
         });
       }
-      
-      // Get user's devices
-      const userKey = `user-${userId}`;
-      const userDevices = deviceTokens.get(userKey) || [];
-      
-      // Find the device token
-      const deviceIndex = userDevices.findIndex(device => device.token === token);
-      
-      if (deviceIndex === -1) {
+
+      // Find and mark the device as inactive
+      const deviceToken = await DeviceToken.findOne({
+        where: { userId, token }
+      });
+
+      if (!deviceToken) {
         return res.status(404).json({
           success: false,
           message: 'Device token not found'
         });
       }
-      
-      // Mark as inactive
-      userDevices[deviceIndex].active = false;
-      userDevices[deviceIndex].updatedAt = new Date();
-      
-      // Save updated devices
-      deviceTokens.set(userKey, userDevices);
-      
+
+      deviceToken.active = false;
+      await deviceToken.save();
+
+      logger.info(`Unregistered device for user ${userId}`);
+
       return res.status(200).json({
         success: true,
         message: 'Device unregistered successfully'
@@ -137,40 +98,73 @@ class NotificationController {
       });
     }
   }
-  
+
   /**
-   * Update notification preferences
+   * Get notification preferences for a user
    * @param {Object} req - Express request object
    * @param {Object} res - Express response object
    */
-  async updatePreferences(req, res) {
+  async getNotificationPreferences(req, res) {
     try {
       const { userId } = req.auth;
-      const { preferences } = req.body;
-      
-      if (!userId || !preferences) {
-        return res.status(400).json({
-          success: false,
-          message: 'User ID and preferences are required'
-        });
-      }
-      
-      // Store user preferences in memory
-      // In a real implementation, you would save this to a persistent storage
-      const preferencesKey = `preferences-${userId}`;
-      const existingPreferences = deviceTokens.get(preferencesKey) || {};
-      
-      deviceTokens.set(preferencesKey, {
-        ...existingPreferences,
-        ...preferences,
-        updatedAt: new Date()
-      });
-      
-      logger.info(`Updated notification preferences for user ${userId}`);
-      
+
+      // Get or create preferences
+      const preferences = await NotificationPreference.getOrCreateForUser(userId);
+
       return res.status(200).json({
         success: true,
-        message: 'Notification preferences updated successfully'
+        data: {
+          email: {
+            registration: preferences.emailRegistration,
+            accountApproval: preferences.emailAccountApproval,
+            accountStatus: preferences.emailAccountStatus,
+            apiUsage: preferences.emailApiUsage,
+            apiQuotaExceeded: preferences.emailApiQuotaExceeded,
+            monthlySummary: preferences.emailMonthlySummary,
+            securityAlerts: preferences.emailSecurityAlerts
+          },
+          push: {
+            accountApproval: preferences.pushAccountApproval,
+            accountStatus: preferences.pushAccountStatus,
+            apiUsage: preferences.pushApiUsage,
+            apiQuotaExceeded: preferences.pushApiQuotaExceeded,
+            securityAlerts: preferences.pushSecurityAlerts
+          }
+        }
+      });
+    } catch (error) {
+      logger.error('Error getting notification preferences:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to retrieve notification preferences'
+      });
+    }
+  }
+
+  /**
+   * Update notification preferences for a user
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   */
+  async updateNotificationPreferences(req, res) {
+    try {
+      const { userId } = req.auth;
+      const { email, push } = req.body;
+
+      if (!email && !push) {
+        return res.status(400).json({
+          success: false,
+          message: 'No preferences provided'
+        });
+      }
+
+      // Update preferences via the unified service
+      const updated = await unifiedNotificationService.updateUserPreferences(userId, { email, push });
+
+      return res.status(200).json({
+        success: true,
+        message: 'Notification preferences updated successfully',
+        data: updated
       });
     } catch (error) {
       logger.error('Error updating notification preferences:', error);
@@ -180,116 +174,165 @@ class NotificationController {
       });
     }
   }
-  
+
   /**
-   * Send a test notification (for debugging)
+   * Send a test notification
    * @param {Object} req - Express request object
    * @param {Object} res - Express response object
    */
   async sendTestNotification(req, res) {
     try {
       const { userId } = req.auth;
-      
-      if (!userId) {
+      const { type, channel } = req.body;
+
+      // Validate parameters
+      const validTypes = ['registration', 'accountApproval', 'accountStatus', 'apiUsage', 'apiQuotaExceeded', 'monthlySummary', 'securityAlerts'];
+      const validChannels = ['email', 'push', 'both'];
+
+      if (!validTypes.includes(type)) {
         return res.status(400).json({
           success: false,
-          message: 'User ID is required'
+          message: `Invalid notification type. Must be one of: ${validTypes.join(', ')}`
         });
       }
-      
-      // Only allow in development mode
-      if (process.env.NODE_ENV === 'production') {
-        return res.status(403).json({
+
+      if (!validChannels.includes(channel)) {
+        return res.status(400).json({
           success: false,
-          message: 'Test notifications are not allowed in production'
+          message: `Invalid channel. Must be one of: ${validChannels.join(', ')}`
         });
       }
-      
-      // Get user's active devices
-      const userKey = `user-${userId}`;
-      const userDevices = deviceTokens.get(userKey) || [];
-      const activeDevices = userDevices.filter(device => device.active);
-      
-      if (activeDevices.length === 0) {
+
+      // Get user and client data
+      const { User, Client } = require('../models/User');
+      const user = await User.findByPk(userId);
+
+      if (!user) {
         return res.status(404).json({
           success: false,
-          message: 'No active devices found for this user'
+          message: 'User not found'
         });
       }
-      
-      // Send a test notification
-      const notification = {
-        title: 'Test Notification',
-        body: 'This is a test notification from the API',
-        data: {
-          type: 'test',
-          timestamp: new Date().toISOString()
-        }
-      };
-      
-      // Group devices by platform
-      const androidTokens = activeDevices
-        .filter(device => device.platform === 'android')
-        .map(device => device.token);
-        
-      const iosTokens = activeDevices
-        .filter(device => device.platform === 'ios')
-        .map(device => device.token);
-      
-      // Send notifications
-      const results = {
-        android: { success: 0, failure: 0 },
-        ios: { success: 0, failure: 0 }
-      };
-      
-      if (androidTokens.length > 0) {
-        try {
-          // In a real implementation, this would use Firebase
-          // For now, just simulate success
-          results.android = {
-            success: androidTokens.length,
-            failure: 0
-          };
-          
-          logger.info(`Sent test notification to ${androidTokens.length} Android devices`);
-        } catch (error) {
-          logger.error('Error sending Android notifications:', error);
-          results.android = { success: 0, failure: androidTokens.length };
-        }
-      }
-      
-      if (iosTokens.length > 0) {
-        try {
-          // In a real implementation, this would use APN
-          // For now, just simulate success
-          results.ios = {
-            success: iosTokens.length,
-            failure: 0
-          };
-          
-          logger.info(`Sent test notification to ${iosTokens.length} iOS devices`);
-        } catch (error) {
-          logger.error('Error sending iOS notifications:', error);
-          results.ios = { success: 0, failure: iosTokens.length };
-        }
-      }
-      
-      return res.status(200).json({
-        success: true,
-        message: 'Test notification sent',
-        data: {
-          devices: {
-            android: androidTokens.length,
-            ios: iosTokens.length
-          },
-          results
-        }
+
+      // Get a client for this user
+      const client = await Client.findOne({
+        where: { userId }
       });
+
+      if (!client) {
+        return res.status(404).json({
+          success: false,
+          message: 'No client found for this user'
+        });
+      }
+
+      // Create test data based on notification type
+      let testData = {};
+      switch (type) {
+        case 'registration':
+          testData = { client };
+          break;
+        case 'accountApproval':
+          testData = { client };
+          break;
+        case 'accountStatus':
+          testData = { client, status: 'active', reason: 'This is a test notification' };
+          break;
+        case 'apiUsage':
+          testData = { client, threshold: 75 };
+          break;
+        case 'apiQuotaExceeded':
+          testData = { client };
+          break;
+        case 'monthlySummary':
+          testData = {
+            client,
+            previousUsage: Math.floor(client.usageQuota * 0.75),
+            usagePercentage: 75,
+            period: {
+              start: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), // 30 days ago
+              end: new Date()
+            },
+            nextResetDate: new Date(client.resetDate)
+          };
+          break;
+        case 'securityAlerts':
+          testData = {
+            activity: {
+              timestamp: new Date(),
+              ipAddress: req.ip || '127.0.0.1',
+              description: 'Test security alert'
+            }
+          };
+          break;
+      }
+
+      // Get notification preferences
+      const preferences = await NotificationPreference.getOrCreateForUser(userId);
+
+      // Temporarily update preferences based on request
+      const originalPreferences = { ...preferences.toJSON() };
+
+      try {
+        // Update preference fields based on channel and type
+        if (channel === 'email' || channel === 'both') {
+          preferences.emailRegistration = type === 'registration';
+          preferences.emailAccountApproval = type === 'accountApproval';
+          preferences.emailAccountStatus = type === 'accountStatus';
+          preferences.emailApiUsage = type === 'apiUsage';
+          preferences.emailApiQuotaExceeded = type === 'apiQuotaExceeded';
+          preferences.emailMonthlySummary = type === 'monthlySummary';
+          preferences.emailSecurityAlerts = type === 'securityAlerts';
+        } else {
+          // Disable all email preferences
+          preferences.emailRegistration = false;
+          preferences.emailAccountApproval = false;
+          preferences.emailAccountStatus = false;
+          preferences.emailApiUsage = false;
+          preferences.emailApiQuotaExceeded = false;
+          preferences.emailMonthlySummary = false;
+          preferences.emailSecurityAlerts = false;
+        }
+
+        if (channel === 'push' || channel === 'both') {
+          preferences.pushAccountApproval = type === 'accountApproval';
+          preferences.pushAccountStatus = type === 'accountStatus';
+          preferences.pushApiUsage = type === 'apiUsage';
+          preferences.pushApiQuotaExceeded = type === 'apiQuotaExceeded';
+          preferences.pushSecurityAlerts = type === 'securityAlerts';
+        } else {
+          // Disable all push preferences
+          preferences.pushAccountApproval = false;
+          preferences.pushAccountStatus = false;
+          preferences.pushApiUsage = false;
+          preferences.pushApiQuotaExceeded = false;
+          preferences.pushSecurityAlerts = false;
+        }
+
+        await preferences.save();
+
+        // Send test notification
+        const result = await unifiedNotificationService.sendNotification(userId, type, testData);
+
+        // Restore original preferences
+        await NotificationPreference.update(originalPreferences, { where: { id: preferences.id } });
+
+        return res.status(200).json({
+          success: true,
+          message: `Test ${type} notification sent via ${channel}`,
+          results: result
+        });
+      } catch (notificationError) {
+        // Make sure we restore original preferences even on error
+        await NotificationPreference.update(originalPreferences, { where: { id: preferences.id } });
+        throw notificationError;
+      }
     } catch (error) {
       logger.error('Error sending test notification:', error);
       return res.status(500).json({
         success: false,
-        message: 'Failed to send test notification'
+        message: 'Failed to send test notification',
+        error: error.message
       });
     }
   }

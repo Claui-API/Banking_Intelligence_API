@@ -9,6 +9,9 @@ const rateLimit = require('express-rate-limit');
 const jwt = require('jsonwebtoken');
 const { sequelize } = require('./config/database');
 const dataRetentionService = require('./services/data-retention.service');
+const { usageNotificationMiddleware } = require('./middleware/usage-notification.middleware');
+const notificationPreferencesRoutes = require('./routes/notification-preferences.routes');
+const { initializeJobs } = require('./jobs/job-scheduler');
 
 // Load .env variables
 dotenv.config();
@@ -69,6 +72,24 @@ const apiLimiter = rateLimit({
   message: { success: false, message: 'Too many requests, please try again later.' }
 });
 
+// Initialize email notification service
+const emailNotificationService = require('./services/email.notification.service');
+
+// Initialize notification services
+(async () => {
+  try {
+    // Test email service connection
+    await emailNotificationService.initializeService();
+    if (emailNotificationService.initialized) {
+      logger.info('Email notification service initialized successfully');
+    } else {
+      logger.warn('Email notification service failed to initialize');
+    }
+  } catch (error) {
+    logger.error('Error initializing email notification service:', error);
+  }
+})();
+
 // Define twoFactorLimiter here, BEFORE trying to use it
 const twoFactorLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
@@ -126,6 +147,8 @@ safeMount('/api/admin/retention', adminRetentionRoutes, 'Admin Retention');
 // Mount user routes - NEW
 safeMount('/api/users', userRoutes, 'User Routes');
 
+safeMount('/api/v1/notifications/preferences', notificationPreferencesRoutes, 'Notification Preferences');
+
 // Apply 2FA rate limiter to specific endpoint
 app.use('/api/auth/verify-2fa', twoFactorLimiter);
 
@@ -143,6 +166,30 @@ const initializeMetrics = async () => {
     console.error('❌ Error initializing metrics:', error);
   }
 };
+
+// Make sure auth middleware is applied before usage notification middleware
+app.use('/api', (req, res, next) => {
+  // Skip webhooks and health checks
+  if (req.path.startsWith('/webhooks') || req.path === '/health') {
+    return next();
+  }
+
+  // For auth routes, skip usage monitoring
+  if (req.path.startsWith('/auth')) {
+    return next();
+  }
+
+  // Apply auth middleware
+  authMiddleware(req, res, (err) => {
+    if (err) return next(err);
+
+    // Then apply usage notification middleware for authenticated routes
+    usageNotificationMiddleware(req, res, next);
+  });
+});
+
+// Initialize scheduled jobs
+initializeJobs();
 
 // Run initialization
 initializeMetrics();
