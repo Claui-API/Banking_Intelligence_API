@@ -75,6 +75,36 @@ const authService = {
 
       logger.info(`User registered successfully with 2FA enabled: ${user.email}`);
 
+      // Send registration notification email
+      try {
+        // We use require here to avoid circular dependencies
+        let notificationService;
+        try {
+          notificationService = require('./notification.service.unified');
+          logger.info('Notification service loaded successfully');
+        } catch (importError) {
+          logger.error(`Failed to import notification service: ${importError.message}`);
+
+          // Try to load it from a different path
+          try {
+            notificationService = require('../services/notification.service.unified');
+            logger.info('Notification service loaded from alternate path');
+          } catch (secondImportError) {
+            logger.error(`Failed to import notification service from alternate path: ${secondImportError.message}`);
+            // Continue without sending notification
+          }
+        }
+
+        if (notificationService) {
+          logger.info(`Attempting to send registration email to ${user.email}`);
+          const result = await notificationService.sendRegistrationNotification(user, client);
+          logger.info('Registration notification result:', result);
+        }
+      } catch (notificationError) {
+        logger.error(`Failed to send registration notification: ${notificationError.message}`);
+        // Don't block the registration process if notification fails
+      }
+
       // Return credentials with 2FA setup info
       return {
         success: true,

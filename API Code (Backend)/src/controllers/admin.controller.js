@@ -20,12 +20,12 @@ class AdminController {
       const limit = parseInt(req.query.limit) || 10;
       const offset = (page - 1) * limit;
       const status = req.query.status || null;
-      
+
       const where = {};
       if (status) {
         where.status = status;
       }
-      
+
       const { count, rows: clients } = await Client.findAndCountAll({
         where,
         include: [
@@ -36,7 +36,7 @@ class AdminController {
         offset,
         order: [['createdAt', 'DESC']]
       });
-      
+
       // Format client data for response
       const formattedClients = clients.map(client => ({
         id: client.id,
@@ -55,7 +55,7 @@ class AdminController {
         approvedAt: client.approvedAt,
         lastUsedAt: client.lastUsedAt
       }));
-      
+
       return res.status(200).json({
         success: true,
         data: {
@@ -77,7 +77,7 @@ class AdminController {
       });
     }
   }
-  
+
   /**
    * Get client details by ID
    * @param {Object} req - Express request object
@@ -86,7 +86,7 @@ class AdminController {
   async getClient(req, res) {
     try {
       const { clientId } = req.params;
-      
+
       const client = await Client.findOne({
         where: { clientId },
         include: [
@@ -94,19 +94,19 @@ class AdminController {
           { model: User, as: 'Approver', attributes: ['id', 'email'], required: false }
         ]
       });
-      
+
       if (!client) {
         return res.status(404).json({
           success: false,
           message: 'Client not found'
         });
       }
-      
+
       // Get token statistics
       const tokenCount = await Token.count({
         where: { clientId: client.clientId }
       });
-      
+
       // Format response
       const clientData = {
         id: client.id,
@@ -129,7 +129,7 @@ class AdminController {
         lastUsedAt: client.lastUsedAt,
         tokenCount: tokenCount
       };
-      
+
       return res.status(200).json({
         success: true,
         data: clientData
@@ -143,7 +143,7 @@ class AdminController {
       });
     }
   }
-  
+
   /**
    * Approve a client
    * @param {Object} req - Express request object
@@ -153,33 +153,67 @@ class AdminController {
     try {
       const { clientId } = req.params;
       const adminId = req.auth.userId;
-      
+
       const client = await Client.findOne({
-        where: { clientId }
+        where: { clientId },
+        include: [{ model: User }] // Include the user data for notifications
       });
-      
+
       if (!client) {
         return res.status(404).json({
           success: false,
           message: 'Client not found'
         });
       }
-      
+
       if (client.status === 'active') {
         return res.status(400).json({
           success: false,
           message: 'Client is already approved'
         });
       }
-      
+
       // Update client status
       client.status = 'active';
       client.approvedBy = adminId;
       client.approvedAt = new Date();
       await client.save();
-      
+
       logger.info(`Client ${clientId} approved by admin ${adminId}`);
-      
+
+      // Send approval notification
+      try {
+        if (client.User) {
+          // We use require here to avoid circular dependencies
+          let notificationService;
+          try {
+            notificationService = require('../services/notification.service.unified');
+            logger.info('Notification service loaded successfully for approval notification');
+          } catch (importError) {
+            logger.error(`Failed to import notification service: ${importError.message}`);
+
+            // Try to load it from a different path
+            try {
+              notificationService = require('./notification.service.unified');
+              logger.info('Notification service loaded from alternate path');
+            } catch (secondImportError) {
+              logger.error(`Failed to import notification service from alternate path: ${secondImportError.message}`);
+            }
+          }
+
+          if (notificationService) {
+            logger.info(`Attempting to send approval email to ${client.User.email}`);
+            const result = await notificationService.sendAccountApprovalNotification(client.User, client);
+            logger.info('Approval notification result:', result);
+          }
+        } else {
+          logger.warn(`No user found for client ${clientId}, cannot send approval notification`);
+        }
+      } catch (notificationError) {
+        logger.error(`Failed to send approval notification: ${notificationError.message}`);
+        // Don't block the approval process if notification fails
+      }
+
       return res.status(200).json({
         success: true,
         message: 'Client approved successfully',
@@ -198,7 +232,7 @@ class AdminController {
       });
     }
   }
-  
+
   /**
    * Suspend a client
    * @param {Object} req - Express request object
@@ -209,30 +243,30 @@ class AdminController {
       const { clientId } = req.params;
       const { reason } = req.body;
       const adminId = req.auth.userId;
-      
+
       const client = await Client.findOne({
         where: { clientId }
       });
-      
+
       if (!client) {
         return res.status(404).json({
           success: false,
           message: 'Client not found'
         });
       }
-      
+
       // Update client status
       client.status = 'suspended';
       await client.save();
-      
+
       // Revoke all active tokens for this client
       await Token.update(
         { isRevoked: true },
         { where: { clientId, isRevoked: false } }
       );
-      
+
       logger.info(`Client ${clientId} suspended by admin ${adminId}`, { reason });
-      
+
       return res.status(200).json({
         success: true,
         message: 'Client suspended successfully',
@@ -250,7 +284,7 @@ class AdminController {
       });
     }
   }
-  
+
   /**
    * Revoke a client
    * @param {Object} req - Express request object
@@ -261,30 +295,30 @@ class AdminController {
       const { clientId } = req.params;
       const { reason } = req.body;
       const adminId = req.auth.userId;
-      
+
       const client = await Client.findOne({
         where: { clientId }
       });
-      
+
       if (!client) {
         return res.status(404).json({
           success: false,
           message: 'Client not found'
         });
       }
-      
+
       // Update client status
       client.status = 'revoked';
       await client.save();
-      
+
       // Revoke all tokens for this client
       await Token.update(
         { isRevoked: true },
         { where: { clientId } }
       );
-      
+
       logger.info(`Client ${clientId} revoked by admin ${adminId}`, { reason });
-      
+
       return res.status(200).json({
         success: true,
         message: 'Client revoked successfully',
@@ -302,7 +336,7 @@ class AdminController {
       });
     }
   }
-  
+
   /**
    * Update client quota
    * @param {Object} req - Express request object
@@ -313,31 +347,31 @@ class AdminController {
       const { clientId } = req.params;
       const { usageQuota } = req.body;
       const adminId = req.auth.userId;
-      
+
       if (!usageQuota || isNaN(parseInt(usageQuota)) || parseInt(usageQuota) < 0) {
         return res.status(400).json({
           success: false,
           message: 'Invalid usage quota. Must be a positive number.'
         });
       }
-      
+
       const client = await Client.findOne({
         where: { clientId }
       });
-      
+
       if (!client) {
         return res.status(404).json({
           success: false,
           message: 'Client not found'
         });
       }
-      
+
       // Update client quota
       client.usageQuota = parseInt(usageQuota);
       await client.save();
-      
+
       logger.info(`Client ${clientId} quota updated to ${usageQuota} by admin ${adminId}`);
-      
+
       return res.status(200).json({
         success: true,
         message: 'Client quota updated successfully',
@@ -355,7 +389,7 @@ class AdminController {
       });
     }
   }
-  
+
   /**
    * Reset client usage counter
    * @param {Object} req - Express request object
@@ -365,33 +399,33 @@ class AdminController {
     try {
       const { clientId } = req.params;
       const adminId = req.auth.userId;
-      
+
       const client = await Client.findOne({
         where: { clientId }
       });
-      
+
       if (!client) {
         return res.status(404).json({
           success: false,
           message: 'Client not found'
         });
       }
-      
+
       // Reset usage count and set new reset date
       const oldCount = client.usageCount;
       client.usageCount = 0;
-      
+
       // Set reset date to the first day of next month
       const resetDate = new Date();
       resetDate.setMonth(resetDate.getMonth() + 1);
       resetDate.setDate(1);
       resetDate.setHours(0, 0, 0, 0);
       client.resetDate = resetDate;
-      
+
       await client.save();
-      
+
       logger.info(`Client ${clientId} usage reset from ${oldCount} to 0 by admin ${adminId}`);
-      
+
       return res.status(200).json({
         success: true,
         message: 'Client usage reset successfully',
@@ -411,7 +445,7 @@ class AdminController {
       });
     }
   }
-  
+
   /**
    * Get system statistics for admin dashboard
    * @param {Object} req - Express request object
@@ -422,34 +456,34 @@ class AdminController {
       // Get user counts
       const totalUsers = await User.count();
       const activeUsers = await User.count({ where: { status: 'active' } });
-      
+
       // Get client counts
       const totalClients = await Client.count();
       const clientsByStatus = await Client.findAll({
         attributes: ['status', [sequelize.fn('COUNT', sequelize.col('status')), 'count']],
         group: ['status']
       });
-      
+
       // Format client status counts
       const clientStatus = {};
       clientsByStatus.forEach(item => {
         clientStatus[item.status] = parseInt(item.dataValues.count);
       });
-      
+
       // Get token counts
       const totalTokens = await Token.count();
       const activeTokens = await Token.count({ where: { isRevoked: false } });
-      
+
       // Get usage stats
       const totalUsage = await Client.sum('usageCount');
-      
+
       // Get recent activity
       const recentClients = await Client.findAll({
         limit: 5,
         order: [['createdAt', 'DESC']],
         include: [{ model: User, attributes: ['clientName', 'email'] }]
       });
-      
+
       return res.status(200).json({
         success: true,
         data: {
@@ -488,42 +522,42 @@ class AdminController {
       });
     }
   }
-      /**
-   * Reinstate a suspended client
-   * @param {Object} req - Express request object
-   * @param {Object} res - Express response object
-   */
+  /**
+* Reinstate a suspended client
+* @param {Object} req - Express request object
+* @param {Object} res - Express response object
+*/
   async reinstateClient(req, res) {
     try {
       const { clientId } = req.params;
       const adminId = req.auth.userId;
-      
+
       const client = await Client.findOne({
         where: { clientId }
       });
-      
+
       if (!client) {
         return res.status(404).json({
           success: false,
           message: 'Client not found'
         });
       }
-      
+
       if (client.status !== 'suspended' && client.status !== 'revoked') {
         return res.status(400).json({
           success: false,
           message: `Client status is ${client.status} not suspended or revoked`
         });
       }
-      
+
       // Update client status to active
       client.status = 'active';
       client.approvedBy = adminId;
       client.approvedAt = new Date();
       await client.save();
-      
+
       logger.info(`Client ${clientId} reinstated by admin ${adminId}`);
-      
+
       return res.status(200).json({
         success: true,
         message: 'Client reinstated successfully',
@@ -552,18 +586,18 @@ class AdminController {
     try {
       const { clientId } = req.params;
       const adminId = req.auth.userId;
-      
+
       const client = await Client.findOne({
         where: { clientId }
       });
-      
+
       if (!client) {
         return res.status(404).json({
           success: false,
           message: 'Client not found'
         });
       }
-      
+
       // Only allow deletion of revoked clients for safety
       if (client.status !== 'revoked') {
         return res.status(400).json({
@@ -571,30 +605,30 @@ class AdminController {
           message: 'Only revoked clients can be deleted. Please revoke the client first.'
         });
       }
-      
+
       // Get client for logging purposes before deletion
       const clientInfo = {
         clientId: client.clientId,
         userId: client.userId
       };
-      
+
       // Start a transaction
       const transaction = await sequelize.transaction();
-      
+
       try {
         // Delete any associated tokens first
         await Token.destroy({
           where: { clientId: client.clientId },
           transaction
         });
-        
+
         // Delete the client
         await client.destroy({ transaction });
-        
+
         await transaction.commit();
-        
+
         logger.info(`Client ${clientId} deleted by admin ${adminId}`, clientInfo);
-        
+
         return res.status(200).json({
           success: true,
           message: 'Client deleted successfully'
