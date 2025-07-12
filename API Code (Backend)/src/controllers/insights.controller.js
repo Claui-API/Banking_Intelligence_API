@@ -1,5 +1,6 @@
-// src/controllers/insights.controller.js - Updated with comprehensive classification system
+// src/controllers/insights.controller.js - Updated with Groq backup integration
 const cohereService = require('../services/cohere.service');
+const groqService = require('../services/groq.service');
 const databaseService = require('../services/data.service');
 const logger = require('../utils/logger');
 
@@ -227,11 +228,12 @@ class InsightsController {
         }
       }
 
-      // Generate insights using standard Cohere service
+      // Generate insights using Cohere service with Groq as backup
       let insights;
+      let usingBackup = false;
 
       try {
-        // Direct call to Cohere service
+        // First try with Cohere service
         logger.info(`Generating insights with standard Cohere service for user ${userId}`, { requestId });
 
         insights = await cohereService.generateInsights({
@@ -257,17 +259,29 @@ class InsightsController {
           documentIds: []
         };
 
-      } catch (error) {
-        logger.error('Error generating insights with Cohere service:', error, { requestId });
+      } catch (cohereError) {
+        logger.error('Error generating insights with Cohere service:', cohereError, { requestId });
 
-        // In development mode, provide mock insights if all else fails
-        if (process.env.NODE_ENV !== 'production') {
-          logger.info('Using mock insights as last resort', { requestId });
+        // Try with Groq backup service
+        try {
+          logger.info(`Trying backup Groq service for user ${userId}`, { requestId });
+          usingBackup = true;
 
-          // Generate mock response based on query type
-          insights = this._generateMockInsight(queryType, userData, query);
+          insights = await groqService.generateInsights({
+            ...userData,
+            query,
+            queryType,
+            requestId
+          });
 
-          // Add compatibility flags
+          const backupDuration = Date.now() - startTime;
+          logger.info(`Generated insights with backup service in ${backupDuration}ms`, {
+            requestId,
+            backupDuration,
+            usingBackup: true
+          });
+
+          // Add compatibility flags for metrics and frontend
           insights = {
             ...insights,
             processingTime: Date.now() - startTime,
@@ -276,11 +290,32 @@ class InsightsController {
             documentsUsed: 0,
             documentIds: []
           };
-        } else {
-          return res.status(500).json({
-            success: false,
-            message: `Failed to generate insights: ${error.message}`
-          });
+
+        } catch (groqError) {
+          logger.error('Error generating insights with backup Groq service:', groqError, { requestId });
+
+          // In development mode, provide mock insights if all else fails
+          if (process.env.NODE_ENV !== 'production') {
+            logger.info('Using mock insights as last resort', { requestId });
+
+            // Generate mock response based on query type
+            insights = this._generateMockInsight(queryType, userData, query);
+
+            // Add compatibility flags
+            insights = {
+              ...insights,
+              processingTime: Date.now() - startTime,
+              fromCache: false,
+              usedRag: false,
+              documentsUsed: 0,
+              documentIds: []
+            };
+          } else {
+            return res.status(500).json({
+              success: false,
+              message: `Failed to generate insights with both primary and backup services: ${cohereError.message}; Backup error: ${groqError.message}`
+            });
+          }
         }
       }
 
@@ -294,14 +329,16 @@ class InsightsController {
             fromCache: false,           // Explicitly include in insights
             usedRag: false,             // Explicitly include in insights
             documentsUsed: 0,           // Explicitly include in insights
-            documentIds: []             // Explicitly include in insights
+            documentIds: [],            // Explicitly include in insights
+            usingBackupService: usingBackup // Indicate if backup was used
           },
           timestamp: new Date().toISOString(),
           processingTime: Date.now() - startTime,
           ragEnabled: false,            // For backwards compatibility
           fromCache: false,             // For backwards compatibility
           documentsUsed: 0,             // For backwards compatibility
-          documentIds: []               // For backwards compatibility
+          documentIds: [],              // For backwards compatibility
+          usingBackupService: usingBackup // Indicate if backup was used
         }
       });
     } catch (error) {
@@ -322,14 +359,16 @@ class InsightsController {
               fromCache: false,
               usedRag: false,
               documentsUsed: 0,
-              documentIds: []
+              documentIds: [],
+              usingBackupService: false
             },
             timestamp: new Date().toISOString(),
             error: true,
             ragEnabled: false,
             fromCache: false,
             documentsUsed: 0,
-            documentIds: []
+            documentIds: [],
+            usingBackupService: false
           }
         });
       }

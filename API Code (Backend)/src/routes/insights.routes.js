@@ -5,6 +5,7 @@ const { authMiddleware, authorize } = require('../middleware/auth');
 const logger = require('../utils/logger');
 const databaseService = require('../services/data.service');
 const cohereService = require('../services/cohere.service');
+const groqService = require('../services/groq.service'); // Add Groq service import
 
 // In-memory storage for streaming queries
 const streamingQueries = new Map();
@@ -196,7 +197,7 @@ router.get('/stream', authMiddleware, (req, res) => {
       logger.error('Error in streaming insights', error);
 
       res.write(`data: ${JSON.stringify({
-        chunk: `I'm sorry, I encountered an error: ${error.message}. Please try again.`,
+        chunk: `I'm sorry, I encountered an error. Please try again.`,
         isComplete: true
       })}\n\n`);
 
@@ -219,7 +220,11 @@ router.get('/stream', authMiddleware, (req, res) => {
 });
 
 /**
- * Process streaming insights
+ * Process streaming insights with Groq backup
+ * @param {string} query - User query
+ * @param {string} userId - User ID
+ * @param {string} requestId - Request ID for tracking
+ * @param {Function} callback - Streaming callback function
  */
 async function processStreamingInsight(query, userId, requestId, callback) {
   // Get the stored query data to check if we should use connected data
@@ -259,16 +264,68 @@ async function processStreamingInsight(query, userId, requestId, callback) {
 
   try {
     // Generate the full insight
-    const insight = await cohereService.generateInsights({
-      ...userData,
-      query,
-      queryType,
-      requestId,
-      useConnectedData // Pass this flag to indicate real data is being used
-    });
+    let insight;
+    let usingBackup = false;
+
+    try {
+      // First try with Cohere service
+      logger.info('Generating streaming insight with Cohere service', {
+        requestId,
+        queryType,
+        useConnectedData
+      });
+
+      insight = await cohereService.generateInsights({
+        ...userData,
+        query,
+        queryType,
+        requestId,
+        useConnectedData // Pass this flag to indicate real data is being used
+      });
+
+    } catch (cohereError) {
+      // If Cohere fails, try with Groq backup
+      logger.error(`Error generating streaming insight with Cohere: ${cohereError.message}`, {
+        requestId,
+        errorName: cohereError.name
+      });
+
+      try {
+        logger.info('Trying backup Groq service for streaming insight', { requestId });
+        usingBackup = true;
+
+        insight = await groqService.generateInsights({
+          ...userData,
+          query,
+          queryType,
+          requestId,
+          useConnectedData
+        });
+
+        logger.info('Successfully generated streaming insight with Groq backup', {
+          requestId,
+          usingBackup: true
+        });
+
+      } catch (groqError) {
+        // If both services fail, throw the error
+        logger.error(`Error generating streaming insight with backup Groq service: ${groqError.message}`, {
+          requestId,
+          errorName: groqError.name
+        });
+
+        throw new Error(`Failed to generate insights with both primary and backup services. Primary error: ${cohereError.message}`);
+      }
+    }
 
     // Break response into smaller parts for streaming
     const content = insight.insight || '';
+
+    // Add backup service indicator if using the backup
+    if (usingBackup) {
+      // Send indicator that we're using backup service
+      callback('<using-backup-service>', false);
+    }
 
     // Handle different streaming strategies based on content length
     if (content.length < 100) {

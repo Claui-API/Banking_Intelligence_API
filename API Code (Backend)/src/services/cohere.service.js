@@ -168,31 +168,46 @@ class CohereService {
       });
 
       if (!response.ok) {
+        let errorMessage;
+        let errorDetails;
+
+        // Get response status information
+        const status = response.status;
+        const statusText = response.statusText;
+        const headers = Object.fromEntries([...response.headers.entries()]);
+
+        // Clone the response before attempting to read it
+        const errorResponseText = await response.text();
+
         try {
-          // Try to parse the error response as JSON for more details
-          const errorResponse = await response.json();
-          logger.error('Cohere API Error Details:', {
-            status: response.status,
-            statusText: response.statusText,
-            error: errorResponse,
-            headers: Object.fromEntries([...response.headers.entries()]),
-            url: response.url
-          });
-          throw new Error(`Cohere API error: ${errorResponse.message || response.statusText}`);
+          // Try to parse as JSON, but only if we have content
+          errorDetails = errorResponseText ? JSON.parse(errorResponseText) : { message: statusText };
+          errorMessage = errorDetails.error?.message || errorDetails.message || statusText;
         } catch (parseError) {
-          // If can't parse JSON, use text
-          const errorText = await response.text();
-          logger.error('Cohere API Error:', {
-            status: response.status,
-            statusText: response.statusText,
-            error: errorText,
-            headers: Object.fromEntries([...response.headers.entries()]),
-            url: response.url
-          });
-          throw new Error(`Cohere API responded with status ${response.status}: ${errorText || response.statusText}`);
+          // If not valid JSON, use the text directly
+          errorDetails = { text: errorResponseText };
+          errorMessage = errorResponseText || statusText;
         }
+
+        // Log complete error details
+        logger.error('Cohere API Error Details:', {
+          status,
+          statusText,
+          error: errorDetails,
+          headers,
+          url: response.url
+        });
+
+        // Handle expired API key specifically
+        if (status === 401 || errorMessage.includes('expired')) {
+          logger.error('Cohere API key has expired or is invalid');
+          throw new Error(`Cohere API authentication error: ${errorMessage}`);
+        }
+
+        throw new Error(`Cohere API error (${status}): ${errorMessage}`);
       }
 
+      // Success response handling
       const data = await response.json();
       logger.debug('Cohere API Response:', JSON.stringify(data, null, 2));
 
@@ -238,17 +253,13 @@ class CohereService {
         environment: process.env.NODE_ENV
       });
 
-      // Add request retry information in case of network issues
+      // Add specific error categorization
       if (error.name === 'TypeError' || error.message.includes('fetch')) {
         logger.error('Network error when calling Cohere API. Please check your internet connection and firewall settings.');
       }
 
-      // Add API key validation suggestions
-      if (error.message.includes('401') || error.message.includes('unauthorized') || error.message.includes('authentication')) {
-        logger.error('Authentication error with Cohere API. Please verify your API key is correct and active.');
-      }
-
-      throw new Error('Failed to generate insights: ' + error.message);
+      // Rethrow the error with a clear message for proper catching in the controller
+      throw error; // Don't wrap the error - preserve the original for better error handling
     }
   }
 
