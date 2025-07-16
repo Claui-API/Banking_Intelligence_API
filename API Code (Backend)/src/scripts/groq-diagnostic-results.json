@@ -1,0 +1,8 @@
+{
+  "timestamp": "2025-07-12T19:42:22.710Z",
+  "apiKeyStatus": "valid",
+  "connectivity": "successful",
+  "model": "meta-llama/llama-4-scout-17b-16e-instruct",
+  "testResponse": "Thank you for sharing your financial data, Test User! I'm happy to help you analyze your situation and provide actionable advice to improve your savings.\n\n**Financial Analysis:**\n\n1. **Income and Expenses:** Your monthly income is $5,000, and your monthly expenses are $3,500, leaving you with a surp",
+  "success": true
+}

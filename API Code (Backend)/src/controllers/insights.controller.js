@@ -1,5 +1,7 @@
-// src/controllers/insights.controller.js - Updated with comprehensive classification system
+// src/controllers/insights.controller.js - Updated with Groq backup integration
 const cohereService = require('../services/cohere.service');
+const groqService = require('../services/groq.service');
+const llmFactory = require('../services/llm-factory.service');
 const databaseService = require('../services/data.service');
 const logger = require('../utils/logger');
 
@@ -183,7 +185,8 @@ class InsightsController {
         });
       }
 
-      const { query, requestId = `req_${Date.now()}` } = req.body;
+      // Extract provider from request if specified
+      const { query, requestId = `req_${Date.now()}`, provider } = req.body;
 
       if (!query) {
         return res.status(400).json({
@@ -194,7 +197,11 @@ class InsightsController {
 
       // Classify the query using our enhanced classifier
       const queryType = classifyQuery(query);
-      logger.info(`Query classified as: ${queryType}`, { query, requestId });
+      logger.info(`Query classified as: ${queryType}`, {
+        query,
+        requestId,
+        provider: provider || 'default'
+      });
 
       // Handle harmful queries immediately
       if (queryType === 'harmful') {
@@ -227,24 +234,23 @@ class InsightsController {
         }
       }
 
-      // Generate insights using standard Cohere service
+      // Generate insights using LLM factory to select the appropriate provider
       let insights;
 
       try {
-        // Direct call to Cohere service
-        logger.info(`Generating insights with standard Cohere service for user ${userId}`, { requestId });
-
-        insights = await cohereService.generateInsights({
+        // Use the LLM factory to generate insights with the specified or default provider
+        insights = await llmFactory.generateInsights({
           ...userData,
           query,
           queryType,
           requestId
-        });
+        }, provider);
 
-        const generateDuration = Date.now() - startTime;
-        logger.info(`Generated insights in ${generateDuration}ms`, {
+        logger.info(`Generated insights using ${insights.llmProvider} provider`, {
           requestId,
-          generateDuration
+          provider: insights.llmProvider,
+          usingBackup: insights.usingBackupService,
+          duration: Date.now() - startTime
         });
 
         // Add compatibility flags for metrics and frontend
@@ -258,7 +264,7 @@ class InsightsController {
         };
 
       } catch (error) {
-        logger.error('Error generating insights with Cohere service:', error, { requestId });
+        logger.error('Error generating insights with LLM services:', error, { requestId });
 
         // In development mode, provide mock insights if all else fails
         if (process.env.NODE_ENV !== 'production') {
@@ -274,7 +280,8 @@ class InsightsController {
             fromCache: false,
             usedRag: false,
             documentsUsed: 0,
-            documentIds: []
+            documentIds: [],
+            llmProvider: 'mock'
           };
         } else {
           return res.status(500).json({
@@ -294,14 +301,16 @@ class InsightsController {
             fromCache: false,           // Explicitly include in insights
             usedRag: false,             // Explicitly include in insights
             documentsUsed: 0,           // Explicitly include in insights
-            documentIds: []             // Explicitly include in insights
+            documentIds: [],            // Explicitly include in insights
           },
           timestamp: new Date().toISOString(),
           processingTime: Date.now() - startTime,
           ragEnabled: false,            // For backwards compatibility
           fromCache: false,             // For backwards compatibility
           documentsUsed: 0,             // For backwards compatibility
-          documentIds: []               // For backwards compatibility
+          documentIds: [],              // For backwards compatibility
+          llmProvider: insights.llmProvider || 'unknown', // Which LLM was used
+          usingBackupService: insights.usingBackupService || false
         }
       });
     } catch (error) {
@@ -322,14 +331,17 @@ class InsightsController {
               fromCache: false,
               usedRag: false,
               documentsUsed: 0,
-              documentIds: []
+              documentIds: [],
+              llmProvider: 'mock'
             },
             timestamp: new Date().toISOString(),
             error: true,
             ragEnabled: false,
             fromCache: false,
             documentsUsed: 0,
-            documentIds: []
+            documentIds: [],
+            llmProvider: 'mock',
+            usingBackupService: false
           }
         });
       }

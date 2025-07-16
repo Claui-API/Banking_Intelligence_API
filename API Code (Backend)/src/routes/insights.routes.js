@@ -5,6 +5,8 @@ const { authMiddleware, authorize } = require('../middleware/auth');
 const logger = require('../utils/logger');
 const databaseService = require('../services/data.service');
 const cohereService = require('../services/cohere.service');
+const groqService = require('../services/groq.service'); // Add Groq service import
+const llmFactory = require('../services/llm-factory.service');
 
 // In-memory storage for streaming queries
 const streamingQueries = new Map();
@@ -68,7 +70,7 @@ router.get('/metrics/:metric', authMiddleware, authorize('admin'), (req, res) =>
  */
 router.post('/stream-prepare', authMiddleware, (req, res) => {
   try {
-    const { query, requestId, useConnectedData } = req.body;
+    const { query, requestId, useConnectedData, provider } = req.body;
     const userId = req.auth.userId;
 
     if (!query || !requestId) {
@@ -82,14 +84,16 @@ router.post('/stream-prepare', authMiddleware, (req, res) => {
       userId,
       requestId,
       query: query.substring(0, 30), // Log only the beginning for privacy
-      useConnectedData: !!useConnectedData // Log whether to use connected data
+      useConnectedData: !!useConnectedData, // Log whether to use connected data
+      provider: provider || 'default' // Log the requested provider
     });
 
     // Store query for streaming
     streamingQueries.set(requestId, {
       query,
       userId,
-      useConnectedData: !!useConnectedData, // Store this flag
+      useConnectedData: !!useConnectedData,
+      provider: provider, // Store the requested provider
       timestamp: Date.now(),
       processed: false
     });
@@ -196,7 +200,7 @@ router.get('/stream', authMiddleware, (req, res) => {
       logger.error('Error in streaming insights', error);
 
       res.write(`data: ${JSON.stringify({
-        chunk: `I'm sorry, I encountered an error: ${error.message}. Please try again.`,
+        chunk: `I'm sorry, I encountered an error. Please try again.`,
         isComplete: true
       })}\n\n`);
 
@@ -219,12 +223,17 @@ router.get('/stream', authMiddleware, (req, res) => {
 });
 
 /**
- * Process streaming insights
+ * Process streaming insights with multi-LLM support
+ * @param {string} query - User query
+ * @param {string} userId - User ID
+ * @param {string} requestId - Request ID for tracking
+ * @param {Function} callback - Streaming callback function
  */
 async function processStreamingInsight(query, userId, requestId, callback) {
   // Get the stored query data to check if we should use connected data
   const queryData = streamingQueries.get(requestId) || {};
   const useConnectedData = queryData.useConnectedData || false;
+  const provider = queryData.provider || null; // Get provider from stored query data
 
   // Get user financial data first
   let userData;
@@ -258,14 +267,24 @@ async function processStreamingInsight(query, userId, requestId, callback) {
   const queryType = classifyQuery(query);
 
   try {
-    // Generate the full insight
-    const insight = await cohereService.generateInsights({
+    // Generate insights using the LLM factory with the requested provider
+    const insight = await llmFactory.generateInsights({
       ...userData,
       query,
       queryType,
       requestId,
-      useConnectedData // Pass this flag to indicate real data is being used
-    });
+      useConnectedData
+    }, provider);
+
+    // Send indicator for which LLM provider was used
+    if (insight.llmProvider) {
+      callback(`<using-${insight.llmProvider}-service>`, false);
+    }
+
+    // Also indicate if using backup service
+    if (insight.usingBackupService) {
+      callback('<using-backup-service>', false);
+    }
 
     // Break response into smaller parts for streaming
     const content = insight.insight || '';
@@ -317,7 +336,6 @@ async function processStreamingInsight(query, userId, requestId, callback) {
         }
       }
     }
-
   } catch (error) {
     logger.error('Error generating streaming insight', error);
     throw error;
