@@ -28,6 +28,8 @@ logs
 # Coverage directory used by tools like istanbul
 coverage
 
+/public/
+
 # Editor directories and files
 .idea
 .vscode

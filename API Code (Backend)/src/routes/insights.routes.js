@@ -276,14 +276,14 @@ async function processStreamingInsight(query, userId, requestId, callback) {
       useConnectedData
     }, provider);
 
-    // Send indicator for which LLM provider was used
+    // Log the LLM provider used but don't send it in the response
     if (insight.llmProvider) {
-      callback(`<using-${insight.llmProvider}-service>`, false);
+      logger.info(`Using ${insight.llmProvider} service for request ${requestId}`);
     }
 
-    // Also indicate if using backup service
+    // Also log if using backup service but don't send it in the response
     if (insight.usingBackupService) {
-      callback('<using-backup-service>', false);
+      logger.info(`Using backup service for request ${requestId}`);
     }
 
     // Break response into smaller parts for streaming

@@ -257,19 +257,54 @@ const HomePage = () => {
               transition={{ duration: 0.8, delay: 0.6 }} // Increased delay
             >
               <motion.div
-                className="mx-auto mb-5"
+                className="mx-auto mb-5 video-container"
                 style={{
                   maxWidth: '600px',
                   background: 'linear-gradient(90deg, #00c6ff, #ff00de)',
                   padding: '2px',
-                  borderRadius: '4px'
+                  borderRadius: '4px',
+                  position: 'relative',
+                  overflow: 'hidden'
                 }}
                 whileHover={{
                   boxShadow: "0 0 25px rgba(0, 198, 255, 0.5)"
                 }}
                 transition={{ duration: 0.3 }}
               >
-                <div style={{ background: '#222', padding: '15px' }}>
+                {/* Background Video */}
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    height: '100%',
+                    overflow: 'hidden',
+                    zIndex: 0
+                  }}
+                >
+                  <video
+                    autoPlay
+                    muted
+                    loop
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      objectFit: 'cover',
+                      opacity: 0.3, // Adjust opacity to make the YouTube video more visible
+                    }}
+                  >
+                    <source src="/videos/financial-background.mp4" type="video/mp4" />
+                    Your browser does not support the video tag.
+                  </video>
+                </div>
+
+                <div style={{
+                  background: 'rgba(34, 34, 34, 0.7)', // Semi-transparent background
+                  padding: '15px',
+                  position: 'relative',
+                  zIndex: 1
+                }}>
                   {/* YouTube video embed */}
                   <div className="ratio ratio-16x9" style={{ maxWidth: '100%' }}>
                     <iframe
