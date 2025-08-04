@@ -83,6 +83,8 @@ const HomePage = () => {
   const { isAuthenticated } = useAuth();
   const controls = useAnimation();
   const [scrollY, setScrollY] = useState(0);
+  const [videoFade, setVideoFade] = useState("hidden");
+  const videoRef = useRef(null);
 
   // Use our custom hook to delay animations until page is loaded
   const animationsActive = useDelayedAnimation({
@@ -94,6 +96,11 @@ const HomePage = () => {
   const [featuresRef, featuresInView] = useInView({ threshold: 0.2, triggerOnce: true });
   const [howItWorksRef, howItWorksInView] = useInView({ threshold: 0.2, triggerOnce: true });
   const [ctaRef, ctaInView] = useInView({ threshold: 0.5, triggerOnce: true });
+  const [videoSectionRef, videoSectionInView] = useInView({
+    threshold: 0.1,
+    triggerOnce: false,
+    rootMargin: "-100px 0px" // Slightly earlier detection
+  });
 
   // Initialize particles with a ref to ensure it only loads once
   const particlesInitialized = useRef(false);
@@ -104,15 +111,35 @@ const HomePage = () => {
     }
   };
 
-  // Handle scroll effects
+  // Video fade in/out effect when the video plays
   useEffect(() => {
-    const handleScroll = () => {
-      setScrollY(window.scrollY);
-    };
+    if (videoRef.current && animationsActive) {
+      // Add event listeners for video fade effects
+      const videoElement = videoRef.current;
 
-    window.addEventListener('scroll', handleScroll);
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, []);
+      // Fade in at start
+      videoElement.addEventListener('play', function () {
+        // If it's the first play or a new loop - fade in
+        videoElement.classList.remove('video-fade-out');
+        videoElement.classList.add('video-fade-in');
+      });
+
+      // Fade out before the end
+      videoElement.addEventListener('timeupdate', function () {
+        // When video is near the end (2 seconds before), start the fade out
+        if (this.duration > 0 && this.currentTime > this.duration - 2) {
+          videoElement.classList.remove('video-fade-in');
+          videoElement.classList.add('video-fade-out');
+        }
+      });
+
+      return () => {
+        // Clean up event listeners
+        videoElement.removeEventListener('play', () => { });
+        videoElement.removeEventListener('timeupdate', () => { });
+      };
+    }
+  }, [videoRef, animationsActive]);
 
   // Trigger animations when sections come into view
   useEffect(() => {
@@ -120,6 +147,24 @@ const HomePage = () => {
       controls.start('visible');
     }
   }, [controls, featuresInView, animationsActive]);
+
+  // Video fade in/out effect
+  useEffect(() => {
+    if (videoSectionInView) {
+      // Fade in when in view
+      setVideoFade("visible");
+    } else {
+      // Fade out when out of view
+      setVideoFade("hidden");
+    }
+  }, [videoSectionInView]);
+
+  // Preload video when animations are active
+  useEffect(() => {
+    if (animationsActive && videoRef.current) {
+      videoRef.current.load();
+    }
+  }, [animationsActive]);
 
   return (
     <div className="home-page-container">
@@ -246,84 +291,127 @@ const HomePage = () => {
         )}
       </AnimatePresence>
 
-      {/* App Overview section - only animate after page load */}
-      <Container className="py-4 text-center">
-        <AnimatePresence>
-          {animationsActive && (
-            <motion.div
-              className="mb-4"
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 0.8, delay: 0.6 }} // Increased delay
-            >
+      {/* Full-width background video section */}
+      <div
+        ref={videoSectionRef}
+        style={{
+          position: 'relative',
+          width: '100%',
+          overflow: 'hidden',
+          marginBottom: '2rem'
+        }}
+      >
+        {/* Background Video - Full width */}
+        <div style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: '100%',
+          height: '100%',
+          zIndex: 0
+        }}>
+          <video
+            ref={videoRef}
+            autoPlay
+            muted
+            loop
+            style={{
+              width: '100%',
+              height: '100%',
+              objectFit: 'cover',
+              opacity: 0.4,
+            }}
+            className="background-video"
+          >
+            <source src="videos/Amazon_Rainforest_Video_for_App.mp4" type="video/mp4" />
+            Your browser does not support the video tag.
+          </video>
+        </div>
+
+        {/* Content overlay with YouTube video */}
+        <Container className="py-5 text-center" style={{ position: 'relative', zIndex: 1 }}>
+          <AnimatePresence>
+            {animationsActive && (
               <motion.div
-                className="mx-auto mb-5"
-                style={{
-                  maxWidth: '600px',
-                  background: 'linear-gradient(90deg, #00c6ff, #ff00de)',
-                  padding: '2px',
-                  borderRadius: '4px'
-                }}
-                whileHover={{
-                  boxShadow: "0 0 25px rgba(0, 198, 255, 0.5)"
-                }}
-                transition={{ duration: 0.3 }}
+                className="mb-4"
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.8, delay: 0.6 }} // Increased delay
               >
-                <div style={{ background: '#222', padding: '15px' }}>
-                  {/* YouTube video embed */}
-                  <div className="ratio ratio-16x9" style={{ maxWidth: '100%' }}>
-                    <iframe
-                      src="https://www.youtube.com/embed/hMO6E50YSXU?si=KLrgifAyC5Pb1uCC"
-                      title="Banking Intelligence Demo"
-                      allowFullScreen
-                      frameBorder="0"
-                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                    ></iframe>
+                <motion.div
+                  className="mx-auto mb-5"
+                  style={{
+                    maxWidth: '700px',
+                    background: 'linear-gradient(90deg, #00c6ff, #ff00de)',
+                    padding: '2px',
+                    borderRadius: '4px',
+                    position: 'relative',
+                  }}
+                  whileHover={{
+                    boxShadow: "0 0 25px rgba(0, 198, 255, 0.5)"
+                  }}
+                  transition={{ duration: 0.3 }}
+                >
+                  <div style={{
+                    background: 'rgba(20, 20, 20, 0.85)', // Darker semi-transparent background
+                    padding: '15px',
+                    borderRadius: '2px'
+                  }}>
+                    {/* YouTube video embed */}
+                    <div className="ratio ratio-16x9" style={{ maxWidth: '100%' }}>
+                      <iframe
+                        src="https://www.youtube.com/embed/hMO6E50YSXU?si=KLrgifAyC5Pb1uCC"
+                        title="Banking Intelligence Demo"
+                        allowFullScreen
+                        frameBorder="0"
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                      ></iframe>
+                    </div>
                   </div>
-                </div>
-              </motion.div>
+                </motion.div>
 
-              <motion.p
-                className="text-white mx-auto"
-                style={{ maxWidth: '600px', fontSize: '1.5rem' }}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ duration: 0.8, delay: 0.9 }} // Increased delay
-              >
-                Add AI-powered financial insights to your banking application with the CLAU Banking Intelligence API
-              </motion.p>
+                <motion.p
+                  className="text-white mx-auto"
+                  style={{ maxWidth: '700px', fontSize: '1.5rem', textShadow: '0 2px 10px rgba(0, 0, 0, 0.5)' }}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ duration: 0.8, delay: 0.9 }} // Increased delay
+                >
+                  Add AI-powered financial insights to your banking application with the CLAU Banking Intelligence API
+                </motion.p>
 
-              <motion.div
-                className="d-flex justify-content-center gap-3 mt-4"
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: 1.2 }} // Increased delay
-              >
-                {isAuthenticated ? (
-                  <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-                    <Link to="/dashboard" className="btn btn-success btn-lg">
-                      Go to API Dashboard
-                    </Link>
-                  </motion.div>
-                ) : (
-                  <>
+                <motion.div
+                  className="d-flex justify-content-center gap-3 mt-4"
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.5, delay: 1.2 }} // Increased delay
+                >
+                  {isAuthenticated ? (
                     <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-                      <Link to="/register" className="btn btn-success btn-lg">
-                        Get Your API Key
+                      <Link to="/dashboard" className="btn btn-success btn-lg">
+                        Go to API Dashboard
                       </Link>
                     </motion.div>
-                    <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-                      <Link to="/docs" className="btn btn-outline-success btn-lg">
-                        View Documentation
-                      </Link>
-                    </motion.div>
-                  </>
-                )}
+                  ) : (
+                    <>
+                      <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                        <Link to="/register" className="btn btn-success btn-lg">
+                          Get Your API Key
+                        </Link>
+                      </motion.div>
+                      <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                        <Link to="/docs" className="btn btn-outline-success btn-lg">
+                          View Documentation
+                        </Link>
+                      </motion.div>
+                    </>
+                  )}
+                </motion.div>
               </motion.div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </Container>
+            )}
+          </AnimatePresence>
+        </Container>
+      </div> {/* End of full-width background video section */}
 
       {/* Stats Counter Section - only display counters after animations are active */}
       <Container className="py-4">
