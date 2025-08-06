@@ -1,0 +1,554 @@
+/* Mobile Responsive CSS for CLAU Banking Intelligence API */
+
+/* ===== Base Mobile Fixes ===== */
+@media (max-width: 991px) {
+
+	/* Fix viewport scaling */
+	html,
+	body {
+		width: 100%;
+		overflow-x: hidden;
+		-webkit-text-size-adjust: 100%;
+	}
+
+	/* Prevent horizontal overflow */
+	.container-fluid,
+	.container {
+		padding-left: 15px !important;
+		padding-right: 15px !important;
+		width: 100% !important;
+		max-width: 100% !important;
+	}
+
+	/* Text scaling for better readability */
+	h1 {
+		font-size: 1.8rem !important;
+	}
+
+	h2 {
+		font-size: 1.5rem !important;
+	}
+
+	h3 {
+		font-size: 1.3rem !important;
+	}
+
+	p {
+		font-size: 0.95rem !important;
+	}
+
+	/* Adjust spacing for mobile */
+	.py-5 {
+		padding-top: 2rem !important;
+		padding-bottom: 2rem !important;
+	}
+
+	.my-5 {
+		margin-top: 2rem !important;
+		margin-bottom: 2rem !important;
+	}
+
+	.py-4 {
+		padding-top: 1.5rem !important;
+		padding-bottom: 1.5rem !important;
+	}
+
+	.my-4 {
+		margin-top: 1.5rem !important;
+		margin-bottom: 1.5rem !important;
+	}
+
+	/* Button adjustments */
+	.btn {
+		padding: 0.5rem 1rem !important;
+		font-size: 0.95rem !important;
+	}
+
+	/* Fix for side-by-side buttons */
+	.me-3 {
+		margin-right: 0.5rem !important;
+	}
+
+	/* Fix video container */
+	.ratio.ratio-16x9 {
+		width: 100%;
+	}
+
+	/* Fix card layout */
+	.card {
+		margin-bottom: 1rem;
+	}
+
+	/* Fix row spacing */
+	.row {
+		margin-left: -7.5px !important;
+		margin-right: -7.5px !important;
+	}
+
+	.row>[class^="col-"] {
+		padding-left: 7.5px !important;
+		padding-right: 7.5px !important;
+	}
+}
+
+/* ===== Dashboard Mobile Layout ===== */
+@media (max-width: 991px) {
+
+	/* Dashboard container adjustments */
+	.dashboard-container {
+		flex-direction: column;
+		width: 100vw;
+		overflow-x: hidden;
+	}
+
+	/* Sidebar adjustments for mobile */
+	.sidebar {
+		width: 100%;
+		height: auto;
+		position: relative;
+		padding: 15px 0;
+		border-bottom: 1px solid #333;
+	}
+
+	.sidebar-header {
+		padding: 0 15px 15px;
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+	}
+
+	.sidebar-nav {
+		flex-direction: row;
+		flex-wrap: wrap;
+		padding: 0 10px;
+		margin-top: 10px;
+	}
+
+	.sidebar-link {
+		padding: 8px 12px;
+		font-size: 0.9rem;
+		border-radius: 4px;
+		margin-bottom: 5px;
+		margin-right: 5px;
+	}
+
+	/* Main content area adjustments */
+	.main-content {
+		margin-left: 0;
+		width: 100%;
+		padding-top: 10px;
+	}
+
+	/* Dashboard stats cards */
+	.stats-container .col-md-4 {
+		margin-bottom: 15px;
+	}
+
+	/* Dashboard feature cards */
+	.feature-card {
+		margin-bottom: 15px;
+	}
+}
+
+/* ===== Navbar Styling ===== */
+@media (max-width: 991px) {
+	.navbar {
+		padding: 0.5rem 1rem !important;
+	}
+
+	.navbar-brand {
+		font-size: 1.2rem !important;
+	}
+
+	.navbar-brand img {
+		width: 28px !important;
+		height: 28px !important;
+	}
+
+	.navbar-toggler {
+		padding: 0.25rem 0.5rem !important;
+		font-size: 1rem !important;
+	}
+
+	.dropdown-menu {
+		position: absolute !important;
+		width: 200px !important;
+	}
+
+	/* Auth buttons in header */
+	.navbar .auth-buttons {
+		display: flex;
+		flex-direction: column;
+		width: 100%;
+	}
+
+	.navbar .auth-buttons .btn {
+		margin: 0.25rem 0 !important;
+		width: 100%;
+	}
+
+	.navbar .btn {
+		margin-bottom: 0.5rem !important;
+	}
+
+	/* Admin button in header */
+	.navbar .me-2.btn-success {
+		width: 100%;
+		margin-bottom: 0.5rem !important;
+	}
+}
+
+/* ===== Stats Boxes Styling ===== */
+@media (max-width: 991px) {
+
+	/* Stats row as grid for better mobile layout */
+	.row.mb-5.justify-content-center,
+	.row.g-4 {
+		display: grid;
+		grid-template-columns: 1fr;
+		gap: 15px;
+	}
+
+	/* API stats styling */
+	.api-stats-row {
+		display: grid;
+		grid-template-columns: repeat(2, 1fr);
+		gap: 10px;
+	}
+
+	.api-stats-row>div:last-child {
+		grid-column: span 2;
+	}
+
+	/* Stats numbers and labels */
+	.stats-number,
+	.stat-number {
+		font-size: 1.5rem !important;
+	}
+
+	.stats-label,
+	.stat-label {
+		font-size: 0.8rem !important;
+	}
+}
+
+/* ===== Chat Interface Mobile Fixes ===== */
+@media (max-width: 991px) {
+
+	/* Playground layout */
+	.playground-layout {
+		height: auto;
+		min-height: calc(100vh - 56px);
+	}
+
+	.playground-header {
+		padding: 0.75rem 1rem;
+	}
+
+	.playground-header h2 {
+		font-size: 1.3rem !important;
+	}
+
+	/* Header with status badges */
+	.playground-header .d-flex.justify-content-between.align-items-center {
+		flex-direction: column;
+		align-items: flex-start !important;
+	}
+
+	.playground-header .d-flex.align-items-center {
+		margin-top: 10px;
+		width: 100%;
+	}
+
+	/* Chat container */
+	.chat-container {
+		padding: 0.75rem 1rem;
+		height: auto;
+		max-height: none;
+	}
+
+	/* Chat messages */
+	.chat-messages {
+		padding: 0.75rem;
+		gap: 1rem;
+	}
+
+	.message {
+		max-width: 100%;
+	}
+
+	/* Adjust message avatars for mobile */
+	.message-avatar {
+		width: 30px;
+		height: 30px;
+	}
+
+	/* Message content adjustments */
+	.message-content {
+		padding: 0.75rem;
+	}
+
+	.message-text {
+		font-size: 0.9rem;
+	}
+
+	/* Chat input */
+	.chat-input-container {
+		gap: 0.5rem;
+	}
+
+	.chat-input {
+		padding: 0.5rem 0.75rem;
+		font-size: 0.9rem;
+	}
+
+	.send-button {
+		width: 40px;
+		height: 40px;
+	}
+
+	/* Suggested prompts */
+	.suggested-prompts {
+		margin-bottom: 0.75rem;
+	}
+
+	.suggested-prompt-btn {
+		margin-right: 0.25rem;
+		margin-bottom: 0.25rem;
+		font-size: 0.8rem;
+		padding: 0.2rem 0.5rem;
+	}
+}
+
+/* ===== Financial Data Sidebar Mobile Fixes ===== */
+@media (max-width: 991px) {
+
+	/* Change layout for mobile */
+	.chat-interface-wrapper {
+		flex-direction: column;
+		height: auto;
+	}
+
+	.chat-area.with-sidebar {
+		width: 100%;
+		height: auto;
+		min-height: 60vh;
+	}
+
+	.financial-data-sidebar {
+		width: 100%;
+		border-left: none;
+		border-top: 1px solid #333;
+		height: auto;
+		max-height: 40vh;
+	}
+
+	/* Table adjustments */
+	.financial-data-sidebar .table {
+		font-size: 0.9rem;
+	}
+
+	.financial-data-sidebar .table td,
+	.financial-data-sidebar .table th {
+		padding: 0.5rem;
+	}
+}
+
+/* ===== Banking Intelligence API Homepage Mobile Fixes ===== */
+@media (max-width: 991px) {
+
+	/* Homepage container */
+	.home-page-container {
+		overflow-x: hidden;
+	}
+
+	/* Stats cards */
+	.stat-card {
+		padding: 1rem;
+		margin-bottom: 15px;
+	}
+
+	.stat-card h2 {
+		font-size: 1.8rem !important;
+	}
+
+	/* Feature cards */
+	.feature-card {
+		height: auto !important;
+		margin-bottom: 15px;
+	}
+
+	/* YouTube video container */
+	.ratio-16x9 {
+		margin-bottom: 1rem;
+	}
+
+	/* How it works section */
+	.how-it-works-step {
+		margin-bottom: 1.5rem;
+	}
+
+	/* Hero section buttons */
+	.d-flex.justify-content-center.gap-3 {
+		flex-wrap: wrap;
+	}
+
+	.d-flex.justify-content-center.gap-3 .btn-lg {
+		margin-bottom: 0.5rem;
+	}
+}
+
+/* ===== API Dashboard Specific Mobile Fixes ===== */
+@media (max-width: 991px) {
+
+	/* API Dashboard header */
+	.api-dashboard-header {
+		flex-direction: column;
+		align-items: flex-start;
+		padding: 1rem;
+	}
+
+	.api-dashboard-header h2 {
+		margin-bottom: 1rem;
+	}
+
+	/* API Dashboard stats */
+	.api-stats-row {
+		display: grid;
+		grid-template-columns: repeat(2, 1fr);
+		gap: 10px;
+	}
+
+	.api-stats-row>div:last-child {
+		grid-column: span 2;
+	}
+
+	/* API Dashboard card */
+	.api-card {
+		padding: 1rem;
+		margin-bottom: 1rem;
+	}
+
+	/* Documentation tabs */
+	.nav-tabs {
+		display: flex;
+		flex-wrap: nowrap;
+		overflow-x: auto;
+		-webkit-overflow-scrolling: touch;
+		padding-bottom: 5px;
+	}
+
+	.nav-tabs .nav-link {
+		white-space: nowrap;
+		padding: 0.4rem 0.75rem !important;
+		font-size: 0.85rem !important;
+	}
+
+	/* Code blocks */
+	pre {
+		font-size: 0.8rem !important;
+		padding: 0.75rem !important;
+		overflow-x: auto;
+	}
+}
+
+/* ===== Extra Small Device Specific (under 576px) ===== */
+@media (max-width: 575px) {
+
+	/* Further reduce padding */
+	.container-fluid,
+	.container {
+		padding-left: 10px !important;
+		padding-right: 10px !important;
+	}
+
+	/* Smaller headings */
+	h1 {
+		font-size: 1.6rem !important;
+	}
+
+	h2 {
+		font-size: 1.3rem !important;
+	}
+
+	h3 {
+		font-size: 1.1rem !important;
+	}
+
+	/* Smaller buttons */
+	.btn {
+		padding: 0.4rem 0.8rem !important;
+		font-size: 0.9rem !important;
+	}
+
+	/* Stack buttons vertically */
+	.d-flex.flex-wrap.gap-2 .btn,
+	.d-flex.justify-content-center.gap-3 .btn {
+		width: 100%;
+		margin-bottom: 0.5rem;
+		margin-left: 0 !important;
+		margin-right: 0 !important;
+	}
+
+	/* Stats grid for very small screens */
+	.api-stats-row {
+		grid-template-columns: 1fr;
+	}
+
+	.api-stats-row>div:last-child {
+		grid-column: span 1;
+	}
+
+	/* Make tables more compact */
+	.table td,
+	.table th {
+		padding: 0.4rem;
+		font-size: 0.8rem;
+	}
+
+	/* Hide non-essential elements */
+	.d-none-xs {
+		display: none !important;
+	}
+}
+
+/* ===== Orientation Specific Fixes ===== */
+@media (max-width: 991px) and (orientation: landscape) {
+
+	/* Adjust sidebar in landscape mode */
+	.sidebar {
+		padding: 10px 0;
+	}
+
+	.sidebar-nav {
+		flex-direction: row;
+		flex-wrap: wrap;
+	}
+
+	/* Chat container in landscape */
+	.chat-area.with-sidebar {
+		min-height: 40vh;
+	}
+
+	.financial-data-sidebar {
+		max-height: 30vh;
+	}
+}
+
+/* ===== Fix for iPhone Notch/Safe Area ===== */
+@supports (padding-top: env(safe-area-inset-top)) {
+	.navbar {
+		padding-top: max(0.5rem, env(safe-area-inset-top));
+		padding-left: max(1rem, env(safe-area-inset-left));
+		padding-right: max(1rem, env(safe-area-inset-right));
+	}
+
+	.sidebar {
+		padding-top: max(15px, env(safe-area-inset-top));
+		padding-left: max(0, env(safe-area-inset-left));
+	}
+
+	.chat-container {
+		padding-bottom: max(1rem, env(safe-area-inset-bottom));
+	}
+}

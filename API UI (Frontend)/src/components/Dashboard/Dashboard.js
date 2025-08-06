@@ -94,6 +94,8 @@ const Dashboard = () => {
   const [plaidStatus, setPlaidStatus] = useState('ready');
   const [plaidError, setPlaidError] = useState(null);
 
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
   // Sample suggested prompts
   const suggestedPrompts = [
     "How much did I spend on dining out last month?",
@@ -600,11 +602,11 @@ const Dashboard = () => {
           <div className="playground-layout">
             {/* Playground Header */}
             <div className="playground-header">
-              <div className="d-flex justify-content-between align-items-center">
-                <h2 className="text-white">Banking Intelligence Playground</h2>
-                <div className="d-flex align-items-center">
+              <div className="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center">
+                <h2 className="text-white mb-3 mb-lg-0">Banking Intelligence Playground</h2>
+                <div className="d-flex flex-column flex-md-row align-items-start align-items-md-center">
                   {/* Add Plaid connection button/status */}
-                  <div className="d-flex align-items-center me-3">
+                  <div className="d-flex align-items-center me-md-3 mb-2 mb-md-0 w-100 w-md-auto">
                     <Badge bg={connected ? "success" : "warning"} className="d-flex align-items-center">
                       <span className="status-indicator me-1"></span>
                       {connected ? `Connected to ${institution}` : "No Accounts Connected"}
@@ -778,6 +780,19 @@ const Dashboard = () => {
                 {/* Financial Data Sidebar */}
                 {showDataSidebar && (
                   <div className="financial-data-sidebar">
+                    {/* Mobile toggle header */}
+                    <div className="d-flex d-lg-none justify-content-between align-items-center mb-2 mobile-sidebar-header">
+                      <h5 className="text-white mb-0">Financial Data</h5>
+                      <Button
+                        variant="outline-light"
+                        size="sm"
+                        className="mobile-sidebar-toggle-btn"
+                        onClick={() => setShowDataSidebar(!showDataSidebar)}
+                      >
+                        <i className="bi bi-chevron-up"></i>
+                      </Button>
+                    </div>
+
                     <PlaidDataSidebar
                       userData={financialData}
                       isVisible={showDataSidebar}
@@ -801,16 +816,16 @@ const Dashboard = () => {
       case 'home':
       default:
         return (
-          <Container fluid className="py-5">
-            <Row className="justify-content-center text-center mb-5">
+          <Container fluid className="py-5 mobile-dashboard-home">
+            <Row className="justify-content-center text-center mb-4 mb-lg-5">
               <Col md={10}>
-                <h2 className="text-white mb-4">Welcome to Banking Intelligence API</h2>
-                <p className="text-white mb-4">Add AI-powered financial insights to your banking application</p>
-                <div className="mt-4">
+                <h2 className="text-white mb-3">Welcome to Banking Intelligence API</h2>
+                <p className="text-white mb-3">Add AI-powered financial insights to your banking application</p>
+                <div className="mt-3 mobile-dashboard-actions">
                   <Button
                     variant="success"
                     size="lg"
-                    className="me-3"
+                    className="me-0 me-md-3 mb-2 mb-md-0 mobile-dashboard-btn"
                     onClick={() => setActiveSection('playground')}
                   >
                     Try the Playground
@@ -818,6 +833,7 @@ const Dashboard = () => {
                   <Button
                     variant="outline-light"
                     size="lg"
+                    className="mobile-dashboard-btn"
                     onClick={() => setActiveSection('documentation')}
                   >
                     Read Documentation
@@ -826,32 +842,32 @@ const Dashboard = () => {
               </Col>
             </Row>
 
-            <Row className="mb-5 justify-content-center">
+            <Row className="mb-4 mb-lg-5 justify-content-center">
               <Col md={10}>
                 <Card className="bg-black text-white">
-                  <Card.Body className="bg-black p-4">
+                  <Card.Body className="bg-black p-3 p-md-4">
                     <h3 className="text-success justify-content-center mb-3">Getting Started</h3>
                     <p>
                       The Banking Intelligence API lets you enhance your application with AI-powered financial insights.
                       Analyze transactions, provide budget recommendations, and help your users make better financial decisions.
                     </p>
 
-                    <Row className="mt-4 text-center">
-                      <Col md={4}>
+                    <Row className="mt-4 text-center mobile-getting-started-row">
+                      <Col md={4} sm={6} className="mb-3 mb-md-0">
                         <div className="mb-3">
                           <i className="bi bi-chat-dots text-success" style={{ fontSize: '2rem' }}></i>
                         </div>
                         <h5>Try the Playground</h5>
                         <p className="small">Test queries and see responses in real-time</p>
                       </Col>
-                      <Col md={4}>
+                      <Col md={4} sm={6} className="mb-3 mb-md-0">
                         <div className="mb-3">
                           <i className="bi bi-key text-success" style={{ fontSize: '2rem' }}></i>
                         </div>
                         <h5>Get Your API Keys</h5>
                         <p className="small">Generate keys to integrate with your app</p>
                       </Col>
-                      <Col md={4}>
+                      <Col md={4} sm={12}>
                         <div className="mb-3">
                           <i className="bi bi-book text-success" style={{ fontSize: '2rem' }}></i>
                         </div>
@@ -864,10 +880,10 @@ const Dashboard = () => {
               </Col>
             </Row>
 
-            <h3 className="text-white text-center mb-4">Explore Our Features</h3>
+            <h3 className="text-white text-center mb-3 mb-lg-4">Explore Our Features</h3>
 
-            <Row className="g-4">
-              <Col lg={4}>
+            <Row className="g-3 g-lg-4 mobile-features-grid">
+              <Col lg={4} md={6} sm={12}>
                 <Card className="h-100 bg-black text-white border border-success feature-card">
                   <Card.Body className='bg-black'>
                     <div className="d-flex align-items-center mb-3">
@@ -890,7 +906,7 @@ const Dashboard = () => {
                 </Card>
               </Col>
 
-              <Col lg={4}>
+              <Col lg={4} md={6} sm={12}>
                 <Card className="h-100 bg-black text-white border border-success feature-card">
                   <Card.Body className='bg-black'>
                     <div className="d-flex align-items-center mb-3">
@@ -913,7 +929,7 @@ const Dashboard = () => {
                 </Card>
               </Col>
 
-              <Col lg={4}>
+              <Col lg={4} md={12} sm={12}>
                 <Card className="h-100 bg-black text-white border border-success feature-card">
                   <Card.Body className='bg-black'>
                     <div className="d-flex align-items-center mb-3">
@@ -943,48 +959,80 @@ const Dashboard = () => {
 
   return (
     <div className="dashboard-container">
-      {/* Sidebar */}
-      <div className="sidebar">
+      {/* Mobile Sidebar Toggle Button - only visible on mobile */}
+      <div className="d-lg-none mobile-sidebar-toggle">
+        <button
+          className="sidebar-toggle-btn"
+          onClick={() => setSidebarOpen(!sidebarOpen)}
+          aria-label="Toggle sidebar navigation"
+        >
+          <i className={`bi bi-${sidebarOpen ? 'x' : 'list'}`}></i>
+        </button>
+      </div>
+
+      {/* Sidebar with mobile toggle */}
+      <div className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
         <div className="sidebar-header">
           <h4 className="text-success mb-0">
             <a href="/" className="logo-link">
               <img
                 src="/images/chat-icon.png"
                 alt="AI Assistant"
-                className="sidebar-image-clau" />
+                className="sidebar-image-clau"
+              />
             </a>
           </h4>
           {user && (
-            <div className="text-white small mt-2">
+            <div className="text-white small mt-2 user-info">
               <i className="bi bi-person-circle me-1"></i> {user.email}
+              {/* Close button only visible on mobile */}
+              <button
+                className="d-lg-none close-sidebar-btn"
+                onClick={() => setSidebarOpen(false)}
+                aria-label="Close sidebar"
+              >
+                <i className="bi bi-x"></i>
+              </button>
             </div>
           )}
         </div>
 
         <Nav className="sidebar-nav">
           <Nav.Link
-            onClick={() => setActiveSection('home')}
+            onClick={() => {
+              setActiveSection('home');
+              if (window.innerWidth < 992) setSidebarOpen(false);
+            }}
             className={`sidebar-link ${activeSection === 'home' ? 'active' : ''}`}
           >
             <i className="bi bi-house-door me-2"></i>
             Home
           </Nav.Link>
           <Nav.Link
-            onClick={() => setActiveSection('documentation')}
+            onClick={() => {
+              setActiveSection('documentation');
+              if (window.innerWidth < 992) setSidebarOpen(false);
+            }}
             className={`sidebar-link ${activeSection === 'documentation' ? 'active' : ''}`}
           >
             <i className="bi bi-book me-2"></i>
             Documentation
           </Nav.Link>
           <Nav.Link
-            onClick={() => setActiveSection('playground')}
+            onClick={() => {
+              setActiveSection('playground');
+              if (window.innerWidth < 992) setSidebarOpen(false);
+            }}
             className={`sidebar-link ${activeSection === 'playground' ? 'active' : ''}`}
           >
             <i className="bi bi-chat-text me-2"></i>
             Playground
           </Nav.Link>
           <Nav.Link
-            onClick={() => setActiveSection('api-keys')}
+            onClick={() => {
+              setActiveSection('api-keys');
+              if (window.innerWidth < 992) setSidebarOpen(false);
+            }}
             className={`sidebar-link ${activeSection === 'api-keys' ? 'active' : ''}`}
           >
             <i className="bi bi-key me-2"></i>
@@ -1001,8 +1049,8 @@ const Dashboard = () => {
         </Nav>
       </div>
 
-      {/* Main content area */}
-      <div className="main-content">
+      {/* Main content area with class to adjust when sidebar is collapsed on mobile */}
+      <div className={`main-content ${sidebarOpen ? '' : 'sidebar-collapsed'}`}>
         {renderContent()}
       </div>
     </div>

@@ -2,8 +2,10 @@
 /* Base styles */
 .home-page-container {
   position: relative;
-  overflow-x: hidden; /* Keep this to prevent horizontal scrolling */
-  overflow-y: visible !important; /* Change from auto/scroll to visible */
+  overflow-x: hidden;
+  /* Keep this to prevent horizontal scrolling */
+  overflow-y: visible !important;
+  /* Change from auto/scroll to visible */
   background-color: #000000;
 }
 
@@ -65,12 +67,10 @@
   left: -50%;
   width: 300%;
   height: 200%;
-  background: linear-gradient(
-    to bottom right,
-    rgba(40, 167, 69, 0) 0%,
-    rgba(40, 167, 69, 0.1) 50%,
-    rgba(40, 167, 69, 0) 100%
-  );
+  background: linear-gradient(to bottom right,
+      rgba(40, 167, 69, 0) 0%,
+      rgba(40, 167, 69, 0.1) 50%,
+      rgba(40, 167, 69, 0) 100%);
   transform: rotate(45deg);
   animation: codeSweep 3s linear infinite;
 }
@@ -79,6 +79,7 @@
   0% {
     transform: translateX(-100%) translateY(-100%) rotate(45deg);
   }
+
   100% {
     transform: translateX(100%) translateY(100%) rotate(45deg);
   }
@@ -88,26 +89,30 @@
 .container-fluid {
   background-color: #000000 !important;
   max-width: 100% !important;
-  overflow: visible !important; /* Change from auto/scroll to visible */
+  overflow: visible !important;
+  /* Change from auto/scroll to visible */
 }
 
 /* Ensure body background is consistent */
 body {
-  background-color: #000000 !important; 
-  overflow-x: hidden; /* Prevent horizontal scrollbar */
+  background-color: #000000 !important;
+  overflow-x: hidden;
+  /* Prevent horizontal scrollbar */
 }
 
 /* Fix heading colors */
-.home-page-container h1, 
-.home-page-container h2, 
+.home-page-container h1,
+.home-page-container h2,
 .home-page-container h3 {
-  color: #4CAF50 !important; /* Green color for headings */
+  color: #4CAF50 !important;
+  /* Green color for headings */
 }
 
 /* Fix the "How It Works" section to prevent scrollbar issues */
 .home-page-container .row {
   margin-bottom: 40px;
-  overflow: visible !important; /* Ensure these don't create their own scrollbars */
+  overflow: visible !important;
+  /* Ensure these don't create their own scrollbars */
 }
 
 /* Add better styling for the steps */
@@ -126,12 +131,10 @@ body {
   left: -100%;
   width: 100%;
   height: 100%;
-  background: linear-gradient(
-    90deg,
-    rgba(255, 255, 255, 0) 0%,
-    rgba(255, 255, 255, 0.1) 50%,
-    rgba(255, 255, 255, 0) 100%
-  );
+  background: linear-gradient(90deg,
+      rgba(255, 255, 255, 0) 0%,
+      rgba(255, 255, 255, 0.1) 50%,
+      rgba(255, 255, 255, 0) 100%);
   transition: all 0.7s ease;
 }
 
@@ -142,7 +145,8 @@ body {
 /* Style the code blocks to match your screenshot */
 .home-page-container .bg-black {
   background-color: #000000 !important;
-  color: #66ff66 !important; /* Light green text */
+  color: #66ff66 !important;
+  /* Light green text */
   border: 1px solid #333;
 }
 
@@ -206,14 +210,17 @@ body {
 
 /* Particle background container - fix overflow issues */
 #tsparticles {
-  position: fixed !important; /* Ensure it stays fixed */
+  position: fixed !important;
+  /* Ensure it stays fixed */
   top: 0;
   left: 0;
   width: 100%;
   height: 100%;
   z-index: -1;
-  overflow: hidden !important; /* Prevent any overflow from particles */
-  pointer-events: none; /* Allow interaction with elements beneath */
+  overflow: hidden !important;
+  /* Prevent any overflow from particles */
+  pointer-events: none;
+  /* Allow interaction with elements beneath */
 }
 
 /* Fix for particles container size */
@@ -228,7 +235,7 @@ canvas.tsparticles-canvas-el {
   .home-page-container h1 {
     font-size: 2.5rem !important;
   }
-  
+
   .stat-card h2 {
     font-size: 2rem;
   }
@@ -284,12 +291,10 @@ canvas.tsparticles-canvas-el {
   left: -100%;
   width: 100%;
   height: 100%;
-  background: linear-gradient(
-    90deg,
-    rgba(255, 255, 255, 0) 0%,
-    rgba(255, 255, 255, 0.2) 50%,
-    rgba(255, 255, 255, 0) 100%
-  );
+  background: linear-gradient(90deg,
+      rgba(255, 255, 255, 0) 0%,
+      rgba(255, 255, 255, 0.2) 50%,
+      rgba(255, 255, 255, 0) 100%);
   transition: all 0.5s ease;
 }
 
@@ -337,9 +342,11 @@ canvas.tsparticles-canvas-el {
     opacity: 0;
     transform: rotate(45deg) translate(-10px, -10px);
   }
+
   50% {
     opacity: 1;
   }
+
   100% {
     opacity: 0;
     transform: rotate(45deg) translate(10px, 10px);
@@ -347,27 +354,831 @@ canvas.tsparticles-canvas-el {
 }
 
 /* Fix for React Bootstrap container potential issue */
-.container, .container-fluid, .container-lg, .container-md, 
-.container-sm, .container-xl, .container-xxl {
+.container,
+.container-fluid,
+.container-lg,
+.container-md,
+.container-sm,
+.container-xl,
+.container-xxl {
   overflow: visible !important;
 }
 
 /* Fix for column overflow issues */
-.col, .col-1, .col-10, .col-11, .col-12, .col-2, .col-3, 
-.col-4, .col-5, .col-6, .col-7, .col-8, .col-9, .col-auto, 
-.col-lg, .col-lg-1, .col-lg-10, .col-lg-11, .col-lg-12, 
-.col-lg-2, .col-lg-3, .col-lg-4, .col-lg-5, .col-lg-6, 
-.col-lg-7, .col-lg-8, .col-lg-9, .col-lg-auto, .col-md, 
-.col-md-1, .col-md-10, .col-md-11, .col-md-12, .col-md-2, 
-.col-md-3, .col-md-4, .col-md-5, .col-md-6, .col-md-7, 
-.col-md-8, .col-md-9, .col-md-auto, .col-sm, .col-sm-1, 
-.col-sm-10, .col-sm-11, .col-sm-12, .col-sm-2, .col-sm-3, 
-.col-sm-4, .col-sm-5, .col-sm-6, .col-sm-7, .col-sm-8, 
-.col-sm-9, .col-sm-auto, .col-xl, .col-xl-1, .col-xl-10, 
-.col-xl-11, .col-xl-12, .col-xl-2, .col-xl-3, .col-xl-4, 
-.col-xl-5, .col-xl-6, .col-xl-7, .col-xl-8, .col-xl-9, 
-.col-xl-auto, .col-xxl, .col-xxl-1, .col-xxl-10, .col-xxl-11, 
-.col-xxl-12, .col-xxl-2, .col-xxl-3, .col-xxl-4, .col-xxl-5, 
-.col-xxl-6, .col-xxl-7, .col-xxl-8, .col-xxl-9, .col-xxl-auto {
+.col,
+.col-1,
+.col-10,
+.col-11,
+.col-12,
+.col-2,
+.col-3,
+.col-4,
+.col-5,
+.col-6,
+.col-7,
+.col-8,
+.col-9,
+.col-auto,
+.col-lg,
+.col-lg-1,
+.col-lg-10,
+.col-lg-11,
+.col-lg-12,
+.col-lg-2,
+.col-lg-3,
+.col-lg-4,
+.col-lg-5,
+.col-lg-6,
+.col-lg-7,
+.col-lg-8,
+.col-lg-9,
+.col-lg-auto,
+.col-md,
+.col-md-1,
+.col-md-10,
+.col-md-11,
+.col-md-12,
+.col-md-2,
+.col-md-3,
+.col-md-4,
+.col-md-5,
+.col-md-6,
+.col-md-7,
+.col-md-8,
+.col-md-9,
+.col-md-auto,
+.col-sm,
+.col-sm-1,
+.col-sm-10,
+.col-sm-11,
+.col-sm-12,
+.col-sm-2,
+.col-sm-3,
+.col-sm-4,
+.col-sm-5,
+.col-sm-6,
+.col-sm-7,
+.col-sm-8,
+.col-sm-9,
+.col-sm-auto,
+.col-xl,
+.col-xl-1,
+.col-xl-10,
+.col-xl-11,
+.col-xl-12,
+.col-xl-2,
+.col-xl-3,
+.col-xl-4,
+.col-xl-5,
+.col-xl-6,
+.col-xl-7,
+.col-xl-8,
+.col-xl-9,
+.col-xl-auto,
+.col-xxl,
+.col-xxl-1,
+.col-xxl-10,
+.col-xxl-11,
+.col-xxl-12,
+.col-xxl-2,
+.col-xxl-3,
+.col-xxl-4,
+.col-xxl-5,
+.col-xxl-6,
+.col-xxl-7,
+.col-xxl-8,
+.col-xxl-9,
+.col-xxl-auto {
   overflow: visible !important;
+}
+
+.mobile-video-container {
+  width: 100%;
+}
+
+@media (max-width: 767px) {
+  .mobile-responsive-video {
+    max-width: 100%;
+  }
+
+  .mobile-button-container {
+    flex-direction: column;
+    gap: 1rem !important;
+  }
+
+  .mobile-action-btn {
+    width: 100%;
+    display: block;
+  }
+
+  .mobile-btn-wrapper {
+    width: 100%;
+  }
+
+  .mobile-stats-row {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+  }
+
+  .mobile-stat-col:last-child {
+    grid-column: span 2;
+  }
+
+  .mobile-stat-number {
+    font-size: 2rem !important;
+  }
+
+  .mobile-stat-label {
+    font-size: 0.9rem !important;
+  }
+
+  .mobile-features-row {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 15px;
+  }
+
+  .mobile-feature-card {
+    height: auto !important;
+  }
+
+  .mobile-step-row {
+    flex-direction: column;
+  }
+
+  .mobile-step-text,
+  .mobile-step-code {
+    width: 100%;
+    margin-bottom: 1rem;
+  }
+
+  .mobile-code-block {
+    font-size: 0.85rem !important;
+  }
+}
+
+@media (max-width: 576px) {
+  .mobile-stats-row {
+    grid-template-columns: 1fr;
+  }
+
+  .mobile-stat-col:last-child {
+    grid-column: span 1;
+  }
+}
+
+/* Additional Mobile Enhancements for HomePage.css */
+
+/* Base mobile adjustments */
+@media (max-width: 991px) {
+
+  /* Adjust the main title size for different screen sizes */
+  .home-page-container h1 {
+    font-size: 2.5rem !important;
+    line-height: 1.2 !important;
+  }
+
+  @media (max-width: 576px) {
+    .home-page-container h1 {
+      font-size: 2rem !important;
+    }
+  }
+
+  @media (max-width: 400px) {
+    .home-page-container h1 {
+      font-size: 1.8rem !important;
+    }
+  }
+
+  /* Adjust section spacing */
+  .home-page-container .py-5 {
+    padding-top: 2rem !important;
+    padding-bottom: 2rem !important;
+  }
+
+  .home-page-container .my-5 {
+    margin-top: 2rem !important;
+    margin-bottom: 2rem !important;
+  }
+
+  /* Adjust the video container margins */
+  .mobile-video-container {
+    margin-bottom: 1.5rem !important;
+  }
+}
+
+/* Improved Grid Layouts for Mobile */
+@media (max-width: 767px) {
+
+  /* Refine the stats grid */
+  .mobile-stats-row {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px !important;
+    width: 100%;
+  }
+
+  .mobile-stat-col:last-child {
+    grid-column: span 2;
+  }
+
+  /* Better features card layout */
+  .mobile-features-row {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 15px;
+    padding-left: 1rem !important;
+    padding-right: 1rem !important;
+  }
+
+  /* Fix the "How It Works" section */
+  .mobile-step-row {
+    margin-bottom: 2rem !important;
+  }
+
+  .mobile-step-content {
+    width: 100%;
+  }
+
+  .mobile-code-block {
+    width: 100% !important;
+    overflow-x: auto !important;
+  }
+
+  /* CTA Section adjustments */
+  .cta-section {
+    padding: 2rem 0 !important;
+  }
+
+  .cta-section h2 {
+    font-size: 1.8rem !important;
+  }
+
+  .cta-section p {
+    font-size: 1rem !important;
+    padding: 0 1rem !important;
+  }
+}
+
+/* Enhanced Card Styles for Mobile */
+@media (max-width: 767px) {
+  .stat-card {
+    padding: 1.25rem 1rem !important;
+  }
+
+  .stat-icon {
+    font-size: 2rem !important;
+    margin-bottom: 0.75rem !important;
+  }
+
+  .mobile-stat-number {
+    font-size: 1.75rem !important;
+    margin-bottom: 0.25rem !important;
+  }
+
+  .mobile-stat-label {
+    font-size: 0.85rem !important;
+  }
+
+  .feature-card {
+    height: auto !important;
+    margin-bottom: 0 !important;
+  }
+
+  .feature-icon {
+    width: 60px !important;
+    height: 60px !important;
+    margin-bottom: 1rem !important;
+  }
+
+  .feature-icon i {
+    font-size: 1.75rem !important;
+  }
+}
+
+/* Better Button Handling */
+@media (max-width: 767px) {
+  .mobile-button-container {
+    flex-direction: column !important;
+    gap: 0.75rem !important;
+    width: 100% !important;
+    padding: 0 1rem !important;
+  }
+
+  .mobile-action-btn {
+    width: 100% !important;
+    font-size: 1rem !important;
+    padding: 0.6rem 1rem !important;
+  }
+
+  .mobile-btn-wrapper {
+    width: 100% !important;
+  }
+
+  /* Also ensure CTA button is properly sized */
+  .cta-section .btn-lg {
+    font-size: 1rem !important;
+    padding: 0.6rem 1.5rem !important;
+    width: 100% !important;
+    max-width: 250px !important;
+  }
+}
+
+/* Fix for very small screens */
+@media (max-width: 576px) {
+  .mobile-stats-row {
+    grid-template-columns: 1fr !important;
+  }
+
+  .mobile-stat-col:last-child {
+    grid-column: span 1 !important;
+  }
+
+  /* Adjust How It Works steps */
+  .mobile-step-row .col-md-6 {
+    padding-left: 1rem !important;
+    padding-right: 1rem !important;
+  }
+}
+
+/* Fixing Particle Effects for Mobile */
+@media (max-width: 767px) {
+  #tsparticles {
+    opacity: 0.5;
+  }
+
+  /* Reduce animation complexity for better performance */
+  @keyframes codeSweep {
+    0% {
+      transform: translateX(-100%) translateY(-100%) rotate(45deg);
+    }
+
+    100% {
+      transform: translateX(100%) translateY(100%) rotate(45deg);
+    }
+  }
+
+  .code-block::after {
+    animation-duration: 5s !important;
+  }
+}
+
+/* Fix ScrollDown Indicator Position */
+@media (max-width: 767px) {
+  .scroll-down-indicator {
+    bottom: 20px !important;
+  }
+
+  .scroll-down-indicator .arrow {
+    width: 15px !important;
+    height: 15px !important;
+  }
+}
+
+/* YouTube Video Responsive Fix */
+@media (max-width: 767px) {
+  .mobile-responsive-video {
+    height: 0 !important;
+    overflow: hidden !important;
+    padding-bottom: 56.25% !important;
+    /* 16:9 aspect ratio */
+    position: relative !important;
+  }
+
+  .mobile-responsive-video iframe {
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+  }
+}
+
+/* Better Handling of Background Video */
+@media (max-width: 767px) {
+  .background-video {
+    height: 100% !important;
+    object-fit: cover !important;
+    opacity: 0.3 !important;
+    /* Slightly darker on mobile for better contrast */
+  }
+}
+
+/* Fix Text Spacing and Line Heights */
+@media (max-width: 767px) {
+  .home-page-container p {
+    line-height: 1.5 !important;
+  }
+
+  .feature-card Card.Title {
+    font-size: 1.3rem !important;
+  }
+
+  .feature-card Card.Text {
+    font-size: 0.9rem !important;
+    line-height: 1.4 !important;
+  }
+
+  .mobile-step-content h4 {
+    font-size: 1.3rem !important;
+  }
+
+  .mobile-step-content p {
+    font-size: 0.9rem !important;
+  }
+}
+
+/* iOS-specific fixes */
+@supports (-webkit-touch-callout: none) {
+
+  /* Fix for iOS Safari 100vh issue */
+  .home-page-container {
+    min-height: -webkit-fill-available;
+  }
+
+  /* Fix for iOS input zoom */
+  @media (max-width: 767px) {
+
+    input,
+    select,
+    textarea {
+      font-size: 16px !important;
+    }
+  }
+}
+
+/* Targeted fixes for narrow screens (350-470px) where content gets cut off */
+
+/* First, ensure the root container allows for proper overflow handling */
+html,
+body {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+/* Fix for homepage container on narrow screens */
+@media (min-width: 350px) and (max-width: 470px) {
+
+  /* Ensure the container properly constrains its children */
+  .home-page-container {
+    width: 100% !important;
+    max-width: 100% !important;
+    overflow-x: hidden !important;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+    box-sizing: border-box !important;
+  }
+
+  /* Fix Bootstrap container padding */
+  .container,
+  .container-fluid {
+    padding-left: 10px !important;
+    padding-right: 10px !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  /* Fix row margins that can cause overflow */
+  .row {
+    margin-left: -5px !important;
+    margin-right: -5px !important;
+  }
+
+  /* Adjust column padding */
+  [class*="col-"] {
+    padding-left: 5px !important;
+    padding-right: 5px !important;
+  }
+
+  /* Ensure videos and iframes don't overflow */
+  iframe,
+  video {
+    max-width: 100% !important;
+  }
+
+  /* Adjust feature cards */
+  .feature-card {
+    padding-left: 8px !important;
+    padding-right: 8px !important;
+  }
+
+  .feature-icon {
+    width: 50px !important;
+    height: 50px !important;
+    margin-right: 5px !important;
+  }
+
+  /* Fix code blocks that might be causing overflow */
+  .code-block,
+  pre {
+    max-width: 100% !important;
+    width: 100% !important;
+    white-space: pre-wrap !important;
+    word-break: break-word !important;
+  }
+
+  /* Ensure buttons don't overflow */
+  .btn {
+    padding-left: 8px !important;
+    padding-right: 8px !important;
+    white-space: normal !important;
+  }
+
+  /* Fix the YouTube video container */
+  .mobile-video-container {
+    width: 100% !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+  }
+
+  /* Ensure text doesn't overflow */
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6,
+  p {
+    word-wrap: break-word !important;
+    white-space: normal !important;
+  }
+
+  /* How It Works section adjustments */
+  .mobile-step-content,
+  .mobile-code-block {
+    width: 100% !important;
+    max-width: 100% !important;
+    padding-left: 8px !important;
+    padding-right: 8px !important;
+  }
+
+  /* Fix any absolute positioned elements */
+  .mobile-responsive-video {
+    padding-bottom: 58% !important;
+    /* Slightly increased to prevent cutoff */
+  }
+
+  /* Fix stats cards */
+  .stat-card {
+    width: 100% !important;
+    max-width: 100% !important;
+    padding-left: 8px !important;
+    padding-right: 8px !important;
+  }
+}
+
+/* Debug outline - uncomment to see element boundaries 
+@media (min-width: 350px) and (max-width: 470px) {
+  * {
+    outline: 1px solid red !important;
+  }
+}
+*/
+
+/* Additional fixes for specific elements that might be causing the issue */
+@media (min-width: 350px) and (max-width: 470px) {
+
+  /* Fix for any potential transforms that push content right */
+  .mobile-features-row,
+  .mobile-stats-row,
+  .mobile-step-row {
+    transform: none !important;
+  }
+
+  /* Reduce padding on mobile steps */
+  .mobile-step-content {
+    padding: 10px !important;
+  }
+
+  .mobile-step-content h4 {
+    font-size: 1.1rem !important;
+  }
+
+  .mobile-step-content p {
+    font-size: 0.85rem !important;
+  }
+
+  /* Fix code blocks font size and padding */
+  .code-block code {
+    font-size: 0.7rem !important;
+  }
+
+  pre {
+    padding: 8px !important;
+  }
+
+  /* Fix potential animation issues */
+  .animate-presence {
+    width: 100% !important;
+    max-width: 100% !important;
+    overflow: hidden !important;
+  }
+
+  /* Fix any framer-motion overflow issues */
+  .motion-div,
+  [class^="motion-"],
+  .framer-motion {
+    max-width: 100% !important;
+    overflow: hidden !important;
+  }
+}
+
+/* Specific fix for very narrow screens */
+@media (max-width: 360px) {
+
+  html,
+  body {
+    min-width: 320px !important;
+    /* Set a minimum width */
+  }
+
+  .home-page-container h1 {
+    font-size: 1.5rem !important;
+  }
+
+  .mobile-step-content h4 {
+    font-size: 1rem !important;
+  }
+
+  .feature-card .card-title {
+    font-size: 1.1rem !important;
+  }
+}
+
+/* Video fade in/out animations - improved performance */
+.background-video {
+  transition: opacity 0.8s ease-in-out;
+  /* Faster transition */
+  backface-visibility: hidden;
+  /* Reduce flicker on some browsers */
+  transform: translateZ(0);
+  /* Force GPU acceleration */
+  will-change: opacity;
+  /* Hint to browser for optimization */
+}
+
+.video-fade-in {
+  animation: fadeInVideo 0.8s ease-in-out forwards;
+  /* Faster animation */
+}
+
+.video-fade-out {
+  animation: fadeOutVideo 0.8s ease-in-out forwards;
+  /* Faster animation */
+}
+
+@keyframes fadeInVideo {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 0.4;
+  }
+}
+
+@keyframes fadeOutVideo {
+  from {
+    opacity: 0.4;
+  }
+
+  to {
+    opacity: 0;
+  }
+}
+
+/* Improve background video loading performance */
+video.background-video {
+  object-fit: cover !important;
+  object-position: center center !important;
+  width: 100% !important;
+  height: 100% !important;
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  z-index: 0 !important;
+}
+
+/* Better mobile video handling */
+@media (max-width: 767px) {
+  .background-video {
+    transform: scale(1.05);
+    /* Slight scale to avoid white edges */
+  }
+}
+
+/* Fix iOS video playback issues */
+@supports (-webkit-touch-callout: none) {
+  video.background-video {
+    position: absolute !important;
+    object-fit: cover !important;
+    top: 50% !important;
+    left: 50% !important;
+    min-width: 100% !important;
+    min-height: 100% !important;
+    width: auto !important;
+    height: auto !important;
+    transform: translateX(-50%) translateY(-50%) !important;
+    -webkit-transform: translateX(-50%) translateY(-50%) !important;
+  }
+}
+
+/* Fix for very small screens where video might cause layout issues */
+@media (max-width: 360px) {
+  .background-video {
+    display: block !important;
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: cover !important;
+  }
+}
+
+/* Fix any choppy animation with will-change for better hardware acceleration */
+.motion-div,
+[class^="motion-"],
+.framer-motion {
+  will-change: transform, opacity;
+}
+
+/* Optimize animations by disabling on lower-end devices */
+@media (prefers-reduced-motion: reduce) {
+
+  .background-video,
+  .video-fade-in,
+  .video-fade-out {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+.features-container {
+  margin-top: 1rem;
+  margin-bottom: 2rem;
+  overflow: visible !important;
+}
+
+/* Ensure feature cards have consistent heights */
+.feature-card {
+  height: 100%;
+  transition: transform 0.3s ease, box-shadow 0.3s ease, opacity 0.4s ease;
+}
+
+/* Add extra animation flair to feature cards */
+.feature-card:hover {
+  transform: translateY(-10px) scale(1.02);
+  box-shadow: 0 12px 24px rgba(40, 167, 69, 0.25);
+}
+
+/* Enhanced feature icon animation */
+.feature-icon {
+  transition: all 0.4s ease-out;
+  position: relative;
+}
+
+.feature-icon:after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  border-radius: 50%;
+  background: rgba(40, 167, 69, 0.1);
+  transform: scale(0);
+  opacity: 0;
+  transition: transform 0.4s ease-out, opacity 0.4s ease-out;
+  z-index: -1;
+}
+
+.feature-card:hover .feature-icon {
+  transform: scale(1.15);
+}
+
+.feature-card:hover .feature-icon:after {
+  transform: scale(2);
+  opacity: 1;
+}
+
+/* Responsive adjustments for features section */
+@media (max-width: 767px) {
+  .features-container {
+    margin-top: 0.5rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .mobile-feature-col {
+    margin-bottom: 1rem;
+  }
+}
+
+/* Ensure all animation-dependent elements have proper transitions */
+.mobile-feature-card,
+.mobile-feature-col motion.div {
+  will-change: transform, opacity;
+  backface-visibility: hidden;
 }
