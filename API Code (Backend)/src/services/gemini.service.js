@@ -21,6 +21,7 @@ class GeminiService {
 		this.modelName = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 		this.client = null;
 		this.initialize();
+		this.conversationHistory = new Map(); // Store conversation context
 	}
 
 	/**
@@ -57,7 +58,7 @@ class GeminiService {
 			}
 		}
 
-		const { query, queryType, requestId } = userData;
+		const { query, queryType, requestId, userId } = userData;
 
 		try {
 			logger.info('Generating insights with Gemini service', {
@@ -66,104 +67,105 @@ class GeminiService {
 				requestId
 			});
 
+			// Track conversation context if user ID is available
+			if (userId) {
+				this._updateConversationContext(userId, query, queryType);
+			}
+
+			// Detect if this is a follow-up explanation request
+			const isExplanationRequest = this._isExplanationRequest(query, userId);
+
 			// Select appropriate prompt based on query type
 			let promptText;
 			let temperature = 0.3; // Default temperature
+			let maxTokens = 800;   // Default token limit
 
-			// Select prompt based on query type using your existing methods
-			switch (queryType) {
-				case 'harmful':
-					promptText = this._createHarmfulContentPrompt(userData);
-					temperature = 0.1; // Very consistent for harm refusals
-					break;
-				case 'greeting':
-					promptText = this._createGreetingPrompt(userData);
-					temperature = 0.2; // More consistency for greetings
-					break;
-				case 'joke':
-					promptText = this._createJokePrompt(userData);
-					temperature = 0.7; // Higher variety for jokes
-					break;
-				case 'budgeting':
-					promptText = this._createBudgetingPrompt(userData);
-					temperature = 0.3;
-					break;
-				case 'spending':
-					promptText = this._createSpendingPrompt(userData);
-					temperature = 0.3;
-					break;
-				case 'saving':
-					promptText = this._createSavingPrompt(userData);
-					temperature = 0.3;
-					break;
-				case 'investing':
-					promptText = this._createInvestingPrompt(userData);
-					temperature = 0.3;
-					break;
-				case 'debt':
-					promptText = this._createDebtPrompt(userData);
-					temperature = 0.3;
-					break;
-				case 'tax':
-					promptText = this._createTaxPrompt(userData);
-					temperature = 0.3;
-					break;
-				case 'insurance':
-					promptText = this._createInsurancePrompt(userData);
-					temperature = 0.3;
-					break;
-				case 'retirement':
-					promptText = this._createRetirementPrompt(userData);
-					temperature = 0.3;
-					break;
-				case 'banking':
-					promptText = this._createBankingPrompt(userData);
-					temperature = 0.3;
-					break;
-				case 'credit':
-					promptText = this._createCreditPrompt(userData);
-					temperature = 0.3;
-					break;
-				case 'planning':
-					promptText = this._createPlanningPrompt(userData);
-					temperature = 0.3;
-					break;
-				case 'real_estate':
-					promptText = this._createRealEstatePrompt(userData);
-					temperature = 0.3;
-					break;
-				case 'crypto':
-					promptText = this._createCryptoPrompt(userData);
-					temperature = 0.3;
-					break;
-				case 'market_analysis':
-					promptText = this._createMarketAnalysisPrompt(userData);
-					temperature = 0.3;
-					break;
-				case 'education':
-					promptText = this._createEducationPrompt(userData);
-					temperature = 0.3;
-					break;
-				case 'income':
-					promptText = this._createIncomePrompt(userData);
-					temperature = 0.3;
-					break;
-				case 'transactions':
-					promptText = this._createTransactionsPrompt(userData);
-					temperature = 0.3;
-					break;
-				case 'security':
-					promptText = this._createSecurityPrompt(userData);
-					temperature = 0.3;
-					break;
-				case 'forex':
-					promptText = this._createForexPrompt(userData);
-					temperature = 0.3;
-					break;
-				case 'general':
-				default:
-					promptText = this._createGeneralPrompt(userData);
-					temperature = 0.3;
+			// If this is an explanation request, override with educational prompt
+			if (isExplanationRequest) {
+				const topicsToExplain = this._extractTopicsFromQuery(query, userId);
+				promptText = this._createEnhancedEducationPrompt(userData, topicsToExplain);
+				temperature = 0.2; // More consistent for educational content
+				maxTokens = 1500;  // Allow longer responses for explanations
+				logger.info('Using enhanced education prompt for explanation request', {
+					topics: topicsToExplain,
+					requestId
+				});
+			} else {
+				// Select prompt based on query type using your existing methods
+				switch (queryType) {
+					case 'harmful':
+						promptText = this._createHarmfulContentPrompt(userData);
+						temperature = 0.1; // Very consistent for harm refusals
+						break;
+					case 'greeting':
+						promptText = this._createGreetingPrompt(userData);
+						temperature = 0.2; // More consistency for greetings
+						break;
+					case 'joke':
+						promptText = this._createJokePrompt(userData);
+						temperature = 0.7; // Higher variety for jokes
+						break;
+					case 'budgeting':
+						promptText = this._createBudgetingPrompt(userData);
+						break;
+					case 'spending':
+						promptText = this._createSpendingPrompt(userData);
+						break;
+					case 'saving':
+						promptText = this._createSavingPrompt(userData);
+						break;
+					case 'investing':
+						promptText = this._createInvestingPrompt(userData);
+						break;
+					case 'debt':
+						promptText = this._createDebtPrompt(userData);
+						break;
+					case 'tax':
+						promptText = this._createTaxPrompt(userData);
+						break;
+					case 'insurance':
+						promptText = this._createInsurancePrompt(userData);
+						break;
+					case 'retirement':
+						promptText = this._createRetirementPrompt(userData);
+						break;
+					case 'banking':
+						promptText = this._createBankingPrompt(userData);
+						break;
+					case 'credit':
+						promptText = this._createCreditPrompt(userData);
+						break;
+					case 'planning':
+						promptText = this._createPlanningPrompt(userData);
+						break;
+					case 'real_estate':
+						promptText = this._createRealEstatePrompt(userData);
+						break;
+					case 'crypto':
+						promptText = this._createCryptoPrompt(userData);
+						break;
+					case 'market_analysis':
+						promptText = this._createMarketAnalysisPrompt(userData);
+						break;
+					case 'education':
+						promptText = this._createEducationPrompt(userData);
+						break;
+					case 'income':
+						promptText = this._createIncomePrompt(userData);
+						break;
+					case 'transactions':
+						promptText = this._createTransactionsPrompt(userData);
+						break;
+					case 'security':
+						promptText = this._createSecurityPrompt(userData);
+						break;
+					case 'forex':
+						promptText = this._createForexPrompt(userData);
+						break;
+					case 'general':
+					default:
+						promptText = this._createGeneralPrompt(userData);
+				}
 			}
 
 			// Define the grounding tool
@@ -189,7 +191,7 @@ class GeminiService {
 					temperature: temperature,
 					topP: 0.95,
 					topK: 40,
-					maxOutputTokens: 800
+					maxOutputTokens: maxTokens
 				},
 				systemInstruction: "You are a helpful financial assistant. Provide clear, concise insights based on the user's financial data. Be informative but not verbose.",
 				config,
@@ -214,13 +216,14 @@ class GeminiService {
 				logger.info('Gemini API response received', {
 					requestId,
 					responseLength: generatedText.length,
-					model: this.modelName
+					model: this.modelName,
+					isEducationalResponse: isExplanationRequest
 				});
 
 				return {
 					insight: generatedText,
 					timestamp: new Date().toISOString(),
-					queryType,
+					queryType: isExplanationRequest ? 'enhanced_education' : queryType,
 					source: 'gemini'
 				};
 			} else {
@@ -245,6 +248,253 @@ class GeminiService {
 	}
 
 	/**
+	 * Update conversation context for a user
+	 * @param {string} userId - User ID
+	 * @param {string} query - Current query
+	 * @param {string} queryType - Query type
+	 * @private
+	 */
+	_updateConversationContext(userId, query, queryType) {
+		if (!this.conversationHistory.has(userId)) {
+			this.conversationHistory.set(userId, {
+				recentQueries: [],
+				recentTopics: [],
+				lastInteraction: Date.now()
+			});
+		}
+
+		const userContext = this.conversationHistory.get(userId);
+
+		// Add current query to history
+		userContext.recentQueries.unshift({ query, queryType, timestamp: Date.now() });
+
+		// Keep only the 5 most recent queries
+		if (userContext.recentQueries.length > 5) {
+			userContext.recentQueries.pop();
+		}
+
+		// Extract and store financial topics from the query
+		const financialTopics = this._extractFinancialTopics(query, queryType);
+		if (financialTopics.length > 0) {
+			userContext.recentTopics = [...new Set([...financialTopics, ...userContext.recentTopics])].slice(0, 10);
+		}
+
+		userContext.lastInteraction = Date.now();
+
+		// Clean up old entries every 100 requests
+		if (Math.random() < 0.01) {
+			this._cleanupConversationHistory();
+		}
+	}
+
+	/**
+	 * Clean up conversation history older than 30 minutes
+	 * @private
+	 */
+	_cleanupConversationHistory() {
+		const thirtyMinutesAgo = Date.now() - 30 * 60 * 1000;
+
+		for (const [userId, context] of this.conversationHistory.entries()) {
+			if (context.lastInteraction < thirtyMinutesAgo) {
+				this.conversationHistory.delete(userId);
+			}
+		}
+	}
+
+	/**
+	 * Extract financial topics from a query
+	 * @param {string} query - User query
+	 * @param {string} queryType - Query type
+	 * @returns {Array<string>} - Extracted financial topics
+	 * @private
+	 */
+	_extractFinancialTopics(query, queryType) {
+		// If queryType is already a financial topic, use it
+		const financialQueryTypes = [
+			'budgeting', 'spending', 'saving', 'investing', 'debt', 'tax',
+			'insurance', 'retirement', 'banking', 'credit', 'planning',
+			'real_estate', 'crypto', 'market_analysis'
+		];
+
+		if (financialQueryTypes.includes(queryType)) {
+			return [queryType];
+		}
+
+		// Extract topics from query using keyword matching
+		const topicKeywords = {
+			'budgeting': ['budget', 'spending plan', 'expense tracking', 'financial plan'],
+			'spending': ['spending', 'expenses', 'purchases', 'cost'],
+			'saving': ['saving', 'savings', 'emergency fund', 'save money'],
+			'investing': ['invest', 'investing', 'stocks', 'bonds', 'mutual funds', 'etf', 'portfolio'],
+			'debt': ['debt', 'loan', 'credit card', 'mortgage', 'student loan', 'repayment'],
+			'tax': ['tax', 'taxes', 'irs', 'deduction', 'credit', 'return'],
+			'insurance': ['insurance', 'coverage', 'policy', 'premium', 'deductible'],
+			'retirement': ['retirement', '401k', 'ira', 'pension', 'social security'],
+			'banking': ['bank', 'banking', 'account', 'checking', 'savings account', 'interest rate'],
+			'credit': ['credit', 'credit score', 'fico', 'credit report', 'credit history'],
+			'planning': ['financial plan', 'goal', 'planning', 'future', 'long-term'],
+			'real_estate': ['house', 'home', 'property', 'mortgage', 'real estate', 'rent'],
+			'crypto': ['crypto', 'cryptocurrency', 'bitcoin', 'ethereum', 'blockchain'],
+			'market_analysis': ['market', 'stock market', 'economy', 'trend', 'analysis', 'forecast']
+		};
+
+		const extractedTopics = [];
+		const lowerQuery = query.toLowerCase();
+
+		for (const [topic, keywords] of Object.entries(topicKeywords)) {
+			if (keywords.some(keyword => lowerQuery.includes(keyword.toLowerCase()))) {
+				extractedTopics.push(topic);
+			}
+		}
+
+		return extractedTopics;
+	}
+
+	/**
+	 * Determine if the query is asking for an explanation of financial topics
+	 * @param {string} query - User query
+	 * @param {string} userId - User ID for context
+	 * @returns {boolean} - True if the query is an explanation request
+	 * @private
+	 */
+	_isExplanationRequest(query, userId) {
+		const lowerQuery = query.toLowerCase();
+
+		// Explicit explanation keywords
+		const explanationKeywords = [
+			'explain', 'what is', 'how does', 'tell me about', 'describe',
+			'what are', 'what does', 'definition of', 'meaning of',
+			'understand', 'learn about', 'teach me', 'education', 'tutorial'
+		];
+
+		// Check for explicit explanation requests
+		if (explanationKeywords.some(keyword => lowerQuery.includes(keyword.toLowerCase()))) {
+			return true;
+		}
+
+		// Check if query is about topics mentioned in previous conversations
+		if (userId && this.conversationHistory.has(userId)) {
+			const userContext = this.conversationHistory.get(userId);
+
+			// If user is asking about previously mentioned topics
+			for (const topic of userContext.recentTopics) {
+				if (lowerQuery.includes(topic.toLowerCase())) {
+					return true;
+				}
+			}
+
+			// Check if it's a direct follow-up to a previous query
+			const recentQueries = userContext.recentQueries;
+			if (recentQueries.length > 1) {
+				const previousQuery = recentQueries[1].query.toLowerCase();
+
+				// Check if current query is a short follow-up asking for more info
+				if (lowerQuery.length < 50 &&
+					(lowerQuery.includes('tell me more') ||
+						lowerQuery.includes('explain') ||
+						lowerQuery.includes('elaborate') ||
+						lowerQuery.includes('what about') ||
+						lowerQuery.includes('how does that work'))) {
+					return true;
+				}
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Extract topics to explain from a query and conversation context
+	 * @param {string} query - User query
+	 * @param {string} userId - User ID for context
+	 * @returns {Array<string>} - Topics to explain
+	 * @private
+	 */
+	_extractTopicsFromQuery(query, userId) {
+		const lowerQuery = query.toLowerCase();
+		let topics = [];
+
+		// Extract specific topic requests
+		const financialTopics = [
+			'budget', 'spending', 'saving', 'investing', 'debt', 'tax',
+			'insurance', 'retirement', 'banking', 'credit', 'financial planning',
+			'real estate', 'cryptocurrency', 'market analysis', 'emergency fund',
+			'credit score', 'interest rate', 'mortgage', 'loan', 'bond', 'stock',
+			'mutual fund', 'etf', 'index fund', 'diversification', 'risk tolerance',
+			'compound interest', 'dollar cost averaging', 'inflation', 'asset allocation'
+		];
+
+		// Look for explicit topics in the query
+		for (const topic of financialTopics) {
+			if (lowerQuery.includes(topic.toLowerCase())) {
+				topics.push(topic);
+			}
+		}
+
+		// If no explicit topics found, check context for implicit topics
+		if (topics.length === 0 && userId && this.conversationHistory.has(userId)) {
+			const userContext = this.conversationHistory.get(userId);
+
+			// Check most recent queries for topics
+			for (const prevQuery of userContext.recentQueries) {
+				const extractedTopics = this._extractFinancialTopics(prevQuery.query, prevQuery.queryType);
+				if (extractedTopics.length > 0) {
+					topics = [...extractedTopics];
+					break;
+				}
+			}
+
+			// If still no topics, use the most recent stored topics
+			if (topics.length === 0 && userContext.recentTopics.length > 0) {
+				topics = userContext.recentTopics.slice(0, 2); // Use up to 2 recent topics
+			}
+		}
+
+		// If still no topics found, use general financial literacy as default
+		if (topics.length === 0) {
+			topics = ['financial literacy'];
+		}
+
+		return topics;
+	}
+
+	/**
+	 * Create an enhanced education prompt for explaining financial concepts
+	 * @param {Object} userData - User data
+	 * @param {Array<string>} topics - Topics to explain
+	 * @returns {string} - Prompt text
+	 * @private
+	 */
+	_createEnhancedEducationPrompt(userData, topics) {
+		const { query } = userData;
+		const financialContext = this._createFinancialContext(userData);
+		const topicsText = topics.join(', ');
+
+		return `You are CLAU, an advanced AI banking assistant with deep financial expertise. The user wants to learn about: "${topicsText}". Their query was: "${query}"
+      
+Financial data: ${financialContext}
+      
+EDUCATIONAL RESPONSE GUIDELINES:
+1. Provide a comprehensive explanation of the requested financial concept(s)
+2. Structure your response like a mini-lesson with clear sections
+3. Begin with a simple definition of each concept
+4. Explain key principles and how they work
+5. Include real-world examples to illustrate the concept
+6. Highlight common misconceptions or pitfalls
+7. If relevant, relate the concepts to the user's own financial data
+8. Conclude with practical tips for applying this knowledge
+9. Use simple language and explain any necessary financial terms
+10. For multi-part questions, address each topic separately with clear headings
+11. Use emojis sparingly to highlight key points
+12. Do not use markdown format. Keep the response in plain text.
+13. Your response should be educational and thorough - do NOT limit to 5 sentences
+
+IMPORTANT: This is an educational response, so provide detailed explanations rather than brief answers. Aim to truly improve the user's financial literacy with clear, actionable information.
+      
+Provide educational content that helps build their financial literacy in a clear, structured way.`;
+	}
+
+	/**
 	 * Get a fallback response when Gemini API fails
 	 * @param {Object} userData - User data
 	 * @returns {Object} - Fallback response
@@ -253,6 +503,9 @@ class GeminiService {
 		const { query, queryType } = userData;
 		const { accounts = [], transactions = [] } = userData;
 
+		// Check if this is an explanation request
+		const isExplanationRequest = this._isExplanationRequest(query, userData.userId);
+
 		// Calculate some basic financial metrics to personalize the fallback response
 		const totalBalance = accounts.reduce((sum, account) => sum + (account.balance || 0), 0);
 		const hasSavingsAccount = accounts.some(a => a.type?.toLowerCase().includes('saving'));
@@ -260,71 +513,112 @@ class GeminiService {
 
 		let fallbackText;
 
-		switch (queryType) {
-			case 'greeting':
-				const userName = userData.userProfile?.name || '';
-				fallbackText = `Hello${userName ? ' ' + userName : ''}! 👋 How can I help with your finances today?`;
-				break;
+		// If this is an explanation request, provide educational content
+		if (isExplanationRequest) {
+			const topics = this._extractTopicsFromQuery(query, userData.userId);
 
-			case 'joke':
-				const jokes = [
-					"Why don't scientists trust atoms? Because they make up everything — including your financial statements! 😂",
-					"What's a computer's favorite snack? Microchips with mega dips! Just like your savings account needs regular deposits! 💰",
-					"Why don't economists like to go to the beach? Because they're always worried about the fiscal cliff! 📊",
-					"I told my wife she was spending too much money on lip gloss. She gave me the silent treatment. I guess money talks, but savings apparently give you the silent treatment. 💄",
-					"What do you call someone who's really good with money? Fiscally responsible... or as I like to call them, mythical. 🦄"
-				];
-				fallbackText = jokes[Math.floor(Math.random() * jokes.length)];
-				break;
+			// Educational fallbacks for common topics
+			const educationalContent = {
+				'budgeting': `Budgeting is the process of creating a plan for how to spend and save your money. A good budget helps you track your income and expenses, identify spending patterns, and achieve your financial goals. The popular 50/30/20 rule suggests allocating 50% of your income to needs, 30% to wants, and 20% to savings and debt repayment. To create an effective budget, start by tracking your spending for a month, categorize your expenses, set realistic spending limits, and review regularly. Digital tools like budget apps can automate much of this process, making it easier to stick with your plan. The most successful budgets are flexible and adjust as your financial situation changes.`,
 
-			case 'budgeting':
-				fallbackText = `Looking at your financial data, I'd recommend a 50/30/20 budget approach: allocate 50% of your income to needs, 30% to wants, and 20% to savings and debt repayment. With your total balance of $${totalBalance.toFixed(2)}, tracking your expenses carefully would help you optimize your spending patterns and build a more effective budget.`;
-				break;
+				'saving': `Saving money is setting aside income for future use rather than spending it immediately. A robust savings strategy typically includes: 1) An emergency fund covering 3-6 months of expenses for unexpected costs, 2) Short-term savings for goals like vacations or purchases within 1-3 years, and 3) Long-term savings for major life events. The power of saving comes from consistency and compound interest, where your interest earnings generate their own interest over time. To boost your savings rate, automate transfers to savings accounts, eliminate unnecessary expenses, and increase contributions whenever your income rises. Remember that even small, regular contributions add up significantly over time due to compound growth.`,
 
-			case 'spending':
-				fallbackText = `Based on your transaction history, I notice several opportunities to optimize your spending. Consider reviewing your regular expenses and identifying non-essential items that could be reduced. Many people find they can save 10-15% of their monthly expenses by eliminating unused subscriptions and being more mindful of small, frequent purchases.`;
-				break;
+				'investing': `Investing means putting money into assets with the expectation they'll increase in value over time. Unlike saving, investing involves risk but offers potential for higher returns to build wealth and beat inflation. Common investment vehicles include stocks (ownership in companies), bonds (loans to companies or governments), mutual funds and ETFs (collections of securities), and real estate. The key principles of successful investing include: 1) Starting early to benefit from compound growth, 2) Diversification across different asset classes to manage risk, 3) Regular contributions regardless of market conditions, and 4) A long-term perspective that ignores short-term market fluctuations. Your investment strategy should align with your goals, time horizon, and risk tolerance.`,
 
-			case 'saving':
-				fallbackText = `${hasSavingsAccount ? 'I see you already have a savings account, which is great!' : 'Opening a dedicated savings account would be a good first step.'} To boost your savings rate, consider setting up automatic transfers right after payday, before you have a chance to spend the money. Even small, consistent contributions add up significantly over time due to compound interest.`;
-				break;
+				'debt': `Debt is money borrowed that must be repaid, usually with interest. Not all debt is harmful - "good debt" like mortgages or student loans can build assets or increase earning potential, while "bad debt" like high-interest credit cards primarily finances consumption. When managing debt, focus on your debt-to-income ratio (monthly debt payments divided by monthly income), which ideally should stay below 36%. Two popular repayment strategies are the avalanche method (paying highest-interest debt first to minimize interest costs) and the snowball method (paying smallest balances first for psychological wins). Debt consolidation can simplify payments and potentially lower interest rates, while refinancing replaces existing debt with new terms, potentially reducing interest or extending repayment periods.`,
 
-			case 'investing':
-				fallbackText = `For investing, diversification is key. A mix of low-cost index funds, bonds, and perhaps a small allocation to individual stocks (if you're comfortable with higher risk) can create a balanced portfolio. Consider your time horizon and risk tolerance when determining your asset allocation.`;
-				break;
+				'credit': `Credit scores are numerical representations of your creditworthiness, typically ranging from 300-850, with higher scores indicating lower lending risk. These scores are calculated based on payment history (35%), amounts owed (30%), length of credit history (15%), new credit (10%), and credit mix (10%). To build and maintain good credit: pay all bills on time, keep credit utilization below 30% of available credit, maintain long-standing accounts, limit new credit applications, and diversify your credit types. Good credit unlocks lower interest rates on loans and credit cards, higher approval odds for apartments and utilities, better insurance rates, and more employment opportunities. Regularly checking your credit reports for errors is important for maintaining accurate scores.`,
 
-			case 'debt':
-				fallbackText = `When tackling debt, focus on high-interest debt first (typically credit cards) while making minimum payments on lower-interest debt. The avalanche method (paying highest interest first) saves you the most money, while the snowball method (paying smallest balances first) provides psychological wins that keep you motivated.`;
-				break;
+				'retirement': `Retirement planning involves preparing financially for life after you stop working. The three main pillars of retirement income are: Social Security, employer-sponsored plans (like 401(k)s), and personal savings/investments. The power of compound interest makes starting early crucial - even small contributions in your 20s can outperform larger contributions started in your 40s. Most financial advisors recommend saving 15-20% of your income for retirement. Tax-advantaged accounts like Traditional 401(k)s and IRAs offer tax deductions now but tax withdrawals later, while Roth options tax contributions now but offer tax-free withdrawals in retirement. Your asset allocation should generally shift from growth-focused (stocks) to preservation-focused (bonds) as you approach retirement age. The 4% rule suggests withdrawing 4% of your retirement savings annually to help make your money last throughout retirement.`,
 
-			case 'tax':
-				fallbackText = `Tax efficiency is an important part of financial planning. Common tax-advantaged strategies include maximizing contributions to retirement accounts like 401(k)s and IRAs, harvesting investment losses, and keeping track of deductible expenses throughout the year rather than scrambling at tax time.`;
-				break;
+				'financial literacy': `Financial literacy is the ability to understand and effectively use various financial skills, including personal financial management, budgeting, and investing. The core components include: 1) Budgeting - tracking income and expenses to live within your means, 2) Saving - setting aside money for emergencies and future goals, 3) Debt management - understanding how to use credit responsibly, 4) Investing - growing wealth through various financial instruments, and 5) Protection - using insurance to guard against financial disasters. Improving your financial literacy starts with tracking your spending, creating a budget, building an emergency fund, understanding your credit score, learning about retirement accounts, and developing an investment strategy appropriate for your goals and risk tolerance. Even small improvements in financial literacy can lead to significantly better financial outcomes over your lifetime.`
+			};
 
-			case 'retirement':
-				fallbackText = `For retirement planning, the general rule is to save 15-20% of your pre-tax income. Maximize employer matches in retirement accounts (it's essentially free money), and consider a mix of pre-tax and Roth contributions for tax diversification in retirement. The earlier you start, the more time compound interest has to work in your favor.`;
-				break;
+			// Provide content for the first topic found, or default to financial literacy
+			for (const topic of topics) {
+				const normalizedTopic = topic.toLowerCase();
+				for (const [key, content] of Object.entries(educationalContent)) {
+					if (normalizedTopic.includes(key)) {
+						fallbackText = content;
+						break;
+					}
+				}
+				if (fallbackText) break;
+			}
 
-			case 'general':
-			default:
-				fallbackText = `Based on your financial overview, I'd suggest focusing on three key areas: ${!hasSavingsAccount ? 'establishing an emergency fund, ' : ''}${hasRecentTransaction ? 'tracking your expenses more carefully, ' : ''}and setting clear financial goals. Regular financial check-ups can help you stay on track and adjust your strategy as needed. What specific aspect of your finances would you like to improve?`;
-				break;
+			// Default to financial literacy if no specific topic matched
+			if (!fallbackText) {
+				fallbackText = educationalContent['financial literacy'];
+			}
+		} else {
+			// Use existing fallback logic for non-educational queries
+			switch (queryType) {
+				case 'greeting':
+					const userName = userData.userProfile?.name || '';
+					fallbackText = `Hello${userName ? ' ' + userName : ''}! 👋 How can I help with your finances today?`;
+					break;
+
+				case 'joke':
+					const jokes = [
+						"Why don't scientists trust atoms? Because they make up everything — including your financial statements! 😂",
+						"What's a computer's favorite snack? Microchips with mega dips! Just like your savings account needs regular deposits! 💰",
+						"Why don't economists like to go to the beach? Because they're always worried about the fiscal cliff! 📊",
+						"I told my wife she was spending too much money on lip gloss. She gave me the silent treatment. I guess money talks, but savings apparently give you the silent treatment. 💄",
+						"What do you call someone who's really good with money? Fiscally responsible... or as I like to call them, mythical. 🦄"
+					];
+					fallbackText = jokes[Math.floor(Math.random() * jokes.length)];
+					break;
+
+				case 'budgeting':
+					fallbackText = `Looking at your financial data, I'd recommend a 50/30/20 budget approach: allocate 50% of your income to needs, 30% to wants, and 20% to savings and debt repayment. With your total balance of $${totalBalance.toFixed(2)}, tracking your expenses carefully would help you optimize your spending patterns and build a more effective budget.`;
+					break;
+
+				case 'spending':
+					fallbackText = `Based on your transaction history, I notice several opportunities to optimize your spending. Consider reviewing your regular expenses and identifying non-essential items that could be reduced. Many people find they can save 10-15% of their monthly expenses by eliminating unused subscriptions and being more mindful of small, frequent purchases.`;
+					break;
+
+				case 'saving':
+					fallbackText = `${hasSavingsAccount ? 'I see you already have a savings account, which is great!' : 'Opening a dedicated savings account would be a good first step.'} To boost your savings rate, consider setting up automatic transfers right after payday, before you have a chance to spend the money. Even small, consistent contributions add up significantly over time due to compound interest.`;
+					break;
+
+				case 'investing':
+					fallbackText = `For investing, diversification is key. A mix of low-cost index funds, bonds, and perhaps a small allocation to individual stocks (if you're comfortable with higher risk) can create a balanced portfolio. Consider your time horizon and risk tolerance when determining your asset allocation.`;
+					break;
+
+				case 'debt':
+					fallbackText = `When tackling debt, focus on high-interest debt first (typically credit cards) while making minimum payments on lower-interest debt. The avalanche method (paying highest interest first) saves you the most money, while the snowball method (paying smallest balances first) provides psychological wins that keep you motivated.`;
+					break;
+
+				case 'tax':
+					fallbackText = `Tax efficiency is an important part of financial planning. Common tax-advantaged strategies include maximizing contributions to retirement accounts like 401(k)s and IRAs, harvesting investment losses, and keeping track of deductible expenses throughout the year rather than scrambling at tax time.`;
+					break;
+
+				case 'retirement':
+					fallbackText = `For retirement planning, the general rule is to save 15-20% of your pre-tax income. Maximize employer matches in retirement accounts (it's essentially free money), and consider a mix of pre-tax and Roth contributions for tax diversification in retirement. The earlier you start, the more time compound interest has to work in your favor.`;
+					break;
+
+				case 'general':
+				default:
+					fallbackText = `Based on your financial overview, I'd suggest focusing on three key areas: ${!hasSavingsAccount ? 'establishing an emergency fund, ' : ''}${hasRecentTransaction ? 'tracking your expenses more carefully, ' : ''}and setting clear financial goals. Regular financial check-ups can help you stay on track and adjust your strategy as needed. What specific aspect of your finances would you like to improve?`;
+					break;
+			}
 		}
 
 		logger.info('Generated Gemini fallback response', {
 			queryType,
+			isEducational: isExplanationRequest,
 			responseLength: fallbackText.length
 		});
 
 		return {
 			insight: fallbackText,
 			timestamp: new Date().toISOString(),
-			queryType,
+			queryType: isExplanationRequest ? 'enhanced_education' : queryType,
 			source: 'gemini-fallback'
 		};
 	}
 
-	// All your existing prompt methods remain the same
+	// Modified existing prompt methods
 	_createHarmfulContentPrompt(userData) {
 		return `You are CLAU, an advanced AI banking assistant with deep financial expertise that follows strict ethical guidelines.
       
@@ -363,6 +657,7 @@ class GeminiService {
 	}
 
 	_createJokePrompt(userData) {
+		const userName = userData.userProfile?.name || '';
 		return `You are CLAU, a friendly and fun AI banking assistant. The user has asked you for a joke: "${userData.query}"
       
       RESPOND STRICTLY FOLLOWING THESE GUIDELINES:
@@ -473,6 +768,35 @@ ${transactionsSummary || 'No transaction history available'}
       Use the specific details from their financial data to make your answer personally relevant.`;
 	}
 
+	// Enhanced education prompt that doesn't limit response length
+	_createEducationPrompt(userData) {
+		const { query } = userData;
+		const financialContext = this._createFinancialContext(userData);
+
+		return `You are CLAU, an advanced AI banking assistant with deep financial expertise. The user has asked for financial education about: "${query}"
+      
+      Financial data: ${financialContext}
+      
+      EDUCATIONAL RESPONSE GUIDELINES:
+      1. Provide a clear, comprehensive explanation of the financial concept(s) they're asking about
+      2. Structure your response like a mini-lesson with clear sections
+      3. Begin with a simple definition of the concept
+      4. Explain key principles and how they work
+      5. Include concrete examples to illustrate concepts
+      6. If relevant, relate the educational content to their personal financial situation
+      7. Highlight common misconceptions or pitfalls people encounter
+      8. Suggest practical ways they can apply this knowledge
+      9. Use simple language and explain any necessary financial terms
+      10. For multi-part questions, address each topic separately with clear headings
+      11. Use emojis sparingly to highlight key points
+      12. Do not use markdown format. Keep the response in plain text.
+      
+      IMPORTANT: This is an educational response, so provide detailed explanations rather than brief answers. Aim to truly improve the user's financial literacy with clear, actionable information.
+      
+      Provide educational content that helps build their financial literacy in a clear, structured way.`;
+	}
+
+	// Keep all your existing prompt methods below, but I won't include them all to save space
 	_createBudgetingPrompt(userData) {
 		const { query } = userData;
 		const financialContext = this._createFinancialContext(userData);
