@@ -13,7 +13,8 @@
 
 /* Override background colors */
 :root {
-  --bs-body-bg: #000000; /* Base background color */
+  --bs-body-bg: #000000;
+  /* Base background color */
   --bs-dark-rgb: 15, 15, 15;
   --bs-black-rgb: 5, 5, 5;
 }
@@ -29,7 +30,8 @@
 
 /* You can add more specific overrides as needed */
 .custom-background {
-  background-color: #0f1a2b !important; /* Example: dark blue-ish background */
+  background-color: #0f1a2b !important;
+  /* Example: dark blue-ish background */
 }
 
 body {
@@ -44,14 +46,16 @@ body {
 
 /* Custom layout styles */
 .input-white-placeholder::placeholder {
-    color: rgba(0, 0, 0, 0.6) !important;
-  }
+  color: rgba(0, 0, 0, 0.6) !important;
+}
+
 .input-white-placeholder::-webkit-input-placeholder {
-    color: rgba(0, 0, 0, 0.6) !important;
-  }
+  color: rgba(0, 0, 0, 0.6) !important;
+}
+
 .input-white-placeholder::-moz-placeholder {
-    color: rgba(0, 0, 0, 0.6) !important;
-  }
+  color: rgba(0, 0, 0, 0.6) !important;
+}
 
 /* Sidebar styles */
 
@@ -61,11 +65,13 @@ body {
 }
 
 .nav-tabs .nav-link:not(.active) {
-  background-color: #f8f9fa; /* Light gray for inactive tabs */
+  background-color: #f8f9fa;
+  /* Light gray for inactive tabs */
 }
 
 .register-link {
-  color: #28a745; /* Green color or any color of your choice */
+  color: #28a745;
+  /* Green color or any color of your choice */
 }
 
 .login-link {
@@ -84,7 +90,7 @@ body {
   background-color: #ffffff !important;
   color: #000000;
   border: none;
-  box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
 }
 
 /* Form Control Styles */
@@ -97,11 +103,11 @@ body {
 .form-control:focus {
   background-color: #ffffff !important;
   border-color: #28a745;
-  box-shadow: 0 0 0 0.2rem rgba(40,167,69,0.25);
+  box-shadow: 0 0 0 0.2rem rgba(40, 167, 69, 0.25);
 }
 
 .form-control::placeholder {
-  color: rgba(0,0,0,0.5) !important;
+  color: rgba(0, 0, 0, 0.5) !important;
 }
 
 /* Button Styles */
@@ -118,7 +124,7 @@ body {
 
 .btn-success:focus,
 .btn-success.focus {
-  box-shadow: 0 0 0 0.2rem rgba(40,167,69,0.5);
+  box-shadow: 0 0 0 0.2rem rgba(40, 167, 69, 0.5);
 }
 
 /* Nav Tabs Styles */
@@ -197,6 +203,9 @@ a .register-link:hover {
 /* hover/focus state for visibility */
 .dropdown-menu .dropdown-item:hover,
 .dropdown-menu .dropdown-item:focus {
-  background-color: rgba(255,255,255,0.1) !important;
+  background-color: rgba(255, 255, 255, 0.1) !important;
   color: #fff !important;
 }
+
+/* Import mobile-responsive styles - must be AFTER all other imports */
+@import url('./components/mobile-responsive.css');

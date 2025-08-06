@@ -1,4 +1,3 @@
-// src/components/HomePage.js
 import React, { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -85,6 +84,11 @@ const HomePage = () => {
   const [scrollY, setScrollY] = useState(0);
   const [videoFade, setVideoFade] = useState("hidden");
   const videoRef = useRef(null);
+  // Reduce loading time by showing content sooner
+  const [videoLoaded, setVideoLoaded] = useState(false);
+  const [contentVisible, setContentVisible] = useState(false);
+  // Add a timeout ref to clear it if component unmounts
+  const timeoutRef = useRef(null);
 
   // Use our custom hook to delay animations until page is loaded
   const animationsActive = useDelayedAnimation({
@@ -108,8 +112,78 @@ const HomePage = () => {
     if (!particlesInitialized.current) {
       await loadFull(main);
       particlesInitialized.current = true;
+
+      // Optimize for mobile
+      const isMobile = window.innerWidth < 768;
+      if (isMobile && main.particles) {
+        // Reduce particle count on mobile
+        if (main.particles.options.particles) {
+          main.particles.options.particles.number.value = 15;
+          main.particles.options.particles.move.speed = 0.5;
+        }
+      }
     }
   };
+
+  useEffect(() => {
+    const handleResize = () => {
+      // Check if we're in the problematic range
+      const width = window.innerWidth;
+      if (width >= 350 && width <= 470) {
+        // Add a class to the body for targeted styling
+        document.body.classList.add('narrow-screen-fix');
+      } else {
+        document.body.classList.remove('narrow-screen-fix');
+      }
+    };
+
+    // Initial check
+    handleResize();
+
+    // Add event listeners
+    window.addEventListener('resize', handleResize);
+    window.addEventListener('orientationchange', handleResize);
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('orientationchange', handleResize);
+      document.body.classList.remove('narrow-screen-fix');
+    };
+  }, []);
+
+  useEffect(() => {
+    const handleResize = () => {
+      // Force re-render on orientation change for better mobile layout
+      setScrollY(window.scrollY);
+    };
+
+    window.addEventListener('resize', handleResize);
+    window.addEventListener('orientationchange', handleResize);
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('orientationchange', handleResize);
+    };
+  }, []);
+
+  // Force content to show after a max timeout (to avoid infinite loading)
+  useEffect(() => {
+    if (animationsActive) {
+      // Set a maximum time to wait for video (3 seconds)
+      timeoutRef.current = setTimeout(() => {
+        if (!contentVisible) {
+          setVideoLoaded(true);
+          setContentVisible(true);
+        }
+      }, 3000);
+    }
+
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+    };
+  }, [animationsActive, contentVisible]);
 
   // Video fade in/out effect when the video plays
   useEffect(() => {
@@ -117,26 +191,54 @@ const HomePage = () => {
       // Add event listeners for video fade effects
       const videoElement = videoRef.current;
 
-      // Fade in at start
-      videoElement.addEventListener('play', function () {
-        // If it's the first play or a new loop - fade in
+      // Add event listener for the loadeddata event to know when video is ready
+      const handleVideoLoaded = () => {
+        setVideoLoaded(true);
+        // Show content immediately
+        setContentVisible(true);
+
+        // Ensure proper looping
+        videoElement.loop = true;
+      };
+
+      // Check if metadata is loaded
+      const handleMetadataLoaded = () => {
+        // If video metadata loads quickly, we can start showing things
+        if (videoElement.readyState >= 1) {
+          // Set a shorter timeout to show content even if full data isn't loaded yet
+          setTimeout(() => {
+            setVideoLoaded(true);
+            setContentVisible(true);
+          }, 100);
+        }
+      };
+
+      // Listen for video loaded events - try to detect loading as early as possible
+      videoElement.addEventListener('loadedmetadata', handleMetadataLoaded);
+      videoElement.addEventListener('loadeddata', handleVideoLoaded);
+
+      // Handle video play event for fade in
+      const handlePlay = () => {
         videoElement.classList.remove('video-fade-out');
         videoElement.classList.add('video-fade-in');
-      });
+      };
 
-      // Fade out before the end
-      videoElement.addEventListener('timeupdate', function () {
-        // When video is near the end (2 seconds before), start the fade out
-        if (this.duration > 0 && this.currentTime > this.duration - 2) {
-          videoElement.classList.remove('video-fade-in');
-          videoElement.classList.add('video-fade-out');
-        }
-      });
+      // Handle looping behavior explicitly
+      const handleEnded = () => {
+        // Explicitly restart the video if it ends
+        videoElement.currentTime = 0;
+        videoElement.play().catch(e => console.log('Video autoplay prevented by browser'));
+      };
+
+      videoElement.addEventListener('play', handlePlay);
+      videoElement.addEventListener('ended', handleEnded);
 
       return () => {
         // Clean up event listeners
-        videoElement.removeEventListener('play', () => { });
-        videoElement.removeEventListener('timeupdate', () => { });
+        videoElement.removeEventListener('loadedmetadata', handleMetadataLoaded);
+        videoElement.removeEventListener('loadeddata', handleVideoLoaded);
+        videoElement.removeEventListener('play', handlePlay);
+        videoElement.removeEventListener('ended', handleEnded);
       };
     }
   }, [videoRef, animationsActive]);
@@ -159,10 +261,33 @@ const HomePage = () => {
     }
   }, [videoSectionInView]);
 
-  // Preload video when animations are active
+  // Preload video when animations are active and modify loading sequence
   useEffect(() => {
     if (animationsActive && videoRef.current) {
+      // Set preload attribute to auto to prioritize video loading
+      videoRef.current.preload = "auto";
+
+      // Set lower quality for faster loading
+      videoRef.current.playsInline = true;
+      videoRef.current.muted = true;
+      videoRef.current.loop = true; // Explicitly set loop to true
+
+      // Load the video
       videoRef.current.load();
+
+      // Try to play as soon as possible
+      videoRef.current.play().catch(e => {
+        console.log('Video autoplay prevented by browser, will try again when user interacts');
+      });
+
+      // If video has already loaded the metadata, check if it's fully loaded
+      if (videoRef.current.readyState >= 1) {
+        // Show content faster
+        setTimeout(() => {
+          setVideoLoaded(true);
+          setContentVisible(true);
+        }, 100);
+      }
     }
   }, [animationsActive]);
 
@@ -251,47 +376,7 @@ const HomePage = () => {
         />
       )}
 
-      {/* Header section with motion - only animate after page load */}
-      <AnimatePresence>
-        {animationsActive && (
-          <motion.div
-            className="text-center py-4"
-            initial={{ opacity: 0, y: -25 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8, ease: "easeOut", delay: 0.2 }}
-          >
-            <Container>
-              <motion.h1
-                className="text-white mb-0"
-                style={{
-                  fontSize: '3.5rem',
-                  fontWeight: '900',
-                  letterSpacing: '-0.03em',
-                  fontFamily: "'Inter Display', 'Inter', sans-serif",
-                  textTransform: 'none'
-                }}
-                animate={{
-                  textShadow: [
-                    "0 0 5px rgba(40, 167, 69, 0.3)",
-                    "0 0 15px rgba(40, 167, 69, 0.5)",
-                    "0 0 5px rgba(40, 167, 69, 0.3)"
-                  ]
-                }}
-                transition={{
-                  duration: 3,
-                  ease: "easeInOut",
-                  repeat: Infinity,
-                  delay: 1.2 // Delay the glow effect
-                }}
-              >
-                Banking Intelligence API
-              </motion.h1>
-            </Container>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Full-width background video section */}
+      {/* Full-width background video section - Now wraps the entire content */}
       <div
         ref={videoSectionRef}
         style={{
@@ -302,44 +387,106 @@ const HomePage = () => {
         }}
       >
         {/* Background Video - Full width */}
-        <div style={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          width: '100%',
-          height: '100%',
-          zIndex: 0
-        }}>
+        <motion.div
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: '100%',
+            height: '100%',
+            zIndex: 0
+          }}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: videoLoaded ? 0.4 : 0 }}
+          transition={{ duration: 0.8, ease: "easeInOut" }}
+        >
           <video
             ref={videoRef}
             autoPlay
             muted
             loop
+            playsInline
             style={{
               width: '100%',
               height: '100%',
               objectFit: 'cover',
-              opacity: 0.4,
             }}
             className="background-video"
           >
             <source src="videos/Amazon_Rainforest_Video_for_App.mp4" type="video/mp4" />
             Your browser does not support the video tag.
           </video>
-        </div>
+        </motion.div>
+
+        {/* Loading overlay - shows until video is loaded */}
+        <motion.div
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: '100%',
+            height: '100%',
+            backgroundColor: '#000000',
+            zIndex: videoLoaded ? 0 : 1
+          }}
+          initial={{ opacity: 1 }}
+          animate={{ opacity: videoLoaded ? 0 : 1 }}
+          transition={{ duration: 0.5, ease: "easeOut" }}
+        />
+
+        {/* Header section with motion - now inside the video section */}
+        <AnimatePresence>
+          {animationsActive && contentVisible && (
+            <motion.div
+              className="text-center py-4"
+              initial={{ opacity: 0, y: -25 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.8, ease: "easeOut", delay: 0.1 }}
+              style={{ position: 'relative', zIndex: 1 }}
+            >
+              <Container>
+                <motion.h1
+                  className="text-white mb-0 mobile-responsive-title"
+                  style={{
+                    fontSize: '3.5rem', // This will be overridden by media queries in CSS
+                    fontWeight: '900',
+                    letterSpacing: '-0.03em',
+                    fontFamily: "'Inter Display', 'Inter', sans-serif",
+                    textTransform: 'none'
+                  }}
+                  animate={{
+                    textShadow: [
+                      "0 0 5px rgba(40, 167, 69, 0.3)",
+                      "0 0 15px rgba(40, 167, 69, 0.5)",
+                      "0 0 5px rgba(40, 167, 69, 0.3)"
+                    ]
+                  }}
+                  transition={{
+                    duration: 3,
+                    ease: "easeInOut",
+                    repeat: Infinity,
+                    delay: 0.8
+                  }}
+                >
+                  Banking Intelligence API
+                </motion.h1>
+              </Container>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Content overlay with YouTube video */}
         <Container className="py-5 text-center" style={{ position: 'relative', zIndex: 1 }}>
           <AnimatePresence>
-            {animationsActive && (
+            {animationsActive && contentVisible && (
               <motion.div
                 className="mb-4"
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
-                transition={{ duration: 0.8, delay: 0.6 }} // Increased delay
+                transition={{ duration: 0.6, delay: 0.3 }} // Reduced delay
               >
                 <motion.div
-                  className="mx-auto mb-5"
+                  className="mx-auto mb-5 mobile-video-container"
                   style={{
                     maxWidth: '700px',
                     background: 'linear-gradient(90deg, #00c6ff, #ff00de)',
@@ -353,19 +500,21 @@ const HomePage = () => {
                   transition={{ duration: 0.3 }}
                 >
                   <div style={{
-                    background: 'rgba(20, 20, 20, 0.85)', // Darker semi-transparent background
+                    background: 'rgba(20, 20, 20, 0.85)',
                     padding: '15px',
                     borderRadius: '2px'
                   }}>
-                    {/* YouTube video embed */}
-                    <div className="ratio ratio-16x9" style={{ maxWidth: '100%' }}>
-                      <iframe
-                        src="https://www.youtube.com/embed/hMO6E50YSXU?si=KLrgifAyC5Pb1uCC"
-                        title="Banking Intelligence Demo"
-                        allowFullScreen
-                        frameBorder="0"
-                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                      ></iframe>
+                    {/* YouTube video embed with responsive container */}
+                    <div className="narrow-screen-container">
+                      <div className="ratio ratio-16x9 mobile-responsive-video">
+                        <iframe
+                          src="https://www.youtube.com/embed/hMO6E50YSXU?si=KLrgifAyC5Pb1uCC"
+                          title="Banking Intelligence Demo"
+                          allowFullScreen
+                          frameBorder="0"
+                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                        ></iframe>
+                      </div>
                     </div>
                   </div>
                 </motion.div>
@@ -375,32 +524,32 @@ const HomePage = () => {
                   style={{ maxWidth: '700px', fontSize: '1.5rem', textShadow: '0 2px 10px rgba(0, 0, 0, 0.5)' }}
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
-                  transition={{ duration: 0.8, delay: 0.9 }} // Increased delay
+                  transition={{ duration: 0.6, delay: 0.5 }} // Reduced delay
                 >
                   Add AI-powered financial insights to your banking application with the CLAU Banking Intelligence API
                 </motion.p>
 
                 <motion.div
-                  className="d-flex justify-content-center gap-3 mt-4"
+                  className="d-flex justify-content-center gap-3 mt-4 mobile-button-container"
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.5, delay: 1.2 }} // Increased delay
+                  transition={{ duration: 0.5, delay: 0.7 }} // Reduced delay
                 >
                   {isAuthenticated ? (
-                    <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-                      <Link to="/dashboard" className="btn btn-success btn-lg">
+                    <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} className="w-100 mobile-btn-wrapper">
+                      <Link to="/dashboard" className="btn btn-success btn-lg mobile-action-btn">
                         Go to API Dashboard
                       </Link>
                     </motion.div>
                   ) : (
                     <>
-                      <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-                        <Link to="/register" className="btn btn-success btn-lg">
+                      <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} className="mobile-btn-wrapper">
+                        <Link to="/register" className="btn btn-success btn-lg mobile-action-btn">
                           Get Your API Key
                         </Link>
                       </motion.div>
-                      <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-                        <Link to="/docs" className="btn btn-outline-success btn-lg">
+                      <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} className="mobile-btn-wrapper">
+                        <Link to="/docs" className="btn btn-outline-success btn-lg mobile-action-btn">
                           View Documentation
                         </Link>
                       </motion.div>
@@ -413,46 +562,46 @@ const HomePage = () => {
         </Container>
       </div> {/* End of full-width background video section */}
 
-      {/* Stats Counter Section - only display counters after animations are active */}
+      {/* Stats Counter Section - only display counters after animations are active and content is visible */}
       <Container className="py-4">
         <motion.div
           className="text-center stats-container"
           initial={{ opacity: 0 }}
-          animate={animationsActive ? { opacity: 1 } : { opacity: 0 }}
-          transition={{ duration: 0.8, delay: 1.4 }} // Additional delay
+          animate={animationsActive && contentVisible ? { opacity: 1 } : { opacity: 0 }}
+          transition={{ duration: 0.8, delay: 0.9 }} // Reduced delay
         >
-          <Row>
-            <Col md={4}>
+          <Row className="mobile-stats-row">
+            <Col md={4} sm={6} className="mobile-stat-col">
               <div className="stat-card">
                 <div className="stat-icon text-success">
                   <i className="bi bi-graph-up"></i>
                 </div>
-                <h2 className="text-white">
-                  {animationsActive && <CountUp end={98} suffix="%" duration={2.5} delay={0.5} />}
+                <h2 className="text-white mobile-stat-number">
+                  {animationsActive && <CountUp end={98} suffix="%" duration={2.5} delay={0.2} />}
                 </h2>
-                <p className="text-light">API Uptime</p>
+                <p className="text-light mobile-stat-label">API Uptime</p>
               </div>
             </Col>
-            <Col md={4}>
+            <Col md={4} sm={6} className="mobile-stat-col">
               <div className="stat-card">
                 <div className="stat-icon text-success">
                   <i className="bi bi-people"></i>
                 </div>
-                <h2 className="text-white">
-                  {animationsActive && <CountUp end={50} duration={3} delay={0.7} />}+
+                <h2 className="text-white mobile-stat-number">
+                  {animationsActive && <CountUp end={50} duration={3} delay={0.3} />}+
                 </h2>
-                <p className="text-white">Beta Testing Now</p>
+                <p className="text-white mobile-stat-label">Beta Testing Now</p>
               </div>
             </Col>
-            <Col md={4}>
+            <Col md={4} sm={12} className="mobile-stat-col">
               <div className="stat-card">
                 <div className="stat-icon text-success">
                   <i className="bi bi-clock-history"></i>
                 </div>
-                <h2 className="text-white">
-                  {animationsActive && <CountUp end={1500} suffix="ms" duration={2} delay={0.9} />}
+                <h2 className="text-white mobile-stat-number">
+                  {animationsActive && <CountUp end={1500} suffix="ms" duration={2} delay={0.4} />}
                 </h2>
-                <p className="text-white">Average Response Time</p>
+                <p className="text-white mobile-stat-label">Average Response Time</p>
               </div>
             </Col>
           </Row>
@@ -460,24 +609,18 @@ const HomePage = () => {
       </Container>
 
       {/* Features section */}
-      <Container className="py-5">
+      <Container className="py-4">
         <motion.div
           ref={featuresRef}
-          variants={staggerContainer}
           initial="hidden"
           animate={featuresInView && animationsActive ? "visible" : "hidden"}
+          variants={staggerContainer}
+          className="features-container"
         >
-          <motion.h2
-            className="text-success text-center mb-5"
-            variants={fadeIn}
-          >
-            Key Features
-          </motion.h2>
-
-          <Row className="g-4">
-            <Col md={4}>
+          <Row className="g-4 mobile-features-row">
+            <Col md={4} sm={12} className="mobile-feature-col">
               <motion.div variants={scaleIn}>
-                <Card className="h-100 text-white border-secondary feature-card">
+                <Card className="h-100 text-white border-secondary feature-card mobile-feature-card">
                   <Card.Body>
                     <div className="text-success mb-3 feature-icon">
                       <i className="bi bi-graph-up-arrow" style={{ fontSize: '2rem' }}></i>
@@ -491,9 +634,9 @@ const HomePage = () => {
               </motion.div>
             </Col>
 
-            <Col md={4}>
+            <Col md={4} sm={12} className="mobile-feature-col">
               <motion.div variants={scaleIn}>
-                <Card className="h-100 text-white border-secondary feature-card">
+                <Card className="h-100 text-white border-secondary feature-card mobile-feature-card">
                   <Card.Body>
                     <div className="text-success mb-3 feature-icon">
                       <i className="bi bi-robot" style={{ fontSize: '2rem' }}></i>
@@ -507,9 +650,9 @@ const HomePage = () => {
               </motion.div>
             </Col>
 
-            <Col md={4}>
+            <Col md={4} sm={12} className="mobile-feature-col">
               <motion.div variants={scaleIn}>
-                <Card className="h-100 text-white border-secondary feature-card">
+                <Card className="h-100 text-white border-secondary feature-card mobile-feature-card">
                   <Card.Body>
                     <div className="text-success mb-3 feature-icon">
                       <i className="bi bi-code-square" style={{ fontSize: '2rem' }}></i>
@@ -530,7 +673,7 @@ const HomePage = () => {
       <motion.div
         ref={howItWorksRef}
         initial="hidden"
-        animate={howItWorksInView && animationsActive ? "visible" : "hidden"}
+        animate={howItWorksInView && animationsActive && contentVisible ? "visible" : "hidden"}
         variants={staggerContainer}
         className="py-5 rounded my-5"
       >
@@ -543,10 +686,10 @@ const HomePage = () => {
           </motion.h2>
 
           <motion.div variants={fadeIn}>
-            <Row className="align-items-center mb-5">
-              <Col md={6}>
+            <Row className="align-items-center mb-5 mobile-step-row">
+              <Col md={6} sm={12} className="mobile-step-text">
                 <motion.div
-                  className="bg-success p-4 rounded mb-3 mb-md-0 w-100"
+                  className="bg-success p-4 rounded mb-3 mb-md-0 w-100 mobile-step-content"
                   whileHover={{ scale: 1.03 }}
                   transition={{ duration: 0.3 }}
                 >
@@ -554,9 +697,9 @@ const HomePage = () => {
                   <p className="text-black">Create an account and get your API key to integrate our services.</p>
                 </motion.div>
               </Col>
-              <Col md={6}>
+              <Col md={6} sm={12} className="mobile-step-code">
                 <motion.pre
-                  className="bg-black p-4 rounded text-white code-block w-100"
+                  className="bg-black p-4 rounded text-white code-block w-100 mobile-code-block"
                   initial={{ x: 50, opacity: 0 }}
                   animate={howItWorksInView && animationsActive ? { x: 0, opacity: 1 } : { x: 50, opacity: 0 }}
                   transition={{ duration: 0.5, delay: 0.2 }}
@@ -568,10 +711,10 @@ const HomePage = () => {
           </motion.div>
 
           <motion.div variants={fadeIn}>
-            <Row className="align-items-center mb-5">
-              <Col md={{ span: 6, order: 'last' }}>
+            <Row className="align-items-center mb-5 mobile-step-row">
+              <Col md={{ span: 6, order: 'last' }} sm={12} className="mobile-step-text">
                 <motion.div
-                  className="bg-success p-4 rounded mb-3 mb-md-0 w-100"
+                  className="bg-success p-4 rounded mb-3 mb-md-0 w-100 mobile-step-content"
                   whileHover={{ scale: 1.03 }}
                   transition={{ duration: 0.3 }}
                 >
@@ -579,9 +722,9 @@ const HomePage = () => {
                   <p className="text-black">Send financial data to our API via secure endpoints.</p>
                 </motion.div>
               </Col>
-              <Col md={6}>
+              <Col md={6} sm={12} className="mobile-step-code">
                 <motion.pre
-                  className="bg-black p-3 rounded text-white code-block"
+                  className="bg-black p-3 rounded text-white code-block w-100 mobile-code-block"
                   initial={{ x: -50, opacity: 0 }}
                   animate={howItWorksInView && animationsActive ? { x: 0, opacity: 1 } : { x: -50, opacity: 0 }}
                   transition={{ duration: 0.5, delay: 0.4 }}
@@ -593,10 +736,10 @@ const HomePage = () => {
           </motion.div>
 
           <motion.div variants={fadeIn}>
-            <Row className="align-items-center">
-              <Col md={6}>
+            <Row className="align-items-center mobile-step-row">
+              <Col md={6} sm={12} className="mobile-step-text">
                 <motion.div
-                  className="bg-success p-4 rounded mb-3 mb-md-0 w-100"
+                  className="bg-success p-4 rounded mb-3 mb-md-0 w-100 mobile-step-content"
                   whileHover={{ scale: 1.03 }}
                   transition={{ duration: 0.3 }}
                 >
@@ -604,9 +747,9 @@ const HomePage = () => {
                   <p className="text-black">Receive AI-powered financial insights to display in your app.</p>
                 </motion.div>
               </Col>
-              <Col md={6}>
+              <Col md={6} sm={12} className="mobile-step-code">
                 <motion.pre
-                  className="bg-black p-3 rounded text-white code-block"
+                  className="bg-black p-3 rounded text-white code-block w-100 mobile-code-block"
                   initial={{ x: 50, opacity: 0 }}
                   animate={howItWorksInView && animationsActive ? { x: 0, opacity: 1 } : { x: 50, opacity: 0 }}
                   transition={{ duration: 0.5, delay: 0.6 }}
@@ -623,13 +766,13 @@ const HomePage = () => {
       <motion.div
         ref={ctaRef}
         initial={{ opacity: 0, y: 50 }}
-        animate={ctaInView && animationsActive ? { opacity: 1, y: 0 } : { opacity: 0, y: 50 }}
+        animate={ctaInView && animationsActive && contentVisible ? { opacity: 1, y: 0 } : { opacity: 0, y: 50 }}
         transition={{ duration: 0.8 }}
-        className="py-5 cta-section"
+        className="py-5 cta-section mobile-cta-section"
       >
         <Container className="text-center">
           <motion.h2
-            className="text-success mb-4"
+            className="text-success mb-4 mobile-cta-title"
             animate={ctaInView && animationsActive ?
               { scale: [1, 1.05, 1], textShadow: "0 0 8px rgba(40, 167, 69, 0.5)" } : {}
             }
@@ -638,18 +781,18 @@ const HomePage = () => {
             Ready to enhance your banking app?
           </motion.h2>
           <motion.p
-            className="text-light mb-4"
+            className="text-light mb-4 mobile-cta-text"
             animate={ctaInView && animationsActive ? { opacity: [0.7, 1, 0.7] } : {}}
             transition={{ duration: 2, repeat: Infinity }}
           >
             Join fintech companies already using our API to provide personalized financial guidance
           </motion.p>
           <motion.div
-            className="d-inline-block p-2 rounded"
+            className="d-inline-block p-2 rounded mobile-cta-button-wrapper"
             whileHover={{ scale: 1.05, boxShadow: "0 0 15px rgba(40, 167, 69, 0.5)" }}
             whileTap={{ scale: 0.95 }}
           >
-            <Link to={isAuthenticated ? "/dashboard" : "/register"} className="btn btn-success btn-lg">
+            <Link to={isAuthenticated ? "/dashboard" : "/register"} className="btn btn-success btn-lg mobile-cta-button">
               {isAuthenticated ? "Go to Dashboard" : "Get Started Today"}
             </Link>
           </motion.div>
