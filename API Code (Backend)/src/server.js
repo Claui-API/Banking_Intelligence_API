@@ -120,6 +120,7 @@ const adminRetentionRoutes = require('./routes/admin.retention.routes');
 
 // Import user routes - NEW
 const userRoutes = require('./routes/user.routes');
+const bankApiRoutes = require('./routes/bank-api.routes');
 
 // Safely import and mount all routes
 const routes = [
@@ -151,7 +152,7 @@ safeMount('/api/v1/notifications/preferences', notificationPreferencesRoutes, 'N
 
 // Apply 2FA rate limiter to specific endpoint
 app.use('/api/auth/verify-2fa', twoFactorLimiter);
-
+app.use('/api/bank', bankApiRoutes);
 // Test insights metrics on startup
 const initializeMetrics = async () => {
   try {

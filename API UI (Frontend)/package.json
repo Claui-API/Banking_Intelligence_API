@@ -29,7 +29,7 @@
     "react-scripts": "^5.0.1",
     "react-syntax-highlighter": "^15.6.1",
     "react-tsparticles": "^2.12.2",
-    "recharts": "^2.15.3",
+    "recharts": "^2.15.4",
     "tsparticles": "^3.8.1",
     "web-vitals": "^4.2.4",
     "winston": "^3.17.0",

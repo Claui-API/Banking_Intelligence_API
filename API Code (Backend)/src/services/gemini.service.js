@@ -360,6 +360,15 @@ class GeminiService {
 	_isExplanationRequest(query, userId) {
 		const lowerQuery = query.toLowerCase();
 
+		// Check for visual explanation requests
+		if (lowerQuery.includes('visual') ||
+			lowerQuery.includes('chart') ||
+			lowerQuery.includes('graph') ||
+			lowerQuery.includes('show me') ||
+			lowerQuery.includes('visualize')) {
+			return true;
+		}
+
 		// Explicit explanation keywords
 		const explanationKeywords = [
 			'explain', 'what is', 'how does', 'tell me about', 'describe',
@@ -673,43 +682,68 @@ Provide educational content that helps build their financial literacy in a clear
       Remember: This should be a light-hearted moment before getting back to financial assistance.`;
 	}
 
+	/**
+ * Create a formatted financial context string from user data
+ * @param {Object} userData - User's financial data
+ * @returns {string} - Formatted financial context
+ * @private
+ */
 	_createFinancialContext(userData) {
-		// Your existing implementation
+		// Get accounts and transactions with default empty arrays if not present
 		const { accounts = [], transactions = [] } = userData;
 
-		// Calculate total balance
-		const totalBalance = accounts.reduce((sum, account) => sum + (account.balance || 0), 0);
+		// Calculate total balance with proper null/undefined handling
+		const totalBalance = accounts.reduce((sum, account) => {
+			const balance = parseFloat(account.balance || 0);
+			return sum + balance;
+		}, 0);
 
-		// Calculate net worth (assets minus liabilities)
+		// Calculate net worth (assets minus liabilities) with proper null/undefined handling
 		const netWorth = accounts.reduce((sum, account) => {
+			const balance = parseFloat(account.balance || 0);
 			return account.type === 'Credit Card'
-				? sum - Math.abs(account.balance || 0)
-				: sum + (account.balance || 0);
+				? sum - Math.abs(balance)
+				: sum + balance;
 		}, 0);
 
 		// Get recent transactions (last 30 days)
 		const now = new Date();
 		const thirtyDaysAgo = new Date(now.setDate(now.getDate() - 30));
 
+		// Filter and sort recent transactions with proper date handling
 		const recentTransactions = transactions
-			.filter(tx => new Date(tx.date) >= thirtyDaysAgo)
-			.sort((a, b) => new Date(b.date) - new Date(a.date));
+			.filter(tx => {
+				try {
+					return new Date(tx.date) >= thirtyDaysAgo;
+				} catch (e) {
+					// If date parsing fails, include the transaction by default
+					return true;
+				}
+			})
+			.sort((a, b) => {
+				try {
+					return new Date(b.date) - new Date(a.date);
+				} catch (e) {
+					// If sorting fails, maintain original order
+					return 0;
+				}
+			});
 
-		// Calculate monthly income and expenses
+		// Calculate monthly income and expenses with proper null/undefined handling
 		const monthlyIncome = recentTransactions
-			.filter(tx => tx.amount > 0)
-			.reduce((sum, tx) => sum + tx.amount, 0);
+			.filter(tx => tx && typeof tx.amount === 'number' && tx.amount > 0)
+			.reduce((sum, tx) => sum + (tx.amount || 0), 0);
 
 		const monthlyExpenses = recentTransactions
-			.filter(tx => tx.amount < 0)
-			.reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
+			.filter(tx => tx && typeof tx.amount === 'number' && tx.amount < 0)
+			.reduce((sum, tx) => sum + Math.abs(tx.amount || 0), 0);
 
 		// Get top expense categories
 		const expenseCategories = {};
 		recentTransactions
-			.filter(tx => tx.amount < 0 && tx.category)
+			.filter(tx => tx && typeof tx.amount === 'number' && tx.amount < 0 && tx.category)
 			.forEach(tx => {
-				expenseCategories[tx.category] = (expenseCategories[tx.category] || 0) + Math.abs(tx.amount);
+				expenseCategories[tx.category] = (expenseCategories[tx.category] || 0) + Math.abs(tx.amount || 0);
 			});
 
 		const topCategories = Object.entries(expenseCategories)
@@ -717,17 +751,19 @@ Provide educational content that helps build their financial literacy in a clear
 			.slice(0, 3)
 			.map(([category]) => category);
 
-		// Format accounts
-		const accountsSummary = accounts.map(account =>
-			`${account.name || 'Account'}: $${(account.balance || 0).toFixed(2)} (${account.type || 'Unknown type'})`
-		).join('\n');
+		// Format accounts with proper null/undefined handling
+		const accountsSummary = accounts.map(account => {
+			const balance = parseFloat(account.balance || 0);
+			return `${account.name || 'Account'}: $${balance.toFixed(2)} (${account.type || 'Unknown type'})`;
+		}).join('\n');
 
-		// Format recent transactions (limit to 10)
+		// Format recent transactions (limit to 10) with proper null/undefined handling
 		const transactionsSummary = recentTransactions
 			.slice(0, 10)
-			.map(tx =>
-				`${tx.date}: $${Math.abs(tx.amount).toFixed(2)} ${tx.amount < 0 ? 'expense' : 'income'} - ${tx.category || 'Uncategorized'} - ${tx.description || ''}`
-			).join('\n');
+			.map(tx => {
+				const amount = parseFloat(tx.amount || 0);
+				return `${tx.date || 'Unknown date'}: $${Math.abs(amount).toFixed(2)} ${amount < 0 ? 'expense' : 'income'} - ${tx.category || 'Uncategorized'} - ${tx.description || ''}`;
+			}).join('\n');
 
 		return `
 FINANCIAL SUMMARY:
