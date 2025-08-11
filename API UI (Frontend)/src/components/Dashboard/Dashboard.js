@@ -1,5 +1,8 @@
 // src/components/Dashboard/Dashboard.js - Fixed version with proper data isolation
 import VisualFinanceIntegration from '../Chat/VisualFinanceIntegration';
+import DirectDataIntegration from './DirectDataIntegration';
+import DataIntegrationModeSelector from './DataIntegrationModeSelector';
+import InlineQueryHelper from './InlineQueryHelper';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Container, Row, Col, Card, Button, Nav, Form, InputGroup, Badge, Dropdown, Spinner, Alert } from 'react-bootstrap';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -97,7 +100,110 @@ const Dashboard = () => {
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
+  // State for visualizations
   const [visualizationsVisible, setVisualizationsVisible] = useState(true);
+
+  // State for integration mode
+  const [integrationMode, setIntegrationMode] = useState(() => {
+    // Try to get from localStorage first, default to 'plaid'
+    return localStorage.getItem('integrationMode') || 'plaid';
+  }); // 'plaid' or 'direct'
+  const [directFinancialData, setDirectFinancialData] = useState(null);
+
+  // Handler to toggle between integration modes
+  const handleIntegrationModeChange = (mode) => {
+    // Only make changes if the mode is actually changing
+    if (mode === integrationMode) return;
+
+    console.log(`Switching integration mode from ${integrationMode} to ${mode}`);
+
+    // Persist the mode to localStorage for API consistency
+    localStorage.setItem('integrationMode', mode);
+
+    // Update the connection status in localStorage too
+    localStorage.setItem('plaidConnected', connected ? 'true' : 'false');
+
+    // Set the new mode in state
+    setIntegrationMode(mode);
+
+    // Add a system message to the chat showing mode change
+    setChatMessages(prev => [...prev, {
+      role: 'assistant',
+      content: mode === 'plaid'
+        ? `I've switched to Plaid Integration mode. ${connected ? `I'm now using your connected bank data from ${institution}.` : "Connect a bank to use real financial data."}`
+        : "I've switched to Direct Data Integration mode. I'm now using the simulated financial data that you can customize.",
+      timestamp: new Date().toISOString(),
+      isSystemMessage: true
+    }]);
+
+    // IMPORTANT: Break the data connection between modes
+    // This is the key fix - we must completely separate data between modes
+    if (mode === 'plaid') {
+      // In Plaid mode, sidebar visibility depends on connection status
+      setShowDataSidebar(connected);
+
+      // If connected, fetch fresh Plaid data
+      if (connected) {
+        fetchFinancialData();
+      } else {
+        // Important: Set financialData to null, not directFinancialData
+        setFinancialData(null);
+      }
+    } else if (mode === 'direct') {
+      // In Direct mode, always show sidebar
+      setShowDataSidebar(true);
+
+      // CRITICAL FIX: Create a deep copy of directFinancialData to break any references to Plaid data
+      // This prevents data leakage between modes
+      const directDataCopy = directFinancialData ? JSON.parse(JSON.stringify(directFinancialData)) : null;
+      setFinancialData(directDataCopy);
+    }
+  };
+
+  // Add handler for direct data changes
+  const handleDirectDataChange = (newData) => {
+    // Always create a deep copy to prevent reference issues
+    const newDataCopy = newData ? JSON.parse(JSON.stringify(newData)) : null;
+
+    // Set the direct data state
+    setDirectFinancialData(newDataCopy);
+
+    // Update if this data is being used in the chat (we're in direct mode)
+    if (integrationMode === 'direct') {
+      // Create another deep copy to ensure complete isolation
+      const financialDataCopy = newDataCopy ? JSON.parse(JSON.stringify(newDataCopy)) : null;
+      setFinancialData(financialDataCopy);
+
+      // IMPORTANT: Add a system message to notify the user that data has changed
+      setChatMessages(prev => [
+        ...prev,
+        {
+          role: 'assistant',
+          content: `I've updated my knowledge with your changed financial data. You now have ${financialDataCopy?.accounts?.length || 0} accounts with a total balance of $${calculateTotalBalance(financialDataCopy).toFixed(2)}.`,
+          timestamp: new Date().toISOString(),
+          isSystemMessage: true
+        }
+      ]);
+
+      // Log the data update for debugging
+      console.log("Financial data updated:", financialDataCopy);
+    }
+  };
+
+  const calculateTotalBalance = (data) => {
+    if (!data || !data.accounts || !Array.isArray(data.accounts)) {
+      return 0;
+    }
+
+    return data.accounts.reduce((total, account) => {
+      // For credit accounts, use available balance (limit - current)
+      if (account.type === 'credit') {
+        return total + (account.balances.available || 0);
+      }
+      // For regular accounts, use current balance
+      return total + (account.balances.current || 0);
+    }, 0);
+  };
 
   // Handler for clearing chat messages
   const handleClearChat = () => {
@@ -145,6 +251,11 @@ const Dashboard = () => {
     "How can I improve my savings?",
     "Am I spending more on groceries than average?"
   ];
+
+  useEffect(() => {
+    // Update the connection status in localStorage when it changes
+    localStorage.setItem('plaidConnected', connected ? 'true' : 'false');
+  }, [connected]);
 
   // Reset all state when user changes - IMPORTANT for data isolation
   useEffect(() => {
@@ -257,6 +368,39 @@ const Dashboard = () => {
   }, [user?.id, fetchFinancialData]);
 
   useEffect(() => {
+    // When integration mode changes or when directFinancialData updates
+    if (integrationMode === 'plaid') {
+      // In Plaid mode: show sidebar only if connected
+      setShowDataSidebar(connected);
+
+      // If connected, use Plaid data
+      if (connected) {
+        // Fetch fresh data from Plaid to ensure we have the latest
+        fetchFinancialData();
+      } else {
+        // Clear financial data if not connected
+        setFinancialData(null);
+      }
+    } else if (integrationMode === 'direct') {
+      // In Direct mode: always show the sidebar
+      setShowDataSidebar(true);
+
+      // CRITICAL FIX: Create a deep copy of directFinancialData to break any references
+      const directDataCopy = directFinancialData ? JSON.parse(JSON.stringify(directFinancialData)) : null;
+
+      // IMPORTANT: Always set financialData to a copy of directFinancialData in direct mode
+      // This breaks any reference to Plaid data
+      setFinancialData(directDataCopy);
+
+      // Debug logging
+      console.log("Direct mode active, financial data set to:", directDataCopy);
+    }
+
+    // Update localStorage with current mode
+    localStorage.setItem('integrationMode', integrationMode);
+  }, [integrationMode, connected, directFinancialData, fetchFinancialData]);
+
+  useEffect(() => {
     // Scroll to bottom of chat when messages change
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatMessages]);
@@ -279,6 +423,28 @@ const Dashboard = () => {
       latestRequestIdRef.current = null;
     };
   }, []);
+
+  // Add this useEffect to initialize direct data when needed
+  useEffect(() => {
+    // Initialize direct data if we're in direct mode and there's no data yet
+    if (integrationMode === 'direct' && !directFinancialData) {
+      // Create a default dataset if needed
+      const defaultData = {
+        // Your default data structure here
+        accounts: [],
+        transactions: [],
+        institution: 'Demo Bank',
+        lastUpdated: new Date().toISOString(),
+        userId: user?.id
+      };
+
+      // Set the direct data
+      setDirectFinancialData(defaultData);
+
+      // Show the sidebar
+      setShowDataSidebar(true);
+    }
+  }, [integrationMode, directFinancialData, user?.id]);
 
   // Generate a unique request ID
   const generateRequestId = () => {
@@ -355,6 +521,67 @@ const Dashboard = () => {
     }
   };
 
+  // Add this transformation function to your Dashboard.js file
+
+  /**
+   * Transform direct data to match the structure expected by the AI
+   * @param {Object} directData - The original direct data
+   * @returns {Object} - Transformed data matching AI's expected structure
+   */
+  const transformDirectDataForAI = (directData) => {
+    if (!directData) return null;
+
+    // Create a deep copy to avoid modifying the original
+    const originalData = JSON.parse(JSON.stringify(directData));
+    const transformedData = {
+      // Keep metadata
+      institution: originalData.institution,
+      lastUpdated: originalData.lastUpdated,
+      userId: originalData.userId,
+
+      // Transform accounts
+      accounts: originalData.accounts.map(account => ({
+        accountId: account.id,
+        name: account.name,
+        type: account.type,
+        subType: account.subtype,
+        // CRITICAL: Convert nested balances to flat properties
+        balance: account.balances.current,
+        availableBalance: account.balances.available,
+        creditLimit: account.balances.limit,
+        currency: account.balances.isoCurrencyCode,
+        mask: account.mask,
+        // Add additional metadata to help the AI
+        metadata: {
+          originalType: account.type,
+          originalSubtype: account.subtype
+        }
+      })),
+
+      // Transform transactions
+      transactions: originalData.transactions.map(transaction => ({
+        transactionId: transaction.id,
+        accountId: transaction.account_id,
+        // CRITICAL: Convert amount if needed - ensure expenses are negative
+        amount: transaction.amount < 0 ? transaction.amount : -transaction.amount,
+        // Flatten category array to string if needed
+        category: Array.isArray(transaction.category) ? transaction.category[0] : transaction.category,
+        date: transaction.date,
+        description: transaction.name,
+        // Derive transaction type based on amount
+        type: transaction.amount < 0 ? 'expense' : 'income',
+        pending: transaction.pending,
+        paymentChannel: transaction.payment_channel,
+        // Add any additional metadata that might help the AI
+        metadata: {
+          fullCategory: Array.isArray(transaction.category) ? transaction.category : [transaction.category]
+        }
+      }))
+    };
+
+    return transformedData;
+  };
+
   // Stream insights with EventSource
   const streamInsights = async (inputQuery) => {
     if (!inputQuery.trim()) return;
@@ -386,20 +613,64 @@ const Dashboard = () => {
       const requestId = generateRequestId();
       latestRequestIdRef.current = requestId;
 
-      // First, submit the query via regular API call but with streaming flag
-      // Add a parameter indicating if we're using real connected data
+      // CRITICAL FIX: Ensure the correct data is sent based on the active mode
+      let dataToSend = null;
+      const isUsingPlaidData = integrationMode === 'plaid' && connected;
+
+      if (isUsingPlaidData) {
+        // In Plaid mode with connection, use Plaid data (which already has the correct structure)
+        dataToSend = financialData ? JSON.parse(JSON.stringify(financialData)) : null;
+        console.log("Using Plaid connected data for API request");
+      } else if (integrationMode === 'direct') {
+        // In Direct mode, transform the data to match the structure expected by the AI
+        const directDataCopy = financialData ? JSON.parse(JSON.stringify(financialData)) : null;
+        dataToSend = directDataCopy ? transformDirectDataForAI(directDataCopy) : null;
+
+        console.log("Using transformed Direct data for API request", {
+          accounts: dataToSend?.accounts?.map(a => ({
+            name: a.name,
+            balance: a.balance,
+            type: a.type
+          })),
+          transactions: dataToSend?.transactions?.length
+        });
+      } else {
+        // Not connected in Plaid mode or unknown mode - use no data
+        dataToSend = null;
+        console.log("No financial data available for API request");
+      }
+
+      // Update localStorage with current mode for API consistency
+      localStorage.setItem('integrationMode', integrationMode);
+      localStorage.setItem('plaidConnected', connected ? 'true' : 'false');
+
+      // Create payload with explicit mode flags and only the appropriate data
+      const payload = {
+        query: inputQuery,
+        requestId,
+        // Set these flags explicitly based on the active mode
+        useConnectedData: isUsingPlaidData,
+        userId: user?.id,
+        integrationMode,
+        useDirectData: integrationMode === 'direct',
+        // Only send the appropriate data source based on the active mode
+        financialData: dataToSend,
+        // Add an explicit mode marker that the backend can check
+        dataSourceMode: integrationMode,
+        // Add timestamp to help prevent cache issues
+        timestamp: new Date().toISOString()
+      };
+
+      // Log the payload mode for debugging
+      console.log(`API Payload - Mode: ${integrationMode}, Using real data: ${isUsingPlaidData}, Account count: ${dataToSend?.accounts?.length || 0}`);
+
       const response = await fetch('/api/insights/stream-prepare', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         },
-        body: JSON.stringify({
-          query: inputQuery,
-          requestId,
-          useConnectedData: connected, // Add this flag
-          userId: user?.id // Explicitly include user ID for validation
-        })
+        body: JSON.stringify(payload)
       });
 
       if (!response.ok) {
@@ -432,12 +703,14 @@ const Dashboard = () => {
 
           // Special handling for the real-data marker
           if (data.chunk === '<using-real-data>') {
-            // Set a flag to render the message with the "real data" badge
-            setChatMessages(prev => prev.map(msg =>
-              msg.id === tempMessageId
-                ? { ...msg, usingRealData: true }
-                : msg
-            ));
+            // IMPORTANT: Only set the real data flag if we're actually in Plaid mode and connected
+            if (integrationMode === 'plaid' && connected) {
+              setChatMessages(prev => prev.map(msg =>
+                msg.id === tempMessageId
+                  ? { ...msg, usingRealData: true }
+                  : msg
+              ));
+            }
             return; // Skip this chunk
           }
 
@@ -458,7 +731,13 @@ const Dashboard = () => {
             // Mark streaming as complete
             setChatMessages(prev => prev.map(msg =>
               msg.id === tempMessageId
-                ? { ...msg, isStreaming: false }
+                ? {
+                  ...msg,
+                  isStreaming: false,
+                  // CRITICAL FIX: Set data source badge based on current mode, not on API response
+                  usingRealData: integrationMode === 'plaid' && connected,
+                  usingSimulatedData: integrationMode === 'direct'
+                }
                 : msg
             ));
           }
@@ -488,8 +767,27 @@ const Dashboard = () => {
   // Fallback function for when streaming fails
   const fallbackToStandardRequest = async (inputQuery, requestId, tempMessageId) => {
     try {
-      // Use standard API call
-      const data = await insightsService.generateInsights(inputQuery, requestId);
+      // CRITICAL FIX: Ensure proper data mode enforcement in fallback too
+      const isUsingPlaidData = integrationMode === 'plaid' && connected;
+
+      // Create data for the current mode
+      let dataToSend = null;
+      if (isUsingPlaidData) {
+        dataToSend = financialData ? JSON.parse(JSON.stringify(financialData)) : null;
+      } else if (integrationMode === 'direct') {
+        dataToSend = directFinancialData ? JSON.parse(JSON.stringify(directFinancialData)) : null;
+      }
+
+      // Custom request options
+      const customOptions = {
+        integrationMode: integrationMode,
+        useConnectedData: isUsingPlaidData,
+        useDirectData: integrationMode === 'direct',
+        financialData: dataToSend
+      };
+
+      // Use the updated generateInsights method with custom options
+      const data = await insightsService.generateInsights(inputQuery, requestId, customOptions);
 
       // Extract text
       const insightText = extractInsightText(data);
@@ -503,7 +801,14 @@ const Dashboard = () => {
           // Update existing message
           return prev.map(msg =>
             msg.id === tempMessageId
-              ? { ...msg, content: insightText, isStreaming: false, usingRealData: connected }
+              ? {
+                ...msg,
+                content: insightText,
+                isStreaming: false,
+                // CRITICAL FIX: Set data source badge based on current mode, not on API response
+                usingRealData: integrationMode === 'plaid' && connected,
+                usingSimulatedData: integrationMode === 'direct'
+              }
               : msg
           );
         } else {
@@ -513,7 +818,9 @@ const Dashboard = () => {
             role: 'assistant',
             content: insightText,
             isStreaming: false,
-            usingRealData: connected,
+            // CRITICAL FIX: Set data source badge based on current mode, not on API response
+            usingRealData: integrationMode === 'plaid' && connected,
+            usingSimulatedData: integrationMode === 'direct',
             timestamp: new Date().toISOString()
           }];
         }
@@ -634,37 +941,47 @@ const Dashboard = () => {
         <div className="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center">
           <h2 className="text-white mb-3 mb-lg-0">Banking Intelligence Playground</h2>
           <div className="d-flex flex-column flex-md-row align-items-start align-items-md-center">
-            {/* Add Plaid connection button/status */}
-            <div className="d-flex align-items-center me-md-3 mb-2 mb-md-0 w-100 w-md-auto">
-              <Badge bg={connected ? "success" : "warning"} className="d-flex align-items-center">
-                <span className="status-indicator me-1"></span>
-                {connected ? `Connected to ${institution}` : "No Accounts Connected"}
-              </Badge>
-              {!connected && (
-                <PlaidLinkButton
-                  onSuccess={(linkData) => {
-                    setPlaidStatus('success');
-                    handlePlaidSuccess(linkData);
-                  }}
-                  onExit={(err, metadata) => {
-                    if (err) {
-                      setPlaidStatus('error');
-                      setPlaidError(err.message || 'Error connecting to bank');
-                    } else {
-                      setPlaidStatus('ready');
-                    }
-                    handlePlaidExit(err, metadata);
-                  }}
-                  buttonText="Connect Bank"
-                  className="ms-2 btn-sm"
-                />
-              )}
-            </div>
+            {/* Show Plaid connection button/status only when in Plaid mode */}
+            {integrationMode === 'plaid' && (
+              <div className="d-flex align-items-center me-md-3 mb-2 mb-md-0 w-100 w-md-auto">
+                <Badge bg={connected ? "success" : "warning"} className="d-flex align-items-center">
+                  <span className="status-indicator me-1"></span>
+                  {connected ? `Connected to ${institution}` : "No Accounts Connected"}
+                </Badge>
+                {!connected && (
+                  <PlaidLinkButton
+                    onSuccess={(linkData) => {
+                      setPlaidStatus('success');
+                      handlePlaidSuccess(linkData);
+                    }}
+                    onExit={(err, metadata) => {
+                      if (err) {
+                        setPlaidStatus('error');
+                        setPlaidError(err.message || 'Error connecting to bank');
+                      } else {
+                        setPlaidStatus('ready');
+                      }
+                      handlePlaidExit(err, metadata);
+                    }}
+                    buttonText="Connect Bank"
+                    className="ms-2 btn-sm"
+                  />
+                )}
+              </div>
+            )}
             <PlaidApiStatus />
           </div>
         </div>
       </div>
-
+      {/* Data Integration Mode Selector */}
+      <div className="mx-4 mt-3">
+        <DataIntegrationModeSelector
+          currentMode={integrationMode}
+          onSelectMode={handleIntegrationModeChange}
+          plaidConnected={connected}
+          institution={institution}
+        />
+      </div>
       {/* Display Plaid error if present */}
       {plaidError && (
         <div className="text-danger mt-2 mx-4 small">
@@ -724,7 +1041,7 @@ const Dashboard = () => {
                 >
                   <div className="message-avatar">
                     {message.role === 'assistant' ? (
-                      <img src="/images/chat-icon.png" alt="AI Assistant" className="ai-avatar-image" />
+                      <img src="/images/logo.png" alt="AI Assistant" className="ai-avatar-image" />
                     ) : 'You'}
                   </div>
                   <div className="message-content">
@@ -757,6 +1074,26 @@ const Dashboard = () => {
                         {message.usingRealData && (
                           <Badge bg="info" className="mb-2">Using Connected Bank Data</Badge>
                         )}
+                        {message.usingSimulatedData && (
+                          <Badge bg="warning" className="mb-2">Using Simulated Data</Badge>
+                        )}
+                        {/* If neither badge is set, but we're in direct mode and it's an assistant message, show simulated badge */}
+                        {!message.usingRealData && !message.usingSimulatedData &&
+                          integrationMode === 'direct' &&
+                          !message.isSystemMessage &&
+                          message.role === 'assistant' &&
+                          !message.isStreaming && (
+                            <Badge bg="warning" className="mb-2">Using Simulated Data</Badge>
+                          )}
+                        {/* If neither badge is set, but we're in plaid mode, connected, and it's an assistant message, show connected badge */}
+                        {!message.usingRealData && !message.usingSimulatedData &&
+                          integrationMode === 'plaid' &&
+                          connected &&
+                          !message.isSystemMessage &&
+                          message.role === 'assistant' &&
+                          !message.isStreaming && (
+                            <Badge bg="info" className="mb-2">Using Connected Bank Data</Badge>
+                          )}
                         <pre className="message-text">{message.content}</pre>
                       </>
                     )}
@@ -810,26 +1147,43 @@ const Dashboard = () => {
 
 
             {/* Input Area */}
+            {/* Input Area */}
             <div className="chat-input-container">
-              <Form.Control
-                id="chat-input"
-                as="textarea"
-                rows={1}
-                placeholder="Ask about your financial data..."
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                onKeyPress={handleKeyPress}
-                className="chat-input text-black"
-              />
-              <Button
-                variant="success"
-                className="send-button"
-                disabled={!query.trim() || loading}
-                onClick={handleSendMessage}
-              >
-                <i className="bi bi-send"></i>
-              </Button>
+              {/* Use Form.Group to better structure the input and button */}
+              <Form className="w-100 d-flex align-items-stretch">
+                <Form.Group className="flex-grow-1 mb-0 me-2 position-relative">
+                  {/* Either use the InlineQueryHelper or fallback to a standard Form.Control */}
+                  {InlineQueryHelper ? (
+                    <InlineQueryHelper
+                      query={query}
+                      setQuery={setQuery}
+                      handleSendMessage={handleSendMessage}
+                    />
+                  ) : (
+                    <Form.Control
+                      id="chat-input"
+                      as="textarea"
+                      rows={1}
+                      placeholder="Ask about your financial data..."
+                      value={query}
+                      onChange={(e) => setQuery(e.target.value)}
+                      onKeyPress={handleKeyPress}
+                      className="chat-input text-black"
+                    />
+                  )}
+                </Form.Group>
+
+                <Button
+                  variant="success"
+                  className="send-button"
+                  disabled={!query.trim() || loading}
+                  onClick={handleSendMessage}
+                >
+                  <i className="bi bi-send"></i>
+                </Button>
+              </Form>
             </div>
+
             <div className="chat-footer">
               <p className="text-white small mb-0">
                 CLAU may produce inaccurate information about people, places, or financial advice.
@@ -853,13 +1207,22 @@ const Dashboard = () => {
                 </Button>
               </div>
 
-              <PlaidDataSidebar
-                userData={financialData}
-                isVisible={showDataSidebar}
-                isLoading={loadingFinancialData}
-                onRefresh={fetchFinancialData}
-                userId={user?.id} // Pass the user ID for validation
-              />
+              {integrationMode === 'plaid' ? (
+                <PlaidDataSidebar
+                  userData={financialData}
+                  isVisible={showDataSidebar}
+                  isLoading={loadingFinancialData}
+                  onRefresh={fetchFinancialData}
+                  userId={user?.id} // Pass the user ID for validation
+                />
+              ) : (
+                <DirectDataIntegration
+                  isVisible={showDataSidebar}
+                  onDataChange={handleDirectDataChange}
+                  initialData={directFinancialData}
+                  userId={user?.id}
+                />
+              )}
             </div>
           )}
         </div>
@@ -1042,7 +1405,7 @@ const Dashboard = () => {
           <h4 className="text-success mb-0">
             <a href="/" className="logo-link">
               <img
-                src="/images/chat-icon.png"
+                src="/images/logo.png"
                 alt="AI Assistant"
                 className="sidebar-image-clau"
               />

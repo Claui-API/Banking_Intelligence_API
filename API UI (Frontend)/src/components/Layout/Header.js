@@ -26,7 +26,7 @@ const Header = () => {
       <Container fluid>
         <Navbar.Brand as={Link} to="/" className='text-white d-flex align-items-center' onClick={closeMenu}>
           <Image
-            src="/images/1-back.png"
+            src="/images/logo.png"
             alt="CLAU Logo"
             className="navbar-logo me-2"
             style={{ width: '32px', height: '32px' }}
