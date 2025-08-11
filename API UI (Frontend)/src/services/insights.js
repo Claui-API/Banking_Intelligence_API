@@ -1,4 +1,4 @@
-// src/services/insights.js with improved API data handling and user validation
+// src/services/insights.js with added mode tracking and data source management
 import api from './api';
 import logger from '../utils/logger';
 
@@ -165,27 +165,56 @@ export const insightsService = {
   },
 
   // Generate personalized insights with request ID tracking, user validation, and improved error handling
-  generateInsights: async (query, requestId) => {
+  // ENHANCED: Added customOptions parameter and mode tracking
+  generateInsights: async (query, requestId, customOptions = {}) => {
     try {
+      // Get integration mode from localStorage or default to 'plaid'
+      const currentMode = localStorage.getItem('integrationMode') || 'plaid';
+      const isConnected = localStorage.getItem('plaidConnected') === 'true';
+
+      // Log request with mode information
       logger.info('Generating insights', {
         query,
-        requestId
+        requestId,
+        mode: customOptions.integrationMode || currentMode,
+        isUsingConnectedData: customOptions.useConnectedData !== undefined
+          ? customOptions.useConnectedData
+          : (currentMode === 'plaid' && isConnected),
+        isUsingDirectData: customOptions.useDirectData !== undefined
+          ? customOptions.useDirectData
+          : currentMode === 'direct'
       });
 
       // Get user ID from local storage for validation
       const userId = localStorage.getItem('userId');
 
-      // Include the requestId and userId in the request body
-      const response = await api.post('/insights/generate', {
+      // Prepare request payload with explicit mode flags
+      const payload = {
         query,
         requestId, // Pass the requestId to the backend
-        userId // Pass the userId for validation
-      });
+        userId, // Pass the userId for validation
+        // Add mode flags with defaults if not provided in customOptions
+        integrationMode: customOptions.integrationMode || currentMode,
+        useConnectedData: customOptions.useConnectedData !== undefined
+          ? customOptions.useConnectedData
+          : (currentMode === 'plaid' && isConnected),
+        useDirectData: customOptions.useDirectData !== undefined
+          ? customOptions.useDirectData
+          : currentMode === 'direct',
+        // Add an explicit data source marker that the backend can check
+        dataSourceMode: customOptions.integrationMode || currentMode,
+        // Include any financial data passed in customOptions
+        financialData: customOptions.financialData
+      };
+
+      // Include the requestId, userId, and mode flags in the request body
+      const response = await api.post('/insights/generate', payload);
 
       logger.info('Insights generated', {
         status: response.status,
         success: response.data?.success,
-        requestId
+        requestId,
+        mode: customOptions.integrationMode || currentMode
       });
 
       // Less strict validation - don't throw errors, just log warnings
@@ -214,7 +243,11 @@ export const insightsService = {
         ...resultData,
         requestId, // Ensure the requestId is in the response
         validated: true, // Flag to indicate data has been validated
-        timestamp: resultData.timestamp || new Date().toISOString()
+        timestamp: resultData.timestamp || new Date().toISOString(),
+        // Add mode information to the response for frontend validation
+        integrationMode: customOptions.integrationMode || currentMode,
+        usingConnectedData: payload.useConnectedData,
+        usingDirectData: payload.useDirectData
       };
     } catch (error) {
       logger.logError('Insights Generation', error);
@@ -250,6 +283,35 @@ export const insightsService = {
 
       // Throw the enhanced error
       throw enhancedError;
+    }
+  },
+
+  // ADDED: Set the current integration mode in localStorage
+  setIntegrationMode: (mode) => {
+    if (mode !== 'plaid' && mode !== 'direct') {
+      logger.warn(`Invalid integration mode: ${mode}`);
+      return false;
+    }
+
+    try {
+      localStorage.setItem('integrationMode', mode);
+      logger.info(`Integration mode set to ${mode}`);
+      return true;
+    } catch (error) {
+      logger.error('Error setting integration mode:', error);
+      return false;
+    }
+  },
+
+  // ADDED: Set the Plaid connection status in localStorage
+  setPlaidConnected: (isConnected) => {
+    try {
+      localStorage.setItem('plaidConnected', isConnected ? 'true' : 'false');
+      logger.info(`Plaid connection status set to ${isConnected}`);
+      return true;
+    } catch (error) {
+      logger.error('Error setting Plaid connection status:', error);
+      return false;
     }
   },
 

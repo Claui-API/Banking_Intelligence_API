@@ -1,4 +1,4 @@
-// src/routes/insights.routes.js
+// src/routes/insights.routes.js - Enhanced to properly handle integration modes
 const express = require('express');
 const insightsController = require('../controllers/insights.controller');
 const { authMiddleware, authorize } = require('../middleware/auth');
@@ -70,7 +70,18 @@ router.get('/metrics/:metric', authMiddleware, authorize('admin'), (req, res) =>
  */
 router.post('/stream-prepare', authMiddleware, (req, res) => {
   try {
-    const { query, requestId, useConnectedData, provider } = req.body;
+    // ENHANCED: Extract all integration mode flags
+    const {
+      query,
+      requestId,
+      useConnectedData,
+      useDirectData,
+      integrationMode,
+      dataSourceMode,
+      financialData,
+      provider
+    } = req.body;
+
     const userId = req.auth.userId;
 
     if (!query || !requestId) {
@@ -80,20 +91,29 @@ router.post('/stream-prepare', authMiddleware, (req, res) => {
       });
     }
 
+    // ENHANCED: Log full integration mode details
     logger.info('Stream preparation', {
       userId,
       requestId,
       query: query.substring(0, 30), // Log only the beginning for privacy
-      useConnectedData: !!useConnectedData, // Log whether to use connected data
-      provider: provider || 'default' // Log the requested provider
+      integrationMode,
+      dataSourceMode,
+      useConnectedData: !!useConnectedData,
+      useDirectData: !!useDirectData,
+      hasCustomData: !!financialData,
+      provider: provider || 'default'
     });
 
-    // Store query for streaming
+    // Store query for streaming with ALL integration mode info
     streamingQueries.set(requestId, {
       query,
       userId,
+      integrationMode,
+      dataSourceMode,
       useConnectedData: !!useConnectedData,
-      provider: provider, // Store the requested provider
+      useDirectData: !!useDirectData,
+      financialData, // Store the client-provided financial data
+      provider,
       timestamp: Date.now(),
       processed: false
     });
@@ -230,26 +250,58 @@ router.get('/stream', authMiddleware, (req, res) => {
  * @param {Function} callback - Streaming callback function
  */
 async function processStreamingInsight(query, userId, requestId, callback) {
-  // Get the stored query data to check if we should use connected data
+  // Get the stored query data
   const queryData = streamingQueries.get(requestId) || {};
-  const useConnectedData = queryData.useConnectedData || false;
-  const provider = queryData.provider || null; // Get provider from stored query data
 
-  // Get user financial data first
+  // ENHANCED: Extract all integration mode flags
+  const integrationMode = queryData.integrationMode || 'plaid';
+  const useConnectedData = queryData.useConnectedData || false;
+  const useDirectData = queryData.useDirectData || false;
+  const providedFinancialData = queryData.financialData;
+  const provider = queryData.provider || null;
+
+  // CRITICAL FIX: Log detailed mode information
+  logger.info('Processing streaming insight with mode details', {
+    requestId,
+    integrationMode,
+    useConnectedData,
+    useDirectData,
+    hasProvidedData: !!providedFinancialData
+  });
+
+  // Get user financial data based on mode
   let userData;
   try {
-    if (useConnectedData) {
-      // If using connected data, prioritize getting real data
+    // CRITICAL FIX: Honor the integration mode and data source preferences
+    if (useDirectData && providedFinancialData) {
+      // If Direct Data mode is active and client provided financial data, use it
+      userData = providedFinancialData;
+      logger.info('Using PROVIDED financial data for streaming (Direct mode)', {
+        requestId,
+        userId,
+        dataSource: 'client-provided'
+      });
+    } else if (useConnectedData) {
+      // If using connected data (Plaid mode), get real data from database
       userData = await databaseService.getUserFinancialData(userId);
-      logger.info('Retrieved REAL connected financial data for streaming', { userId });
+      logger.info('Using REAL connected financial data for streaming (Plaid mode)', {
+        requestId,
+        userId,
+        dataSource: 'plaid-connected'
+      });
 
       // Send a special marker to indicate we're using real data
       // This will be intercepted by the frontend to add the badge
       callback('<using-real-data>', false);
     } else {
-      // Standard flow - try to get data, fall back to mock if needed
+      // For any other case (no data preferences specified)
+      // Try to get data, fall back to mock if needed
       userData = await databaseService.getUserFinancialData(userId);
-      logger.info('Retrieved financial data for streaming', { userId });
+      logger.info('Using default financial data for streaming', {
+        requestId,
+        userId,
+        dataSource: 'default-fallback'
+      });
     }
   } catch (error) {
     logger.warn('Error getting user data', error);
@@ -257,7 +309,11 @@ async function processStreamingInsight(query, userId, requestId, callback) {
     // In development, use mock data
     if (process.env.NODE_ENV !== 'production') {
       userData = databaseService.getMockUserData(userId);
-      logger.info('Using mock data for streaming', { userId });
+      logger.info('Using mock data for streaming (after data fetch error)', {
+        requestId,
+        userId,
+        dataSource: 'mock-fallback'
+      });
     } else {
       throw error;
     }
@@ -267,13 +323,16 @@ async function processStreamingInsight(query, userId, requestId, callback) {
   const queryType = classifyQuery(query);
 
   try {
-    // Generate insights using the LLM factory with the requested provider
+    // Add mode information to the request for the LLM factory
     const insight = await llmFactory.generateInsights({
       ...userData,
       query,
       queryType,
       requestId,
-      useConnectedData
+      useConnectedData,
+      useDirectData,
+      integrationMode,
+      userId
     }, provider);
 
     // Log the LLM provider used but don't send it in the response
