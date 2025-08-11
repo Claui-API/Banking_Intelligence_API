@@ -760,6 +760,41 @@ class InsightsController {
       });
     }
   }
+
+  /**
+ * Generate insights internally (for direct API calls)
+ * @param {Object} insightData - Data for generating insights
+ * @returns {Object} - Generated insights
+ */
+  async generateInsightsInternal(insightData) {
+    try {
+      const { query, queryType, requestId } = insightData;
+
+      logger.info('Generating insights internally', {
+        requestId,
+        query: query.substring(0, 30) // Log only part of the query for privacy
+      });
+
+      // Determine query type if not provided
+      const determinedType = queryType || classifyQuery(query);
+
+      // Generate insights using the appropriate service
+      // Use the imported llmFactory, not this.llmFactory
+      const insight = await llmFactory.generateInsights({
+        ...insightData,
+        queryType: determinedType
+      });
+
+      return {
+        insight: insight.insight,
+        queryType: determinedType,
+        timestamp: new Date().toISOString()
+      };
+    } catch (error) {
+      logger.error('Error generating insights internally:', error);
+      throw error;
+    }
+  }
 }
 
 module.exports = new InsightsController();

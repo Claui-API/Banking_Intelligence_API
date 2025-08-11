@@ -1,4 +1,5 @@
 // src/components/Dashboard/Dashboard.js - Fixed version with proper data isolation
+import VisualFinanceIntegration from '../Chat/VisualFinanceIntegration';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Container, Row, Col, Card, Button, Nav, Form, InputGroup, Badge, Dropdown, Spinner, Alert } from 'react-bootstrap';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -95,6 +96,39 @@ const Dashboard = () => {
   const [plaidError, setPlaidError] = useState(null);
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  const [visualizationsVisible, setVisualizationsVisible] = useState(true);
+
+  // Handler for clearing chat messages
+  const handleClearChat = () => {
+    // Add confirmation dialog
+    if (window.confirm('Are you sure you want to clear all chat messages?')) {
+      // Reset to initial welcome message
+      setChatMessages([
+        {
+          role: 'assistant',
+          content: `Hello ${user?.email || ''}! I am CLAU, your Banking Intelligence Assistant. How can I help you with your financial data today?`,
+          timestamp: new Date().toISOString()
+        }
+      ]);
+
+      // Scroll to bottom after clearing
+      setTimeout(() => {
+        chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }, 100);
+    }
+  };
+
+  // Handler for clearing visualizations
+  const handleClearVisualizations = () => {
+    setVisualizationsVisible(false);
+
+    // Re-enable visualizations after a short delay
+    // This allows for properly clearing the current visualizations
+    setTimeout(() => {
+      setVisualizationsVisible(true);
+    }, 300);
+  };
 
   // Sample suggested prompts
   const suggestedPrompts = [
@@ -593,219 +627,251 @@ const Dashboard = () => {
       logout();
     }
   };
+  const renderPlaygroundSection = () => (
+    <div className="playground-layout">
+      {/* Playground Header */}
+      <div className="playground-header">
+        <div className="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center">
+          <h2 className="text-white mb-3 mb-lg-0">Banking Intelligence Playground</h2>
+          <div className="d-flex flex-column flex-md-row align-items-start align-items-md-center">
+            {/* Add Plaid connection button/status */}
+            <div className="d-flex align-items-center me-md-3 mb-2 mb-md-0 w-100 w-md-auto">
+              <Badge bg={connected ? "success" : "warning"} className="d-flex align-items-center">
+                <span className="status-indicator me-1"></span>
+                {connected ? `Connected to ${institution}` : "No Accounts Connected"}
+              </Badge>
+              {!connected && (
+                <PlaidLinkButton
+                  onSuccess={(linkData) => {
+                    setPlaidStatus('success');
+                    handlePlaidSuccess(linkData);
+                  }}
+                  onExit={(err, metadata) => {
+                    if (err) {
+                      setPlaidStatus('error');
+                      setPlaidError(err.message || 'Error connecting to bank');
+                    } else {
+                      setPlaidStatus('ready');
+                    }
+                    handlePlaidExit(err, metadata);
+                  }}
+                  buttonText="Connect Bank"
+                  className="ms-2 btn-sm"
+                />
+              )}
+            </div>
+            <PlaidApiStatus />
+          </div>
+        </div>
+      </div>
+
+      {/* Display Plaid error if present */}
+      {plaidError && (
+        <div className="text-danger mt-2 mx-4 small">
+          <i className="bi bi-exclamation-triangle me-1"></i>
+          {plaidError}
+        </div>
+      )}
+
+      {/* Success message when accounts connected */}
+      {connectionSuccess && (
+        <Alert
+          variant="success"
+          className="mx-4 mt-2"
+          onClose={() => setConnectionSuccess(false)}
+          dismissible
+        >
+          <i className="bi bi-check-circle-fill me-2"></i>
+          Successfully connected accounts from <strong>{institution}</strong>! You can now ask questions about your financial data.
+        </Alert>
+      )}
+
+      {/* Chat Interface with Sidebar */}
+      <div className="chat-container">
+        <div className="chat-interface-wrapper">
+          {/* Main chat area */}
+          <div className={`chat-area ${showDataSidebar ? 'with-sidebar' : ''}`}>
+            {/* Add new toolbar for clear buttons */}
+            <div className="chat-actions-toolbar">
+              <Button
+                variant="outline-danger"
+                size="sm"
+                className="clear-chat-btn"
+                onClick={handleClearChat}
+              >
+                <i className="bi bi-trash me-1"></i>
+                Clear Chat
+              </Button>
+              <Button
+                variant="outline-warning"
+                size="sm"
+                className="clear-viz-btn"
+                onClick={handleClearVisualizations}
+                disabled={chatMessages.length <= 1}
+              >
+                <i className="bi bi-graph-down me-1"></i>
+                Clear Visualizations
+              </Button>
+            </div>
+
+            {/* Chat messages rendering */}
+            <div className="chat-messages">
+              {/* Your existing chat messages rendering code */}
+              {chatMessages.map((message, index) => (
+                <div
+                  key={index}
+                  className={`message ${message.role === 'assistant' ? 'assistant-message' : 'user-message'}`}
+                >
+                  <div className="message-avatar">
+                    {message.role === 'assistant' ? (
+                      <img src="/images/chat-icon.png" alt="AI Assistant" className="ai-avatar-image" />
+                    ) : 'You'}
+                  </div>
+                  <div className="message-content">
+                    {message.isStreaming ? (
+                      // Show typing effect for streaming messages
+                      <>
+                        <pre className="message-text">{message.content}</pre>
+                        <div className="typing-cursor"></div>
+                      </>
+                    ) : message.content && message.content.length > 200 && !message.fullyLoaded ? (
+                      // Progressive loading for long messages
+                      <>
+                        <pre className="message-text">{message.content.substring(0, 200)}...</pre>
+                        <div className="more-content">
+                          <Button
+                            variant="link"
+                            size="sm"
+                            onClick={() => {
+                              setChatMessages(prev => prev.map((msg, i) =>
+                                i === index ? { ...msg, fullyLoaded: true } : msg
+                              ));
+                            }}
+                          >
+                            Show more
+                          </Button>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        {message.usingRealData && (
+                          <Badge bg="info" className="mb-2">Using Connected Bank Data</Badge>
+                        )}
+                        <pre className="message-text">{message.content}</pre>
+                      </>
+                    )}
+                    <div className="message-timestamp">
+                      {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </div>
+
+                    {/* Add visualization button after the message if applicable */}
+                    {message.role === 'assistant' && !message.isStreaming && (
+                      <div className="message-actions">
+                        {/* This will conditionally render the visualization button only for messages with financial concepts */}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+
+              {/* Visualization integration component - pass the enabled prop */}
+              <VisualFinanceIntegration
+                chatMessages={chatMessages}
+                financialData={financialData}
+                enabled={visualizationsVisible}
+              />
+
+              <div ref={chatEndRef} />
+            </div>
+
+            {/* Suggested Prompts */}
+            {chatMessages.length < 3 && (
+              <div className="suggested-prompts">
+                <p className="text-white mb-2">
+                  {connected
+                    ? "Try asking about your connected accounts:"
+                    : "Try asking:"}
+                </p>
+                <div className="d-flex flex-wrap gap-2">
+                  {(connected ? connectedPrompts : suggestedPrompts).map((prompt, index) => (
+                    <Button
+                      key={index}
+                      variant="outline-success"
+                      size="sm"
+                      onClick={() => handleSuggestedPrompt(prompt)}
+                      className="suggested-prompt-btn"
+                    >
+                      {prompt}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+
+            {/* Input Area */}
+            <div className="chat-input-container">
+              <Form.Control
+                id="chat-input"
+                as="textarea"
+                rows={1}
+                placeholder="Ask about your financial data..."
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onKeyPress={handleKeyPress}
+                className="chat-input text-black"
+              />
+              <Button
+                variant="success"
+                className="send-button"
+                disabled={!query.trim() || loading}
+                onClick={handleSendMessage}
+              >
+                <i className="bi bi-send"></i>
+              </Button>
+            </div>
+            <div className="chat-footer">
+              <p className="text-white small mb-0">
+                CLAU may produce inaccurate information about people, places, or financial advice.
+              </p>
+            </div>
+          </div>
+
+          {/* Financial Data Sidebar */}
+          {showDataSidebar && (
+            <div className="financial-data-sidebar">
+              {/* Mobile toggle header */}
+              <div className="d-flex d-lg-none justify-content-between align-items-center mb-2 mobile-sidebar-header">
+                <h5 className="text-white mb-0">Financial Data</h5>
+                <Button
+                  variant="outline-light"
+                  size="sm"
+                  className="mobile-sidebar-toggle-btn"
+                  onClick={() => setShowDataSidebar(!showDataSidebar)}
+                >
+                  <i className="bi bi-chevron-up"></i>
+                </Button>
+              </div>
+
+              <PlaidDataSidebar
+                userData={financialData}
+                isVisible={showDataSidebar}
+                isLoading={loadingFinancialData}
+                onRefresh={fetchFinancialData}
+                userId={user?.id} // Pass the user ID for validation
+              />
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 
   // Render sections based on active section
   const renderContent = () => {
     switch (activeSection) {
       case 'playground':
-        return (
-          <div className="playground-layout">
-            {/* Playground Header */}
-            <div className="playground-header">
-              <div className="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center">
-                <h2 className="text-white mb-3 mb-lg-0">Banking Intelligence Playground</h2>
-                <div className="d-flex flex-column flex-md-row align-items-start align-items-md-center">
-                  {/* Add Plaid connection button/status */}
-                  <div className="d-flex align-items-center me-md-3 mb-2 mb-md-0 w-100 w-md-auto">
-                    <Badge bg={connected ? "success" : "warning"} className="d-flex align-items-center">
-                      <span className="status-indicator me-1"></span>
-                      {connected ? `Connected to ${institution}` : "No Accounts Connected"}
-                    </Badge>
-                    {!connected && (
-                      <PlaidLinkButton
-                        onSuccess={(linkData) => {
-                          setPlaidStatus('success');
-                          handlePlaidSuccess(linkData);
-                        }}
-                        onExit={(err, metadata) => {
-                          if (err) {
-                            setPlaidStatus('error');
-                            setPlaidError(err.message || 'Error connecting to bank');
-                          } else {
-                            setPlaidStatus('ready');
-                          }
-                          handlePlaidExit(err, metadata);
-                        }}
-                        buttonText="Connect Bank"
-                        className="ms-2 btn-sm"
-                      />
-                    )}
-                  </div>
-                  <PlaidApiStatus />
-                </div>
-              </div>
-            </div>
-
-            {/* Display Plaid error if present */}
-            {plaidError && (
-              <div className="text-danger mt-2 mx-4 small">
-                <i className="bi bi-exclamation-triangle me-1"></i>
-                {plaidError}
-              </div>
-            )}
-
-            {/* Success message when accounts connected */}
-            {connectionSuccess && (
-              <Alert
-                variant="success"
-                className="mx-4 mt-2"
-                onClose={() => setConnectionSuccess(false)}
-                dismissible
-              >
-                <i className="bi bi-check-circle-fill me-2"></i>
-                Successfully connected accounts from <strong>{institution}</strong>! You can now ask questions about your financial data.
-              </Alert>
-            )}
-
-            {/* Chat Interface with Sidebar */}
-            <div className="chat-container">
-              <div className="chat-interface-wrapper">
-                {/* Main chat area */}
-                <div className={`chat-area ${showDataSidebar ? 'with-sidebar' : ''}`}>
-                  <div className="chat-messages">
-                    {connected && (
-                      <div className="text-center mb-3">
-                        <Badge bg="success" className="py-2 px-3">
-                          <i className="bi bi-bank me-2"></i>
-                          Connected to {institution}
-                        </Badge>
-                      </div>
-                    )}
-
-                    {chatMessages.map((message, index) => (
-                      <div
-                        key={index}
-                        className={`message ${message.role === 'assistant' ? 'assistant-message' : 'user-message'}`}
-                      >
-                        <div className="message-avatar">
-                          {message.role === 'assistant' ? (
-                            <img src="/images/chat-icon.png" alt="AI Assistant" className="ai-avatar-image" />
-                          ) : 'You'}
-                        </div>
-                        <div className="message-content">
-                          {message.isStreaming ? (
-                            // Show typing effect for streaming messages
-                            <>
-                              <pre className="message-text">{message.content}</pre>
-                              <div className="typing-cursor"></div>
-                            </>
-                          ) : message.content && message.content.length > 200 && !message.fullyLoaded ? (
-                            // Progressive loading for long messages
-                            <>
-                              <pre className="message-text">{message.content.substring(0, 200)}...</pre>
-                              <div className="more-content">
-                                <Button
-                                  variant="link"
-                                  size="sm"
-                                  onClick={() => {
-                                    setChatMessages(prev => prev.map((msg, i) =>
-                                      i === index ? { ...msg, fullyLoaded: true } : msg
-                                    ));
-                                  }}
-                                >
-                                  Show more
-                                </Button>
-                              </div>
-                            </>
-                          ) : (
-                            <>
-                              {message.usingRealData && (
-                                <Badge bg="info" className="mb-2">Using Connected Bank Data</Badge>
-                              )}
-                              <pre className="message-text">{message.content}</pre>
-                            </>
-                          )}
-                          <div className="message-timestamp">
-                            {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                    <div ref={chatEndRef} />
-                  </div>
-
-                  {/* Suggested Prompts */}
-                  {chatMessages.length < 3 && (
-                    <div className="suggested-prompts">
-                      <p className="text-white mb-2">
-                        {connected
-                          ? "Try asking about your connected accounts:"
-                          : "Try asking:"}
-                      </p>
-                      <div className="d-flex flex-wrap gap-2">
-                        {(connected ? connectedPrompts : suggestedPrompts).map((prompt, index) => (
-                          <Button
-                            key={index}
-                            variant="outline-success"
-                            size="sm"
-                            onClick={() => handleSuggestedPrompt(prompt)}
-                            className="suggested-prompt-btn"
-                          >
-                            {prompt}
-                          </Button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Input Area */}
-                  <div className="chat-input-container">
-                    <Form.Control
-                      id="chat-input"
-                      as="textarea"
-                      rows={1}
-                      placeholder="Ask about your financial data..."
-                      value={query}
-                      onChange={(e) => setQuery(e.target.value)}
-                      onKeyPress={handleKeyPress}
-                      className="chat-input text-black"
-                    />
-                    <Button
-                      variant="success"
-                      className="send-button"
-                      disabled={!query.trim() || loading}
-                      onClick={handleSendMessage}
-                    >
-                      <i className="bi bi-send"></i>
-                    </Button>
-                  </div>
-
-                  <div className="chat-footer">
-                    <p className="text-white small mb-0">
-                      CLAU may produce inaccurate information about people, places, or financial advice.
-                    </p>
-                  </div>
-                </div>
-
-                {/* Financial Data Sidebar */}
-                {showDataSidebar && (
-                  <div className="financial-data-sidebar">
-                    {/* Mobile toggle header */}
-                    <div className="d-flex d-lg-none justify-content-between align-items-center mb-2 mobile-sidebar-header">
-                      <h5 className="text-white mb-0">Financial Data</h5>
-                      <Button
-                        variant="outline-light"
-                        size="sm"
-                        className="mobile-sidebar-toggle-btn"
-                        onClick={() => setShowDataSidebar(!showDataSidebar)}
-                      >
-                        <i className="bi bi-chevron-up"></i>
-                      </Button>
-                    </div>
-
-                    <PlaidDataSidebar
-                      userData={financialData}
-                      isVisible={showDataSidebar}
-                      isLoading={loadingFinancialData}
-                      onRefresh={fetchFinancialData}
-                      userId={user?.id} // Pass the user ID for validation
-                    />
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        );
+        return renderPlaygroundSection();
 
       case 'api-keys':
         return <APIKeysManagement />;
