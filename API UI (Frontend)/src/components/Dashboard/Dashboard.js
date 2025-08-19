@@ -110,6 +110,8 @@ const Dashboard = () => {
   }); // 'plaid' or 'direct'
   const [directFinancialData, setDirectFinancialData] = useState(null);
 
+  const [selectorExpanded, setSelectorExpanded] = useState(true);
+
   // Handler to toggle between integration modes
   const handleIntegrationModeChange = (mode) => {
     // Only make changes if the mode is actually changing
@@ -975,12 +977,28 @@ const Dashboard = () => {
       </div>
       {/* Data Integration Mode Selector */}
       <div className="mx-4 mt-3">
-        <DataIntegrationModeSelector
-          currentMode={integrationMode}
-          onSelectMode={handleIntegrationModeChange}
-          plaidConnected={connected}
-          institution={institution}
-        />
+        <div className="integration-selector-container">
+          <div className="integration-selector-header d-flex justify-content-between align-items-center mb-2"
+            onClick={() => setSelectorExpanded(!selectorExpanded)}
+            style={{ cursor: 'pointer' }}>
+            <h6 className="mb-0 text-white">
+              <i className="bi bi-database me-2"></i>
+              Data Source
+            </h6>
+            <Button variant="link" className="p-0 text-white">
+              <i className={`bi bi-chevron-${selectorExpanded ? 'up' : 'down'}`}></i>
+            </Button>
+          </div>
+
+          {selectorExpanded && (
+            <DataIntegrationModeSelector
+              currentMode={integrationMode}
+              onSelectMode={handleIntegrationModeChange}
+              plaidConnected={connected}
+              institution={institution}
+            />
+          )}
+        </div>
       </div>
       {/* Display Plaid error if present */}
       {plaidError && (
@@ -1145,8 +1163,6 @@ const Dashboard = () => {
               </div>
             )}
 
-
-            {/* Input Area */}
             {/* Input Area */}
             <div className="chat-input-container">
               {/* Use Form.Group to better structure the input and button */}

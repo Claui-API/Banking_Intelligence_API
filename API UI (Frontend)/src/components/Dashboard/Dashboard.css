@@ -1555,3 +1555,20 @@ button[class*="View Savings Visualization"] {
 .suggestion-fade {
   animation: fadeIn 0.3s ease-in-out;
 }
+
+.integration-selector-container {
+  background-color: rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
+  padding: 10px;
+  transition: all 0.3s ease;
+}
+
+.integration-selector-header {
+  transition: all 0.2s ease;
+}
+
+.integration-selector-header:hover {
+  background-color: rgba(255, 255, 255, 0.05);
+  border-radius: 6px;
+  padding-left: 8px;
+}
