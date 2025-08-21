@@ -3,22 +3,21 @@
 
 <head>
   <meta charset="utf-8" />
-  <link rel="icon" href="%PUBLIC_URL%/favicon.ico" />
+  <!-- Using absolute paths instead of %PUBLIC_URL% -->
+  <link rel="icon" href="/images/favicons/favicon.ico" />
+  <link rel="icon" href="/images/favicons/favicon-16x16.png" sizes="16x16" type="image/png">
+  <link rel="icon" href="/images/favicons/favicon-32x32.png" sizes="32x32" type="image/png">
+  <link rel="apple-touch-icon" href="/images/favicons/apple-touch-icon.png" />
+  <link rel="manifest" href="/manifest.json" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <meta name="theme-color" content="#000000" />
   <meta name="description" content="Banking Intelligence - Financial insights and analytics" />
-  <link rel="apple-touch-icon" href="%PUBLIC_URL%/logo192.png" />
-  <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
   <title>Banking Intelligence</title>
 </head>
 
 <body>
   <noscript>You need to enable JavaScript to run this app.</noscript>
   <div id="root"></div>
-  <!--
-      This is where your React app will be mounted.
-      The App component and all its child components will render here.
-    -->
 </body>
 
 </html>

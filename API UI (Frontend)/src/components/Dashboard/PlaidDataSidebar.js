@@ -363,7 +363,7 @@ const PlaidDataSidebar = ({
 							</tbody>
 						</Table>
 						{userData.transactions?.length > 15 && (
-							<div className="text-center text-white text-muted p-2 small">
+							<div className="text-center text-white p-2 small">
 								Showing 15 of {userData.transactions.length} transactions
 							</div>
 						)}
@@ -405,7 +405,7 @@ const PlaidDataSidebar = ({
 			</div>
 
 			{/* Debug/security info - remove in production */}
-			<div className="text-muted small mt-3">
+			<div className="text-white small mt-3">
 				<i className="text-white bi bi-shield-check me-1"></i>
 				Data owner: {userData.userId === userId ? 'Verified' : 'ALERT: MISMATCH'}
 			</div>

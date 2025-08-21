@@ -29,7 +29,7 @@ const Header = () => {
             src="/images/logo.png"
             alt="CLAU Logo"
             className="navbar-logo me-2"
-            style={{ width: '32px', height: '32px' }}
+            style={{ width: '100px', height: '100px' }}
           />
           <span className="brand-text">CLAU API</span>
         </Navbar.Brand>

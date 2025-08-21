@@ -5,8 +5,9 @@ import { Container, Row, Col, Button, Card, Image } from 'react-bootstrap';
 import { motion, useAnimation, AnimatePresence } from 'framer-motion';
 import { useInView } from 'react-intersection-observer';
 import CountUp from 'react-countup';
-import Particles from 'react-tsparticles';
-import { loadFull } from 'tsparticles';
+// Remove these imports:
+// import Particles from 'react-tsparticles';
+// import { loadFull } from 'tsparticles';
 import useDelayedAnimation, { getStaggeredDelay } from '../hooks/useDelayedAnimation';
 import './HomePage.css';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -106,24 +107,7 @@ const HomePage = () => {
     rootMargin: "-100px 0px" // Slightly earlier detection
   });
 
-  // Initialize particles with a ref to ensure it only loads once
-  const particlesInitialized = useRef(false);
-  const particlesInit = async (main) => {
-    if (!particlesInitialized.current) {
-      await loadFull(main);
-      particlesInitialized.current = true;
-
-      // Optimize for mobile
-      const isMobile = window.innerWidth < 768;
-      if (isMobile && main.particles) {
-        // Reduce particle count on mobile
-        if (main.particles.options.particles) {
-          main.particles.options.particles.number.value = 15;
-          main.particles.options.particles.move.speed = 0.5;
-        }
-      }
-    }
-  };
+  // REMOVED: particles initialization functions
 
   useEffect(() => {
     const handleResize = () => {
@@ -293,89 +277,6 @@ const HomePage = () => {
 
   return (
     <div className="home-page-container">
-      {/* Particles Background - only show after animations are active */}
-      {animationsActive && (
-        <Particles
-          id="tsparticles"
-          init={particlesInit}
-          options={{
-            fullScreen: {
-              enable: false,
-              zIndex: -1
-            },
-            particles: {
-              number: {
-                value: 30, // Reduced from original for better performance
-                density: {
-                  enable: true,
-                  value_area: 1000
-                }
-              },
-              color: {
-                value: "#28a745"
-              },
-              opacity: {
-                value: 0.3,
-                random: true
-              },
-              size: {
-                value: 3,
-                random: true
-              },
-              line_linked: {
-                enable: true,
-                distance: 150,
-                color: "#28a745",
-                opacity: 0.2,
-                width: 1
-              },
-              move: {
-                enable: true,
-                speed: 0.8, // Slower speed for better performance
-                direction: "none",
-                random: true,
-                straight: false,
-                out_mode: "out",
-                bounce: false
-              }
-            },
-            interactivity: {
-              detect_on: "canvas",
-              events: {
-                onhover: {
-                  enable: true,
-                  mode: "grab"
-                },
-                onclick: {
-                  enable: true,
-                  mode: "push"
-                }
-              },
-              modes: {
-                grab: {
-                  distance: 140,
-                  line_linked: {
-                    opacity: 0.5
-                  }
-                },
-                push: {
-                  particles_nb: 2 // Reduced for better performance
-                }
-              }
-            },
-            retina_detect: true
-          }}
-          style={{
-            position: "absolute",
-            width: "100%",
-            height: "100%",
-            top: 0,
-            left: 0,
-            zIndex: -1
-          }}
-        />
-      )}
-
       {/* Full-width background video section - Now wraps the entire content */}
       <div
         ref={videoSectionRef}
@@ -666,6 +567,375 @@ const HomePage = () => {
               </motion.div>
             </Col>
           </Row>
+        </motion.div>
+      </Container>
+
+      {/* Banking Intelligence Command Section */}
+      <Container className="py-4">
+        <motion.div
+          ref={useRef(null)}
+          initial="hidden"
+          animate={animationsActive && contentVisible ? "visible" : "hidden"}
+          variants={{
+            hidden: { opacity: 0 },
+            visible: {
+              opacity: 1,
+              transition: {
+                delayChildren: 0.3,
+                staggerChildren: 0.2
+              }
+            }
+          }}
+          className="banking-command-section"
+          style={{
+            position: 'relative',
+            overflow: 'hidden',
+            background: 'linear-gradient(180deg, rgba(0,0,0,0.8) 0%, rgba(15,26,15,0.9) 100%)',
+            borderRadius: '8px',
+            padding: '30px 0',
+            marginTop: '20px',
+            marginBottom: '40px'
+          }}
+        >
+          {/* Background animated circuit pattern */}
+          <div
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              zIndex: 0,
+              opacity: 0.15
+            }}
+          >
+            <div className="circuit-pattern">
+              {[...Array(15)].map((_, i) => (
+                <motion.div
+                  key={i}
+                  className="circuit-node"
+                  initial={{ opacity: 0.3 }}
+                  animate={{ opacity: [0.3, 0.7, 0.3] }}
+                  transition={{
+                    duration: 3 + Math.random() * 3,
+                    repeat: Infinity,
+                    delay: Math.random() * 2
+                  }}
+                  style={{
+                    position: 'absolute',
+                    width: 3 + Math.random() * 4,
+                    height: 3 + Math.random() * 4,
+                    backgroundColor: '#28a745',
+                    borderRadius: '50%',
+                    top: `${Math.random() * 100}%`,
+                    left: `${Math.random() * 100}%`
+                  }}
+                />
+              ))}
+
+              {[...Array(10)].map((_, i) => (
+                <motion.div
+                  key={`line-${i}`}
+                  className="circuit-line"
+                  initial={{ opacity: 0.1 }}
+                  animate={{ opacity: [0.1, 0.3, 0.1] }}
+                  transition={{
+                    duration: 4 + Math.random() * 3,
+                    repeat: Infinity,
+                    delay: Math.random() * 2
+                  }}
+                  style={{
+                    position: 'absolute',
+                    width: 150 + Math.random() * 200,
+                    height: 1,
+                    backgroundColor: '#28a745',
+                    top: `${Math.random() * 100}%`,
+                    left: `${Math.random() * 100}%`,
+                    transform: `rotate(${Math.random() * 180}deg)`
+                  }}
+                />
+              ))}
+            </div>
+          </div>
+
+          {/* Header Section */}
+          <motion.div
+            className="text-center mb-5"
+            variants={{
+              hidden: { y: 20, opacity: 0 },
+              visible: {
+                y: 0,
+                opacity: 1,
+                transition: { duration: 0.5, ease: "easeOut" }
+              }
+            }}
+            style={{ position: 'relative', zIndex: 1 }}
+          >
+            <motion.h2
+              className="text-success mb-3"
+              animate={{
+                textShadow: [
+                  "0 0 5px rgba(40, 167, 69, 0.3)",
+                  "0 0 15px rgba(40, 167, 69, 0.5)",
+                  "0 0 5px rgba(40, 167, 69, 0.3)"
+                ]
+              }}
+              transition={{
+                duration: 3,
+                ease: "easeInOut",
+                repeat: Infinity
+              }}
+            >
+              Banking Intelligence Command
+            </motion.h2>
+            <motion.p
+              className="text-white mx-auto"
+              style={{ maxWidth: '800px' }}
+              variants={{
+                hidden: { y: 20, opacity: 0 },
+                visible: {
+                  y: 0,
+                  opacity: 1,
+                  transition: { duration: 0.5, ease: "easeOut" }
+                }
+              }}
+            >
+              Banking Intelligence provides its users with a holistic picture of their financial institution. Key insights designed for you to capitalize on more opportunities. The Banking Intelligence Command is the data service of our platform, designed to capture, order and interpret analytics from each user into personalized reporting that will help in anything from profiling to risk management.
+            </motion.p>
+          </motion.div>
+
+          {/* Command Cards Section */}
+          <Row className="mb-5 mobile-command-row">
+            {[
+              {
+                icon: "bi-database-fill",
+                title: "Capture",
+                description: "Capture every single transaction with all data"
+              },
+              {
+                icon: "bi-cpu-fill",
+                title: "Process",
+                description: "Run all that data through logic, mathematic and AI models"
+              },
+              {
+                icon: "bi-bar-chart-fill",
+                title: "Analyze",
+                description: "Receive spending patterns, income elasticities, categories preferences and others"
+              },
+              {
+                icon: "bi-gear-fill",
+                title: "Action",
+                description: "Design risk protocols, campaigns, time marketing, introduction of products + much more"
+              }
+            ].map((card, index) => (
+              <Col md={3} sm={6} xs={12} key={index} className="mb-4 mobile-command-col">
+                <motion.div
+                  variants={{
+                    hidden: { y: 20, opacity: 0 },
+                    visible: {
+                      y: 0,
+                      opacity: 1,
+                      transition: { duration: 0.5, ease: "easeOut", delay: index * 0.1 }
+                    }
+                  }}
+                  whileHover={{
+                    scale: 1.05,
+                    boxShadow: "0 10px 25px rgba(40, 167, 69, 0.3)"
+                  }}
+                  transition={{ duration: 0.3 }}
+                  style={{ height: '100%' }}
+                  className="command-card-container"
+                >
+                  <Card className="h-100 text-white border-success command-card">
+                    <Card.Body className="d-flex flex-column align-items-center text-center" style={{ zIndex: 1, position: 'relative' }}>
+                      <motion.div
+                        className="command-icon text-success mb-3"
+                        whileHover={{
+                          scale: 1.1,
+                          backgroundColor: "rgba(40, 167, 69, 0.2)"
+                        }}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          width: '70px',
+                          height: '70px',
+                          borderRadius: '50%',
+                          background: 'rgba(40, 167, 69, 0.1)',
+                          transition: 'all 0.3s ease'
+                        }}
+                      >
+                        <i className={`bi ${card.icon}`} style={{ fontSize: '2rem' }}></i>
+                      </motion.div>
+
+                      <Card.Title>{card.title}</Card.Title>
+                      <Card.Text>
+                        {card.description}
+                      </Card.Text>
+
+                      {/* Data flow animation on hover */}
+                      <motion.div
+                        className="data-flow-animation"
+                        initial={{ opacity: 0 }}
+                        whileHover={{ opacity: 1 }}
+                        style={{
+                          position: 'absolute',
+                          bottom: 0,
+                          left: 0,
+                          right: 0,
+                          height: '30px',
+                          overflow: 'hidden'
+                        }}
+                      >
+                        {[...Array(5)].map((_, i) => (
+                          <motion.div
+                            key={i}
+                            initial={{ x: -20, opacity: 0.3 }}
+                            animate={{
+                              x: 120,
+                              opacity: [0.3, 0.8, 0.3]
+                            }}
+                            transition={{
+                              duration: 2 + Math.random(),
+                              repeat: Infinity,
+                              delay: Math.random() * 2
+                            }}
+                            style={{
+                              position: 'absolute',
+                              width: 3 + Math.random() * 3,
+                              height: 3 + Math.random() * 3,
+                              backgroundColor: '#28a745',
+                              borderRadius: '50%',
+                              top: Math.random() * 30,
+                              left: 0
+                            }}
+                          />
+                        ))}
+                      </motion.div>
+                    </Card.Body>
+                  </Card>
+                </motion.div>
+              </Col>
+            ))}
+          </Row>
+
+          {/* Analytics Visualization */}
+          <motion.div
+            variants={{
+              hidden: { y: 20, opacity: 0 },
+              visible: {
+                y: 0,
+                opacity: 1,
+                transition: { duration: 0.5, ease: "easeOut" }
+              }
+            }}
+            className="analytics-dashboard p-4 mb-4 mx-auto"
+            style={{
+              background: 'rgba(15,26,15,0.8)',
+              borderRadius: '8px',
+              border: '1px solid rgba(40, 167, 69, 0.3)',
+              position: 'relative',
+              overflow: 'hidden',
+              maxWidth: '90%'
+            }}
+          >
+            <Row className="align-items-center">
+              <Col md={4} sm={12} className="mb-3 mb-md-0">
+                <h3 className="text-success">Real-time Analytics</h3>
+                <p className="text-white mb-md-0">Our AI continuously analyzes transaction patterns to identify opportunities and risks in real-time.</p>
+              </Col>
+              <Col md={8} sm={12}>
+                <div
+                  style={{
+                    position: 'relative',
+                    height: '120px',
+                    background: 'rgba(0,0,0,0.2)',
+                    borderRadius: '4px',
+                    padding: '10px',
+                    overflow: 'hidden'
+                  }}
+                >
+                  {/* Graph visualization */}
+                  <svg width="100%" height="100" viewBox="0 0 100 100" preserveAspectRatio="none" style={{ position: 'absolute', top: '10px', left: '10px', right: '10px' }}>
+                    {/* Create a smooth line that animates in */}
+                    <motion.path
+                      initial={{ pathLength: 0, opacity: 0 }}
+                      animate={{ pathLength: 1, opacity: 1 }}
+                      transition={{ duration: 2, ease: "easeInOut" }}
+                      d="M0,80 C10,70 20,85 30,60 C40,40 50,60 60,50 C70,40 80,30 90,35 C95,38 100,30 100,30"
+                      fill="none"
+                      stroke="#28a745"
+                      strokeWidth="2"
+                      strokeDasharray="0"
+                    />
+
+                    {/* Area fill under the line */}
+                    <motion.path
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 0.3 }}
+                      transition={{ duration: 2 }}
+                      d="M0,80 C10,70 20,85 30,60 C40,40 50,60 60,50 C70,40 80,30 90,35 C95,38 100,30 100,30 V100 H0 Z"
+                      fill="url(#graphGradient)"
+                    />
+
+                    <defs>
+                      <linearGradient id="graphGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                        <stop offset="0%" stopColor="#28a745" stopOpacity="0.7" />
+                        <stop offset="100%" stopColor="#28a745" stopOpacity="0" />
+                      </linearGradient>
+                    </defs>
+                  </svg>
+
+                  {/* Animated data points */}
+                  {[30, 60, 50, 35].map((point, index) => {
+                    const xPos = 30 + (index * 20);
+                    return (
+                      <motion.div
+                        key={index}
+                        initial={{ scale: 0 }}
+                        animate={{ scale: [0, 1.2, 1], boxShadow: ["0 0 0px rgba(40, 167, 69, 0.8)", "0 0 10px rgba(40, 167, 69, 0.8)", "0 0 5px rgba(40, 167, 69, 0.8)"] }}
+                        transition={{ duration: 0.8, delay: 1 + (index * 0.2) }}
+                        style={{
+                          position: 'absolute',
+                          left: `${xPos}%`,
+                          top: `${point}%`,
+                          width: '6px',
+                          height: '6px',
+                          backgroundColor: '#28a745',
+                          borderRadius: '50%',
+                          transform: 'translate(-50%, -50%)'
+                        }}
+                      />
+                    );
+                  })}
+
+                  {/* Stats indicators */}
+                  <div className="d-flex justify-content-between mt-4 pt-5" style={{ position: 'absolute', bottom: '10px', left: '10px', right: '10px' }}>
+                    {['Spending', 'Savings', 'Income'].map((label, i) => (
+                      <motion.div
+                        key={i}
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 1.5 + (i * 0.2) }}
+                        style={{
+                          padding: '4px 8px',
+                          background: 'rgba(40, 167, 69, 0.2)',
+                          borderRadius: '4px',
+                          color: '#fff',
+                          fontSize: '0.8rem'
+                        }}
+                      >
+                        <span className="me-1">
+                          <i className={`bi bi-${i === 0 ? 'cart' : i === 1 ? 'piggy-bank' : 'cash'}`}></i>
+                        </span>
+                        {label}
+                      </motion.div>
+                    ))}
+                  </div>
+                </div>
+              </Col>
+            </Row>
+          </motion.div>
         </motion.div>
       </Container>
 
