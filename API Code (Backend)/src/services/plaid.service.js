@@ -188,12 +188,13 @@ class PlaidService {
   }
 
   /**
-   * Get transactions for a user
-   * @param {string} accessToken - Plaid access token
-   * @param {Date} startDate - Start date for transactions (ISO format)
-   * @param {Date} endDate - End date for transactions (ISO format)
-   * @returns {Array} - Array of transactions
-   */
+ * Get transactions for a user
+ * @param {string} accessToken - Plaid access token
+ * @param {Date} startDate - Start date for transactions (ISO format)
+ * @param {Date} endDate - End date for transactions (ISO format)
+ * @returns {Array} - Array of transactions
+ */
+  // 1. Update plaid.service.js getTransactions method
   async getTransactions(accessToken, startDate, endDate) {
     try {
       // Check token environment vs client environment and switch if needed
@@ -205,7 +206,8 @@ class PlaidService {
         end_date: endDate.toISOString().split('T')[0],
         options: {
           count: 100,
-          offset: 0
+          offset: 0,
+          include_personal_finance_category: true // Add this to get enhanced categories
         }
       };
 
@@ -219,6 +221,17 @@ class PlaidService {
         request.options.offset = offset;
         const response = await this.client.transactionsGet(request);
 
+        // Debug log the raw first transaction to see what Plaid is returning
+        if (response.data.transactions && response.data.transactions.length > 0) {
+          const sample = response.data.transactions[0];
+          logger.debug('Raw Plaid transaction sample:', {
+            name: sample.name,
+            category: JSON.stringify(sample.category),
+            personal_finance_category: sample.personal_finance_category,
+            available_keys: Object.keys(sample)
+          });
+        }
+
         allTransactions = [...allTransactions, ...response.data.transactions];
 
         hasMore = response.data.total_transactions > allTransactions.length;
@@ -227,20 +240,68 @@ class PlaidService {
 
       logger.info(`Retrieved ${allTransactions.length} transactions`);
 
-      // Transform to our transaction model format
-      return allTransactions.map(transaction => ({
-        transactionId: transaction.transaction_id,
-        accountId: transaction.account_id,
-        date: transaction.date,
-        description: transaction.name,
-        amount: -transaction.amount, // Plaid uses positive for withdrawals, we use negative
-        category: transaction.category && transaction.category.length > 0 ? transaction.category[0] : 'Uncategorized',
-        subCategory: transaction.category && transaction.category.length > 1 ? transaction.category[1] : null,
-        type: this._mapTransactionType(transaction),
-        merchantName: transaction.merchant_name || transaction.name,
-        location: transaction.location.city ? `${transaction.location.city}, ${transaction.location.region}` : null,
-        pending: transaction.pending
-      }));
+      // Enhanced transaction mapping with better category handling
+      return allTransactions.map(transaction => {
+        // Improved category handling logic
+        let category = 'Uncategorized';
+        let subCategory = null;
+        let categoryDetail = null;
+
+        // Try Plaid's category array first
+        if (transaction.category && Array.isArray(transaction.category) && transaction.category.length > 0) {
+          category = transaction.category[0];
+          if (transaction.category.length > 1) {
+            subCategory = transaction.category[1];
+          }
+          categoryDetail = [...transaction.category]; // Store full category array
+        }
+        // Try personal_finance_category as fallback
+        else if (transaction.personal_finance_category && transaction.personal_finance_category.primary) {
+          category = transaction.personal_finance_category.primary;
+          subCategory = transaction.personal_finance_category.detailed || null;
+          categoryDetail = [category, subCategory].filter(Boolean);
+        }
+        // If still no category, infer from merchant or transaction properties
+        else {
+          const merchantName = (transaction.merchant_name || transaction.name || '').toLowerCase();
+
+          // Map common merchants to categories
+          if (merchantName.includes('uber') && !merchantName.includes('eats')) {
+            category = 'Transportation';
+          }
+          else if (merchantName.includes('uber eats') || merchantName.includes('doordash')) {
+            category = 'Food and Drink';
+          }
+          else if (merchantName.includes('amazon') || merchantName.includes('shop')) {
+            category = 'Shopping';
+          }
+          else if (merchantName.includes('netflix') || merchantName.includes('spotify')) {
+            category = 'Entertainment';
+          }
+          else if (merchantName.includes('airbnb') || merchantName.includes('hotel')) {
+            category = 'Travel';
+          }
+
+          categoryDetail = [category];
+        }
+
+        return {
+          transactionId: transaction.transaction_id,
+          accountId: transaction.account_id,
+          date: transaction.date,
+          description: transaction.name,
+          amount: -transaction.amount, // Plaid uses positive for withdrawals, we use negative
+          category: category,
+          subCategory: subCategory,
+          type: this._mapTransactionType(transaction),
+          merchantName: transaction.merchant_name || transaction.name,
+          location: transaction.location && transaction.location.city ?
+            `${transaction.location.city}${transaction.location.region ? ', ' + transaction.location.region : ''}` :
+            null,
+          pending: transaction.pending,
+          categoryDetail: categoryDetail
+        };
+      });
     } catch (error) {
       logger.error('Error getting transactions:', error);
       throw new Error(`Failed to get transactions: ${error.message}`);
