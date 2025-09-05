@@ -22,6 +22,7 @@ class GeminiService {
 		this.client = null;
 		this.initialize();
 		this.conversationHistory = new Map(); // Store conversation context
+		this.responseHistory = new Map(); // Store AI responses
 	}
 
 	/**
@@ -67,13 +68,35 @@ class GeminiService {
 				requestId
 			});
 
+			// Check if this is a short follow-up query that needs context
+			const isFollowUp = this._isFollowUpQuery(query, userId);
+			let contextEnrichedQueryType = queryType;
+			let contextEnrichedQuery = query;
+
 			// Track conversation context if user ID is available
 			if (userId) {
 				this._updateConversationContext(userId, query, queryType);
+
+				// If this is a follow-up query, enrich it with context
+				if (isFollowUp) {
+					const enrichedContext = this._getEnrichedContext(userId, query);
+					if (enrichedContext) {
+						contextEnrichedQueryType = enrichedContext.contextType || queryType;
+						contextEnrichedQuery = `${query} (in reference to: ${enrichedContext.contextQuery})`;
+
+						logger.info('Enhanced query with conversation context', {
+							originalQuery: query,
+							enhancedQuery: contextEnrichedQuery,
+							originalType: queryType,
+							enhancedType: contextEnrichedQueryType,
+							requestId
+						});
+					}
+				}
 			}
 
 			// Detect if this is a follow-up explanation request
-			const isExplanationRequest = this._isExplanationRequest(query, userId);
+			const isExplanationRequest = this._isExplanationRequest(contextEnrichedQuery, userId);
 
 			// Select appropriate prompt based on query type
 			let promptText;
@@ -82,7 +105,7 @@ class GeminiService {
 
 			// If this is an explanation request, override with educational prompt
 			if (isExplanationRequest) {
-				const topicsToExplain = this._extractTopicsFromQuery(query, userId);
+				const topicsToExplain = this._extractTopicsFromQuery(contextEnrichedQuery, userId);
 				promptText = this._createEnhancedEducationPrompt(userData, topicsToExplain);
 				temperature = 0.2; // More consistent for educational content
 				maxTokens = 1500;  // Allow longer responses for explanations
@@ -91,8 +114,8 @@ class GeminiService {
 					requestId
 				});
 			} else {
-				// Select prompt based on query type using your existing methods
-				switch (queryType) {
+				// Select prompt based on enriched query type using your existing methods
+				switch (contextEnrichedQueryType) {
 					case 'harmful':
 						promptText = this._createHarmfulContentPrompt(userData);
 						temperature = 0.1; // Very consistent for harm refusals
@@ -106,66 +129,71 @@ class GeminiService {
 						temperature = 0.7; // Higher variety for jokes
 						break;
 					case 'budgeting':
-						promptText = this._createBudgetingPrompt(userData);
+						promptText = this._createBudgetingPrompt({ ...userData, query: contextEnrichedQuery });
 						break;
 					case 'spending':
-						promptText = this._createSpendingPrompt(userData);
+						promptText = this._createSpendingPrompt({ ...userData, query: contextEnrichedQuery });
 						break;
 					case 'saving':
-						promptText = this._createSavingPrompt(userData);
+						promptText = this._createSavingPrompt({ ...userData, query: contextEnrichedQuery });
 						break;
 					case 'investing':
-						promptText = this._createInvestingPrompt(userData);
+						promptText = this._createInvestingPrompt({ ...userData, query: contextEnrichedQuery });
 						break;
 					case 'debt':
-						promptText = this._createDebtPrompt(userData);
+						promptText = this._createDebtPrompt({ ...userData, query: contextEnrichedQuery });
 						break;
 					case 'tax':
-						promptText = this._createTaxPrompt(userData);
+						promptText = this._createTaxPrompt({ ...userData, query: contextEnrichedQuery });
 						break;
 					case 'insurance':
-						promptText = this._createInsurancePrompt(userData);
+						promptText = this._createInsurancePrompt({ ...userData, query: contextEnrichedQuery });
 						break;
 					case 'retirement':
-						promptText = this._createRetirementPrompt(userData);
+						promptText = this._createRetirementPrompt({ ...userData, query: contextEnrichedQuery });
 						break;
 					case 'banking':
-						promptText = this._createBankingPrompt(userData);
+						promptText = this._createBankingPrompt({ ...userData, query: contextEnrichedQuery });
 						break;
 					case 'credit':
-						promptText = this._createCreditPrompt(userData);
+						promptText = this._createCreditPrompt({ ...userData, query: contextEnrichedQuery });
 						break;
 					case 'planning':
-						promptText = this._createPlanningPrompt(userData);
+						promptText = this._createPlanningPrompt({ ...userData, query: contextEnrichedQuery });
 						break;
 					case 'real_estate':
-						promptText = this._createRealEstatePrompt(userData);
+						promptText = this._createRealEstatePrompt({ ...userData, query: contextEnrichedQuery });
 						break;
 					case 'crypto':
-						promptText = this._createCryptoPrompt(userData);
+						promptText = this._createCryptoPrompt({ ...userData, query: contextEnrichedQuery });
 						break;
 					case 'market_analysis':
-						promptText = this._createMarketAnalysisPrompt(userData);
+						promptText = this._createMarketAnalysisPrompt({ ...userData, query: contextEnrichedQuery });
 						break;
 					case 'education':
-						promptText = this._createEducationPrompt(userData);
+						promptText = this._createEducationPrompt({ ...userData, query: contextEnrichedQuery });
 						break;
 					case 'income':
-						promptText = this._createIncomePrompt(userData);
+						promptText = this._createIncomePrompt({ ...userData, query: contextEnrichedQuery });
 						break;
 					case 'transactions':
-						promptText = this._createTransactionsPrompt(userData);
+						promptText = this._createTransactionsPrompt({ ...userData, query: contextEnrichedQuery });
 						break;
 					case 'security':
-						promptText = this._createSecurityPrompt(userData);
+						promptText = this._createSecurityPrompt({ ...userData, query: contextEnrichedQuery });
 						break;
 					case 'forex':
-						promptText = this._createForexPrompt(userData);
+						promptText = this._createForexPrompt({ ...userData, query: contextEnrichedQuery });
 						break;
 					case 'general':
 					default:
-						promptText = this._createGeneralPrompt(userData);
+						promptText = this._createGeneralPrompt({ ...userData, query: contextEnrichedQuery });
 				}
+			}
+
+			// Enhance the prompt with conversation context if this is a follow-up
+			if (isFollowUp && userId) {
+				promptText = this._enhancePromptWithContext(promptText, userId, query);
 			}
 
 			// Define the grounding tool
@@ -220,10 +248,15 @@ class GeminiService {
 					isEducationalResponse: isExplanationRequest
 				});
 
+				// Store the response in history if user ID is available
+				if (userId) {
+					this._storeResponse(userId, generatedText, contextEnrichedQueryType);
+				}
+
 				return {
 					insight: generatedText,
 					timestamp: new Date().toISOString(),
-					queryType: isExplanationRequest ? 'enhanced_education' : queryType,
+					queryType: isExplanationRequest ? 'enhanced_education' : contextEnrichedQueryType,
 					source: 'gemini'
 				};
 			} else {
@@ -245,6 +278,162 @@ class GeminiService {
 			// Use fallback when API fails
 			return this._getFallbackResponse(userData);
 		}
+	}
+
+	/**
+	 * Store AI response in history
+	 * @param {string} userId - User ID
+	 * @param {string} response - AI response
+	 * @param {string} queryType - Query type
+	 * @private
+	 */
+	_storeResponse(userId, response, queryType) {
+		if (!this.responseHistory.has(userId)) {
+			this.responseHistory.set(userId, []);
+		}
+
+		const userResponses = this.responseHistory.get(userId);
+
+		// Add new response at the beginning
+		userResponses.unshift({
+			response,
+			queryType,
+			timestamp: Date.now()
+		});
+
+		// Keep only the 5 most recent responses
+		if (userResponses.length > 5) {
+			userResponses.pop();
+		}
+	}
+
+	/**
+	 * Check if query is a brief follow-up that needs context
+	 * @param {string} query - User query
+	 * @param {string} userId - User ID
+	 * @returns {boolean} - True if query is a follow-up
+	 * @private
+	 */
+	_isFollowUpQuery(query, userId) {
+		if (!userId || !this.conversationHistory.has(userId)) {
+			return false;
+		}
+
+		// Very short queries (fewer than 5 words) are likely follow-ups
+		const wordCount = query.split(/\s+/).length;
+		if (wordCount < 5) {
+			return true;
+		}
+
+		// Explicit follow-up phrases
+		const followUpPhrases = [
+			'show me how', 'tell me more', 'go on', 'continue', 'elaborate',
+			'explain more', 'what about', 'how do i', 'how does that work',
+			'what else', 'show me', 'for example', 'like what', 'such as',
+			'and then', 'next steps', 'how to', 'what should i do'
+		];
+
+		const lowerQuery = query.toLowerCase();
+		return followUpPhrases.some(phrase => lowerQuery.includes(phrase.toLowerCase()));
+	}
+
+	/**
+	 * Get enriched context for a follow-up query
+	 * @param {string} userId - User ID
+	 * @param {string} query - Current query
+	 * @returns {Object|null} - Enriched context info or null
+	 * @private
+	 */
+	_getEnrichedContext(userId, query) {
+		if (!userId || !this.conversationHistory.has(userId)) {
+			return null;
+		}
+
+		const userContext = this.conversationHistory.get(userId);
+
+		// Need at least 2 queries in history (current + previous)
+		if (userContext.recentQueries.length < 2) {
+			return null;
+		}
+
+		// Get previous query (index 1 since current is at index 0)
+		const previousQuery = userContext.recentQueries[1];
+
+		return {
+			contextQuery: previousQuery.query,
+			contextType: previousQuery.queryType,
+			timestamp: previousQuery.timestamp
+		};
+	}
+
+	/**
+	 * Enhance a prompt with conversation context
+	 * @param {string} basePrompt - Original prompt
+	 * @param {string} userId - User ID
+	 * @param {string} currentQuery - Current user query
+	 * @returns {string} - Enhanced prompt with context
+	 * @private
+	 */
+	_enhancePromptWithContext(basePrompt, userId, currentQuery) {
+		if (!userId || !this.conversationHistory.has(userId) || !this.responseHistory.has(userId)) {
+			return basePrompt;
+		}
+
+		const userContext = this.conversationHistory.get(userId);
+		const userResponses = this.responseHistory.get(userId);
+
+		// Need at least 2 queries and 1 previous response
+		if (userContext.recentQueries.length < 2 || userResponses.length < 1) {
+			return basePrompt;
+		}
+
+		// Build conversation context section with the previous exchange
+		let conversationContext = '';
+
+		// Get previous query (index 1 since current is at index 0)
+		const previousQuery = userContext.recentQueries[1];
+
+		// Get previous response (index 0 is the most recent)
+		const previousResponse = userResponses[0];
+
+		// Create conversation context section
+		conversationContext = `
+CONVERSATION CONTEXT:
+Previous user query: "${previousQuery.query}"
+Your previous response: "${this._summarizeText(previousResponse.response, 150)}"
+
+The user's current query "${currentQuery}" is likely a follow-up to the previous conversation.
+When responding, maintain continuity with the previous exchange and address the specific follow-up question.
+If the current query is brief or vague (like "show me how", "tell me more"), interpret it in the context of the previous conversation.
+`;
+
+		// Add context to the beginning of the prompt
+		return conversationContext + basePrompt;
+	}
+
+	/**
+	 * Summarize text to a specified length
+	 * @param {string} text - Text to summarize
+	 * @param {number} maxLength - Maximum length
+	 * @returns {string} - Summarized text
+	 * @private
+	 */
+	_summarizeText(text, maxLength = 150) {
+		if (text.length <= maxLength) {
+			return text;
+		}
+
+		// Try to break at a sentence
+		const truncated = text.substring(0, maxLength);
+		const lastPeriod = truncated.lastIndexOf('.');
+
+		if (lastPeriod > maxLength * 0.7) {
+			// If we found a period in the latter part of the truncated text
+			return truncated.substring(0, lastPeriod + 1);
+		}
+
+		// Otherwise just truncate and add ellipsis
+		return truncated + '...';
 	}
 
 	/**
@@ -297,6 +486,11 @@ class GeminiService {
 		for (const [userId, context] of this.conversationHistory.entries()) {
 			if (context.lastInteraction < thirtyMinutesAgo) {
 				this.conversationHistory.delete(userId);
+
+				// Also clean up response history
+				if (this.responseHistory.has(userId)) {
+					this.responseHistory.delete(userId);
+				}
 			}
 		}
 	}

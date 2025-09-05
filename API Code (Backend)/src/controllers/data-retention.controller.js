@@ -169,7 +169,72 @@ class DataRetentionController {
 		}
 	}
 
-	// Other methods...
+	/**
+	 * Export user's data for data portability
+	 * @param {Object} req - Express request object
+	 * @param {Object} res - Express response object
+	 */
+	async exportUserData(req, res) {
+		try {
+			const { userId } = req.auth;
+			const format = req.query.format ? req.query.format.toLowerCase() : 'json';
+
+			// Validate user is authenticated
+			if (!userId) {
+				return res.status(401).json({
+					success: false,
+					message: 'Authentication required'
+				});
+			}
+
+			logger.info(`Processing data export request for user ${userId} in ${format} format`);
+
+			// Use the existing service method to get the export data
+			const exportData = await dataRetentionService.exportUserData(userId);
+
+			// Handle different export formats
+			if (format === 'pdf') {
+				try {
+					// Load the PDF generator (using dynamic import to avoid loading if not needed)
+					const { generatePDF } = require('../utils/pdf-generator');
+
+					// Generate PDF
+					const pdfBuffer = await generatePDF(exportData);
+
+					// Set headers for PDF download
+					res.setHeader('Content-Type', 'application/pdf');
+					res.setHeader('Content-Disposition', `attachment; filename=financial-data-export-${new Date().toISOString().split('T')[0]}.pdf`);
+
+					// Send the PDF
+					return res.send(pdfBuffer);
+				} catch (pdfError) {
+					logger.error(`Error generating PDF for user ${userId}:`, pdfError);
+
+					// Fall back to JSON if PDF generation fails
+					logger.info('Falling back to JSON format due to PDF generation error');
+
+					res.setHeader('Content-Type', 'application/json');
+					res.setHeader('Content-Disposition', `attachment; filename=financial-data-export-${new Date().toISOString().split('T')[0]}.json`);
+
+					return res.status(200).json(exportData);
+				}
+			} else {
+				// Default to JSON format
+				res.setHeader('Content-Type', 'application/json');
+				res.setHeader('Content-Disposition', `attachment; filename=financial-data-export-${new Date().toISOString().split('T')[0]}.json`);
+
+				return res.status(200).json(exportData);
+			}
+		} catch (error) {
+			logger.error(`Error exporting data for user ${req.auth?.userId}:`, error);
+
+			return res.status(500).json({
+				success: false,
+				message: 'Failed to export user data',
+				error: error.message
+			});
+		}
+	}
 
 	/**
 	 * For admin: view retention logs

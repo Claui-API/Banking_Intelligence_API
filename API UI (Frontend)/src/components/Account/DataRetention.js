@@ -1,9 +1,10 @@
-// src/components/Account/DataRetention.js - Fixed API routes
+// src/components/Account/DataRetention.js
 import React, { useState, useEffect } from 'react';
-import { Card, Form, Button, Alert, Spinner, Modal } from 'react-bootstrap';
+import { Card, Form, Button, Alert, Spinner, Modal, ProgressBar } from 'react-bootstrap';
 import api from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import logger from '../../utils/logger';
+import PrivacyPolicyModal from './PrivacyPolicyModal'; // Import the new component
 
 /**
  * Component for managing data retention settings in user account
@@ -28,6 +29,7 @@ const DataRetention = () => {
 	const [showExportModal, setShowExportModal] = useState(false);
 	const [exportLoading, setExportLoading] = useState(false);
 	const [showDeleteModal, setShowDeleteModal] = useState(false);
+	const [exportFormat, setExportFormat] = useState('json');
 
 	// Load current retention settings
 	useEffect(() => {
@@ -88,23 +90,57 @@ const DataRetention = () => {
 	};
 
 	// Handle data export
-	const handleExportData = async () => {
+	const handleExportData = async (format = 'json') => {
 		try {
 			setExportLoading(true);
+			setError('');
+			logger.info(`Starting data export in ${format} format`);
 
-			logger.info('Starting data export');
+			// Get the token from localStorage
+			const token = localStorage.getItem('token');
 
-			// Create a download through an API call - Updated to use correct API path
-			window.location.href = `${api.defaults.baseURL}/v1/data/export`;
+			if (!token) {
+				throw new Error('Authentication token not found. Please log in again.');
+			}
+
+			// Use axios to make an authenticated request with proper headers
+			// Set responseType based on the format
+			const responseType = format === 'pdf' ? 'arraybuffer' : 'blob';
+
+			const response = await api.get(`/v1/data/export?format=${format}`, {
+				responseType,
+				headers: {
+					'Authorization': `Bearer ${token}`
+				}
+			});
+
+			// Create a blob with the appropriate type
+			const contentType = format === 'pdf' ? 'application/pdf' : 'application/json';
+			const blob = new Blob([response.data], { type: contentType });
+			const url = window.URL.createObjectURL(blob);
+
+			// Create a link element to trigger the download
+			const link = document.createElement('a');
+			link.href = url;
+			link.download = `financial-data-export-${new Date().toISOString().split('T')[0]}.${format}`;
+
+			// Append to body, click and remove
+			document.body.appendChild(link);
+			link.click();
+			document.body.removeChild(link);
+
+			// Cleanup the blob URL
+			window.URL.revokeObjectURL(url);
 
 			// Close modal after a short delay
 			setTimeout(() => {
 				setShowExportModal(false);
 				setExportLoading(false);
+				setSuccess(`Data export completed successfully in ${format.toUpperCase()} format.`);
 			}, 1000);
 		} catch (err) {
 			logger.error('Error exporting data:', err);
-			setError('Failed to export your data');
+			setError(err.message || 'Failed to export your data');
 			setExportLoading(false);
 		}
 	};
@@ -247,8 +283,8 @@ const DataRetention = () => {
 
 						<Alert variant="info" className="mt-4">
 							<h6>How We Handle Your Data</h6>
-							<p className="mb-0">
-								We retain your data according to our <a href="/privacy-policy">data retention policy</a>.
+							<p className="text-success mb-0">
+								We retain your data according to our <PrivacyPolicyModal />.
 								Inactive accounts receive a warning after 12 months and are automatically deleted after 15 months of inactivity.
 							</p>
 						</Alert>
@@ -256,36 +292,83 @@ const DataRetention = () => {
 				)}
 			</Card.Body>
 
-			{/* Data Export Modal */}
-			<Modal show={showExportModal} onHide={() => setShowExportModal(false)} centered>
-				<Modal.Header closeButton>
-					<Modal.Title>Export Your Data</Modal.Title>
+			{/* Enhanced Data Export Modal */}
+			<Modal show={showExportModal} onHide={() => !exportLoading && setShowExportModal(false)} centered backdrop="static">
+				<Modal.Header closeButton={!exportLoading}>
+					<Modal.Title>
+						<i className="bi bi-download me-2"></i>
+						Export Your Data
+					</Modal.Title>
 				</Modal.Header>
 				<Modal.Body>
-					<p>
-						This will download a complete copy of your data, including:
-					</p>
-					<ul>
-						<li>Account information</li>
-						<li>Connected bank account details</li>
-						<li>Transaction history</li>
-						<li>Generated financial insights</li>
-					</ul>
-					<p className="mb-0">
-						The data will be exported in JSON format.
-					</p>
+					{error ? (
+						<Alert variant="danger">{error}</Alert>
+					) : (
+						<>
+							<p>
+								This will download a complete copy of your data, including:
+							</p>
+							<ul>
+								<li>Account information</li>
+								<li>Connected bank account details</li>
+								<li>Transaction history</li>
+								<li>Generated financial insights</li>
+							</ul>
+
+							<Form.Group className="mb-3">
+								<Form.Label><strong>Export Format</strong></Form.Label>
+								<Form.Select
+									className="text-white"
+									value={exportFormat}
+									onChange={(e) => setExportFormat(e.target.value)}
+									disabled={exportLoading}
+								>
+									<option className="text-white" value="json">JSON (Raw Data)</option>
+									<option className="text-white" value="pdf">PDF (Formatted Report)</option>
+								</Form.Select>
+								<Form.Text className="text-white">
+									{exportFormat === 'json'
+										? 'JSON format includes all raw data in a machine-readable format.'
+										: 'PDF format provides a readable report with formatted data and visualizations.'}
+								</Form.Text>
+							</Form.Group>
+
+							{exportLoading && (
+								<div className="my-4">
+									<p className="mb-2">
+										<strong>{exportFormat === 'pdf' ? 'Generating PDF report...' : 'Preparing your data...'}</strong>
+									</p>
+									<ProgressBar
+										now={100}
+										variant="success"
+										animated
+									/>
+								</div>
+							)}
+
+							{success && <Alert variant="success" className="mt-3">{success}</Alert>}
+
+							<p className="mb-0 text-white small">
+								For security reasons, some sensitive data may be excluded from the export.
+							</p>
+						</>
+					)}
 				</Modal.Body>
 				<Modal.Footer>
 					<Button variant="secondary" onClick={() => setShowExportModal(false)} disabled={exportLoading}>
-						Cancel
+						{success ? 'Close' : 'Cancel'}
 					</Button>
-					<Button variant="primary" onClick={handleExportData} disabled={exportLoading}>
+					<Button
+						variant="primary"
+						onClick={() => handleExportData(exportFormat)}
+						disabled={exportLoading}
+					>
 						{exportLoading ? (
 							<>
 								<Spinner animation="border" size="sm" className="me-2" />
-								Exporting...
+								{exportFormat === 'pdf' ? 'Generating PDF...' : 'Exporting...'}
 							</>
-						) : 'Download Data'}
+						) : `Download ${exportFormat.toUpperCase()}`}
 					</Button>
 				</Modal.Footer>
 			</Modal>
