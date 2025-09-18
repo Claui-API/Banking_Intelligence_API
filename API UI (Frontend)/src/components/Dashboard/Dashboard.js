@@ -1,4 +1,5 @@
 // src/components/Dashboard/Dashboard.js - Fixed version with proper data isolation
+import BankingCommandButton from './BankingCommandButton';
 import VisualFinanceIntegration from '../Chat/VisualFinanceIntegration';
 import DirectDataIntegration from './DirectDataIntegration';
 import DataIntegrationModeSelector from './DataIntegrationModeSelector';
@@ -856,6 +857,93 @@ const Dashboard = () => {
     }
   };
 
+  /**
+ * Handle the result of Banking Intelligence Command report generation
+ * @param {Object} report - The generated report or error
+ */
+  const handleBankingReportGenerated = (report) => {
+    // Check if there was an error
+    if (report.error) {
+      // Add error message to chat
+      setChatMessages(prev => [...prev, {
+        role: 'assistant',
+        content: `⚠️ ${report.message || 'Failed to generate Banking Intelligence report'}`,
+        timestamp: new Date().toISOString()
+      }]);
+      return;
+    }
+
+    // Format the report as a nice message for the chat
+    let reportMessage = `# Banking Intelligence Command Report\n\n`;
+
+    // Add period information
+    reportMessage += `**Period**: ${report.period}\n\n`;
+
+    // Add account summary section if available
+    if (report.summary && report.summary.accountSummary) {
+      const summary = report.summary.accountSummary;
+      reportMessage += `## Account Summary\n`;
+      reportMessage += `- Beginning Balance: ${formatCurrency(summary.beginningBalance)}\n`;
+      reportMessage += `- Ending Balance: ${formatCurrency(summary.endingBalance)}\n`;
+      reportMessage += `- Net Change: ${formatCurrency(summary.netChange)}\n`;
+      reportMessage += `- Average Daily Spend: ${formatCurrency(summary.averageDailySpend)}/day\n\n`;
+    }
+
+    // Add top spending categories if available
+    if (report.summary && report.summary.topCategories && report.summary.topCategories.length > 0) {
+      reportMessage += `## Top Spending Categories\n`;
+      report.summary.topCategories.forEach(category => {
+        reportMessage += `- ${category.category}: ${formatCurrency(category.total)} (${category.count} transactions)\n`;
+      });
+      reportMessage += `\n`;
+    }
+
+    // Add risk assessment if available
+    if (report.summary && typeof report.summary.hasCriticalRisks !== 'undefined') {
+      reportMessage += `## Risk Assessment\n`;
+      if (report.summary.hasCriticalRisks) {
+        reportMessage += `⚠️ **Critical risks detected** (${report.summary.riskCount} total risks)\n\n`;
+      } else if (report.summary.riskCount > 0) {
+        reportMessage += `⚠️ **Moderate risks detected** (${report.summary.riskCount} total risks)\n\n`;
+      } else {
+        reportMessage += `✅ **No significant risks detected**\n\n`;
+      }
+    }
+
+    // Add section links
+    if (report.sections && report.sections.length > 0) {
+      reportMessage += `## Report Sections\n`;
+      report.sections.forEach(section => {
+        reportMessage += `### ${section.title}\n`;
+        reportMessage += `${section.content}\n\n`;
+      });
+    }
+
+    // Add the report message to chat
+    setChatMessages(prev => [...prev, {
+      role: 'assistant',
+      content: reportMessage,
+      timestamp: new Date().toISOString(),
+      usingRealData: integrationMode === 'plaid' && connected,
+      usingSimulatedData: integrationMode === 'direct'
+    }]);
+
+    // Scroll to bottom of chat
+    setTimeout(() => {
+      chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, 100);
+  };
+
+  // Add this helper function if it doesn't already exist
+  const formatCurrency = (amount) => {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    }).format(amount);
+  };
+
   // Helper function to extract insight text
   const extractInsightText = (data) => {
     if (!data || !data.insights) {
@@ -1165,10 +1253,17 @@ const Dashboard = () => {
 
             {/* Input Area */}
             <div className="chat-input-container">
-              {/* Use Form.Group to better structure the input and button */}
+              <div className="chat-toolbar mb-2 d-flex justify-content-end">
+                <BankingCommandButton
+                  onReportGenerated={handleBankingReportGenerated}
+                  financialData={financialData}
+                  integrationMode={integrationMode}
+                  connected={connected}
+                  userId={user?.id}
+                />
+              </div>
               <Form className="w-100 d-flex align-items-stretch">
                 <Form.Group className="flex-grow-1 mb-0 me-2 position-relative">
-                  {/* Either use the InlineQueryHelper or fallback to a standard Form.Control */}
                   {InlineQueryHelper ? (
                     <InlineQueryHelper
                       query={query}

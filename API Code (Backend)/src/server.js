@@ -130,6 +130,7 @@ const routes = [
   { path: '/api/users', name: 'Users', importPath: './routes/user.routes' }, // NEW: User routes
   { path: '/api/webhooks', name: 'Plaid Webhooks', importPath: './routes/plaid.webhook.routes' },
   { path: '/api', name: 'Health', importPath: './routes/health.routes' },
+  { path: '/api/banking-command', name: 'Banking Command', importPath: './routes/banking-command.routes' },
   { path: '/api/diagnostics', name: 'Diagnostics', importPath: './routes/diagnostics.routes' },
   { path: '/api/admin', name: 'Admin', importPath: './routes/admin.routes' },
   { path: '/api/clients', name: 'Clients', importPath: './routes/client.routes' },
