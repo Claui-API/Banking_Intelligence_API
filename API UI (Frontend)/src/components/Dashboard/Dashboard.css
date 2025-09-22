@@ -1572,3 +1572,17 @@ button[class*="View Savings Visualization"] {
   border-radius: 6px;
   padding-left: 8px;
 }
+
+.chat-actions-toolbar {
+  padding: 0 8px;
+}
+
+.banking-report-btn {
+  background-color: #17a2b8;
+  border-color: #17a2b8;
+}
+
+.banking-report-btn:hover {
+  background-color: #138496;
+  border-color: #117a8b;
+}

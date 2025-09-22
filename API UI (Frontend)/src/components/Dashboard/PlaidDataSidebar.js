@@ -22,6 +22,12 @@ const PlaidDataSidebar = ({
 	const [isDuplicateData, setIsDuplicateData] = useState(false);
 	const [isReconnecting, setIsReconnecting] = useState(false);
 
+	useEffect(() => {
+		if (userData && userData.transactions && userData.transactions.length > 0) {
+			console.log("Transaction data example:", userData.transactions[0]);
+		}
+	}, [userData]);
+
 	// Check for data issues and validate user data
 	useEffect(() => {
 		if (userData && userData.accounts) {
@@ -348,11 +354,21 @@ const PlaidDataSidebar = ({
 											<div className="text-truncate" style={{ maxWidth: '150px' }}>
 												{transaction.description}
 											</div>
-											{transaction.category && (
-												<span className="badge bg-secondary text-white mt-1">
-													{transaction.category}
-												</span>
-											)}
+											{/* Enhanced category display with robust fallback handling */}
+											<span className="badge bg-secondary text-white mt-1">
+												{(() => {
+													// Handle all possible category formats
+													if (!transaction.category) return 'Uncategorized';
+
+													// If category is an array, take the first element
+													if (Array.isArray(transaction.category)) {
+														return transaction.category.length > 0 ? transaction.category[0] : 'Uncategorized';
+													}
+
+													// If category is a string, use it directly
+													return transaction.category || 'Uncategorized';
+												})()}
+											</span>
 										</td>
 										<td className={transaction.amount < 0 ? 'text-danger' : 'text-success'}>
 											{formatCurrency(Math.abs(transaction.amount))}

@@ -1,4 +1,4 @@
-// src/components/App.js - Updated Routes with Data Settings
+// src/App.js - Updated with Bank Client Routes
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
@@ -6,10 +6,12 @@ import logger from './utils/logger';
 import 'bootstrap/dist/css/bootstrap.min.css';
 // Import your custom styles after Bootstrap
 import './index.css';
+
 // Components
 import Layout from './components/Layout/Layout';
 import PrivateRoute from './components/Layout/PrivateRoute';
 import AdminRoute from './components/Layout/AdminRoute';
+import BankClientRoute from './components/Layout/BankClientRoute'; // Import the new route component
 import Login from './components/Auth/Login';
 import Register from './components/Auth/Register';
 import Dashboard from './components/Dashboard/Dashboard';
@@ -17,7 +19,11 @@ import HomePage from './components/HomePage';
 import APITokenManagement from './components/APITokenManagement';
 import Documentation from './components/Documentation/Documentation';
 import SecuritySettings from './components/Account/SecuritySettings';
-import DataRetention from './components/Account/DataRetention'; // Import the new component
+import DataRetention from './components/Account/DataRetention';
+
+// Bank Dashboard Components
+import BankDashboard from './components/Bank/BankDashboard';
+import BankUserDetails from './components/Bank/BankUserDetails';
 
 // Admin Components
 import AdminDashboard from './components/Admin/AdminDashboard';
@@ -58,11 +64,15 @@ const App = () => {
             <Route path="/transactions" element={<Layout><div>Transactions Page</div></Layout>} />
             <Route path="/insights" element={<Layout><div>Insights Page</div></Layout>} />
             <Route path="/security" element={<Layout><SecuritySettings /></Layout>} />
-            <Route path="/data-settings" element={<Layout><DataRetention /></Layout>} /> {/* Add new Data Settings route */}
+            <Route path="/data-settings" element={<Layout><DataRetention /></Layout>} />
             <Route path="/docs" element={<Layout><Documentation /></Layout>} />
-
-            {/* API Token Management Route */}
             <Route path="/api-tokens" element={<Layout><APITokenManagement /></Layout>} />
+          </Route>
+
+          {/* Bank Client Routes - Special protection for client dashboard */}
+          <Route element={<BankClientRoute />}>
+            <Route path="/bank-dashboard" element={<Layout><BankDashboard /></Layout>} />
+            <Route path="/bank-dashboard/users/:bankUserId" element={<Layout><BankUserDetails /></Layout>} />
           </Route>
 
           {/* Admin routes */}

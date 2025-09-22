@@ -1,12 +1,15 @@
-// src/components/Layout/Header.js - Mobile Optimized
+// src/components/Layout/Header.js - Mobile Optimized with Bank Dashboard
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { Navbar, Nav, Container, Button, Image, Dropdown } from 'react-bootstrap';
 
 const Header = () => {
-  const { isAuthenticated, isAdmin, logout } = useAuth();
+  const { isAuthenticated, isAdmin, user, clientStatus, logout } = useAuth();
   const [expanded, setExpanded] = useState(false);
+
+  // Check if user has active client
+  const hasBankAccess = isAuthenticated && clientStatus === 'active' && !isAdmin;
 
   // Close mobile menu when clicking a link
   const closeMenu = () => {
@@ -55,12 +58,27 @@ const Header = () => {
                   </Button>
                 )}
 
+                {hasBankAccess && (
+                  <Button
+                    as={Link}
+                    to="/bank-dashboard"
+                    variant="primary"
+                    className="me-2 bank-button"
+                    onClick={closeMenu}
+                  >
+                    Bank Dashboard
+                  </Button>
+                )}
+
                 <Dropdown align="end" className="account-dropdown">
                   <Dropdown.Toggle variant="outline-light" id="dropdown-menu" className="account-dropdown-toggle">
                     Account
                   </Dropdown.Toggle>
                   <Dropdown.Menu className="account-dropdown-menu">
                     <Dropdown.Item as={Link} to="/dashboard" onClick={closeMenu}>Dashboard</Dropdown.Item>
+                    {hasBankAccess && (
+                      <Dropdown.Item as={Link} to="/bank-dashboard" onClick={closeMenu}>Bank Dashboard</Dropdown.Item>
+                    )}
                     <Dropdown.Item as={Link} to="/api-tokens" onClick={closeMenu}>API Tokens</Dropdown.Item>
                     <Dropdown.Item as={Link} to="/security" onClick={closeMenu}>Security Settings</Dropdown.Item>
                     <Dropdown.Item as={Link} to="/data-settings" onClick={closeMenu}>Data Settings</Dropdown.Item>
