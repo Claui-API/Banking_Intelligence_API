@@ -121,6 +121,7 @@ const adminRetentionRoutes = require('./routes/admin.retention.routes');
 // Import user routes - NEW
 const userRoutes = require('./routes/user.routes');
 const bankApiRoutes = require('./routes/bank-api.routes');
+const bankClientRoutes = require('./routes/bank-client.routes');
 
 // Safely import and mount all routes
 const routes = [
@@ -148,6 +149,7 @@ safeMount('/api/admin/retention', adminRetentionRoutes, 'Admin Retention');
 
 // Mount user routes - NEW
 safeMount('/api/users', userRoutes, 'User Routes');
+safeMount('/api/bank-client', bankClientRoutes, 'Bank Client Dashboard');
 
 safeMount('/api/v1/notifications/preferences', notificationPreferencesRoutes, 'Notification Preferences');
 
@@ -172,7 +174,9 @@ const initializeMetrics = async () => {
 // Make sure auth middleware is applied before usage notification middleware
 app.use('/api', (req, res, next) => {
   // Skip webhooks and health checks
-  if (req.path.startsWith('/webhooks') || req.path === '/health') {
+  if (req.path.startsWith('/webhooks') ||
+    req.path === '/health' ||
+    req.path.endsWith('/health')) {
     return next();
   }
 

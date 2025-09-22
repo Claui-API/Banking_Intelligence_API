@@ -9,7 +9,7 @@ async function insertTestBankData() {
 
 		// First, look up an existing client ID from the database
 		const [clientResults] = await sequelize.query(`
-      SELECT "clientId" FROM "Clients" LIMIT 1
+      SELECT * FROM "Clients" WHERE "userId" = '999ce78a-8d7a-450f-ae09-10b5d2292709' LIMIT 1
     `);
 
 		if (clientResults.length === 0) {

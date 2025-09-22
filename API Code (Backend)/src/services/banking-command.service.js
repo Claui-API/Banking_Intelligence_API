@@ -74,9 +74,12 @@ class BankingCommandService {
 			});
 
 			// Step 1: Collect financial data
-			const financialData = statementData
+			let financialData = statementData
 				? this._processStatementData(statementData)
 				: await this._collectFinancialData(userId, timeframe);
+
+			// Ensure all numeric fields are normalized
+			financialData = this._normalizeNumericFields(financialData);
 
 			// Step 2: Generate report sections
 			const reportSections = await this._generateReportSections(financialData, requestId, includeDetailed);
@@ -111,9 +114,6 @@ class BankingCommandService {
 	 */
 	_processStatementData(statementData) {
 		// Process the statement data
-		// This would extract accounts, transactions, and other financial info
-
-		// For demo purposes, return a simplified data structure
 		const processedData = {
 			accounts: statementData.accounts || [],
 			transactions: statementData.transactions || [],
@@ -125,16 +125,121 @@ class BankingCommandService {
 			user: statementData.user || null
 		};
 
-		return processedData;
+		// Normalize numeric fields
+		return this._normalizeNumericFields(processedData);
 	}
 
 	/**
-	 * Collect financial data from database
-	 * @param {string} userId - User ID
-	 * @param {string} timeframe - Time period
-	 * @returns {Promise<Object>} - Collected financial data
+	 * Normalize numeric fields in financial data
+	 * @param {Object} data - Financial data object
+	 * @returns {Object} - Data with normalized numeric fields
 	 * @private
 	 */
+	_normalizeNumericFields(data) {
+		if (!data) return data;
+
+		// Log initial state
+		logger.debug('Normalizing numeric fields', {
+			hasAccounts: !!data.accounts,
+			accountCount: data.accounts?.length || 0,
+			hasTransactions: !!data.transactions,
+			transactionCount: data.transactions?.length || 0
+		});
+
+		// Normalize account numeric fields
+		if (data.accounts && Array.isArray(data.accounts)) {
+			data.accounts = data.accounts.map(account => {
+				if (!account) return account;
+
+				// Handle Sequelize model instances
+				const plainAccount = account.dataValues ? account.dataValues : account;
+
+				return {
+					...plainAccount,
+					balance: typeof plainAccount.balance === 'number' ?
+						plainAccount.balance : Number(plainAccount.balance || 0),
+					availableBalance: typeof plainAccount.availableBalance === 'number' ?
+						plainAccount.availableBalance : Number(plainAccount.availableBalance || 0),
+					creditLimit: plainAccount.creditLimit !== undefined ?
+						(typeof plainAccount.creditLimit === 'number' ?
+							plainAccount.creditLimit : Number(plainAccount.creditLimit || 0)) :
+						undefined
+				};
+			});
+		}
+
+		// Normalize transaction numeric fields
+		if (data.transactions && Array.isArray(data.transactions)) {
+			logger.info(`Normalizing ${data.transactions.length} transactions`);
+
+			// Log sample before normalization
+			if (data.transactions.length > 0) {
+				const firstTx = data.transactions[0];
+				const plainFirstTx = firstTx.dataValues ? firstTx.dataValues : firstTx;
+				logger.debug('First transaction before normalization:', {
+					category: plainFirstTx.category,
+					merchantName: plainFirstTx.merchantName,
+					amount: plainFirstTx.amount,
+					type: typeof plainFirstTx.amount,
+					description: plainFirstTx.description
+				});
+			}
+
+			data.transactions = data.transactions.map((tx, index) => {
+				if (!tx) return tx;
+
+				// Handle Sequelize model instances
+				const plainTx = tx.dataValues ? tx.dataValues : tx;
+
+				// Ensure date is a valid Date object
+				let txDate = plainTx.date;
+				if (!(txDate instanceof Date)) {
+					txDate = new Date(plainTx.date);
+				}
+
+				// Create a new object preserving ALL fields
+				const normalizedTx = {
+					...plainTx,
+					amount: typeof plainTx.amount === 'number' ?
+						plainTx.amount : Number(plainTx.amount || 0),
+					date: isNaN(txDate.getTime()) ? new Date() : txDate
+				};
+
+				// Log detailed info for first few transactions to verify fields are preserved
+				if (index < 3 && (plainTx.category || plainTx.merchantName)) {
+					logger.debug(`Normalized transaction ${index + 1} fields:`, {
+						category: normalizedTx.category,
+						merchantName: normalizedTx.merchantName,
+						amount: normalizedTx.amount,
+						hasCategory: !!normalizedTx.category,
+						hasMerchant: !!normalizedTx.merchantName,
+						description: normalizedTx.description
+					});
+				}
+
+				return normalizedTx;
+			});
+
+			logger.info(`After normalization: ${data.transactions.length} transactions`);
+
+			// Log sample after normalization
+			if (data.transactions.length > 0) {
+				const categories = [...new Set(data.transactions.map(t => t.category).filter(c => c))];
+				const merchants = [...new Set(data.transactions.map(t => t.merchantName).filter(m => m))].slice(0, 5);
+
+				logger.info('Post-normalization summary:', {
+					transactionCount: data.transactions.length,
+					uniqueCategories: categories.length,
+					sampleCategories: categories.slice(0, 5),
+					uniqueMerchants: merchants.length,
+					sampleMerchants: merchants
+				});
+			}
+		}
+
+		return data;
+	}
+
 	async _collectFinancialData(userId, timeframe) {
 		// Convert timeframe to date range
 		const { startDate, endDate } = this._timeframeToDateRange(timeframe);
@@ -142,7 +247,7 @@ class BankingCommandService {
 		try {
 			// Fetch bank user
 			const bankUser = await BankUser.findOne({
-				where: { id: userId, status: 'active' }
+				where: { bankUserId: userId, status: 'active' }
 			});
 
 			if (!bankUser) {
@@ -151,6 +256,8 @@ class BankingCommandService {
 
 			const clientId = bankUser.clientId;
 			const bankUserId = bankUser.bankUserId;
+
+			logger.info(`Collecting financial data for ${bankUserId} (client: ${clientId})`);
 
 			// Fetch accounts for the user
 			const accounts = await Account.findAll({
@@ -161,45 +268,147 @@ class BankingCommandService {
 				}
 			});
 
+			// Log details of the first account to verify field structure and data types
+			if (accounts.length > 0) {
+				const sampleAccount = accounts[0];
+				logger.info('Sample account data:', {
+					accountId: sampleAccount.accountId,
+					name: sampleAccount.name,
+					type: sampleAccount.type,
+					balance: sampleAccount.balance,
+					balanceType: typeof sampleAccount.balance,
+					availableBalance: sampleAccount.availableBalance,
+					availableBalanceType: typeof sampleAccount.availableBalance,
+					currency: sampleAccount.currency,
+					isActive: sampleAccount.isActive
+				});
+			}
+
 			// Get account IDs for transaction query
 			const accountIds = accounts.map(account => account.accountId);
+			logger.info(`Looking for transactions with account IDs: ${accountIds.join(', ')}`);
 
-			// Fetch transactions for the accounts within the date range
-			const transactions = await Transaction.findAll({
+			// First, try to get properly categorized transactions
+			let finalTransactions = await Transaction.findAll({
 				where: {
 					clientId,
 					bankUserId,
 					accountId: { [Op.in]: accountIds },
-					date: { [Op.between]: [startDate, endDate] }
+					date: {
+						[Op.between]: [startDate, endDate]
+					},
+					category: {
+						[Op.not]: null,
+						[Op.ne]: 'Uncategorized'
+					}
 				},
-				order: [['date', 'ASC']]
+				order: [['date', 'DESC']]
 			});
 
-			return {
+			logger.info(`Found ${finalTransactions.length} categorized transactions`);
+
+			// If we don't have enough categorized transactions, get all transactions
+			if (finalTransactions.length < 10) {
+				logger.info('Insufficient categorized transactions, fetching all transactions');
+
+				// CRITICAL FIX: Remove 'let' to update the existing variable
+				finalTransactions = await Transaction.findAll({
+					where: {
+						clientId,
+						bankUserId,
+						accountId: { [Op.in]: accountIds },
+						date: {
+							[Op.between]: [startDate, endDate]
+						}
+					},
+					order: [['date', 'DESC']]
+				});
+
+				logger.info(`Found ${finalTransactions.length} transactions for user ${bankUserId}`, {
+					clientId,
+					bankUserId,
+					transactionCount: finalTransactions.length,
+					transactionSample: finalTransactions[0] ? {
+						id: finalTransactions[0].id,
+						date: finalTransactions[0].date,
+						amount: finalTransactions[0].amount,
+						category: finalTransactions[0].category,
+						merchantName: finalTransactions[0].merchantName,
+						description: finalTransactions[0].description
+					} : 'No transactions found'
+				});
+
+				// Log what we're getting
+				logger.info(`Retrieved ${finalTransactions.length} total transactions`, {
+					sample: finalTransactions[0] ? {
+						date: finalTransactions[0].date,
+						category: finalTransactions[0].category,
+						merchant: finalTransactions[0].merchantName,
+						amount: finalTransactions[0].amount,
+						description: finalTransactions[0].description
+					} : null
+				});
+			}
+
+			// Additional logging for debugging
+			if (finalTransactions.length > 0) {
+				// Get unique categories and merchants for logging
+				const categories = [...new Set(finalTransactions.map(t => t.category).filter(c => c))];
+				const merchants = [...new Set(finalTransactions.map(t => t.merchantName).filter(m => m))].slice(0, 5);
+
+				logger.info('Transaction data summary:', {
+					totalTransactions: finalTransactions.length,
+					categories: categories.length > 0 ? categories : ['No categories found'],
+					sampleMerchants: merchants.length > 0 ? merchants : ['No merchants found'],
+					dateRange: {
+						oldest: finalTransactions[finalTransactions.length - 1]?.date,
+						newest: finalTransactions[0]?.date
+					}
+				});
+
+				// Log first 3 transactions for detailed debugging
+				logger.debug('First 3 transactions:',
+					finalTransactions.slice(0, 3).map(tx => ({
+						date: tx.date,
+						amount: tx.amount,
+						category: tx.category,
+						merchant: tx.merchantName,
+						description: tx.description
+					}))
+				);
+			}
+
+			// Compile the financial data
+			const financialData = {
 				user: bankUser,
 				accounts,
-				transactions,
+				transactions: finalTransactions,
 				dateRange: { startDate, endDate },
 				timeframe
 			};
+
+			// Normalize numeric fields
+			return this._normalizeNumericFields(financialData);
+
 		} catch (error) {
 			logger.error('Error collecting financial data', {
 				userId,
 				timeframe,
-				error: error.message
+				error: error.message,
+				stack: error.stack
 			});
 			throw error;
 		}
 	}
 
 	/**
- * Generate content using Google's Gemini API
- * @param {string} prompt - The prompt to send to Gemini
- * @param {string} requestId - Request ID for logging
- * @param {string} queryType - Type of query for logging
- * @returns {Promise<string>} - Generated text
- * @private
- */
+	 * Generate content using Google's Gemini API
+	 * @param {string} prompt - The prompt to send to Gemini
+	 * @param {string} requestId - Request ID for logging
+	 * @param {string} queryType - Type of query for logging
+	 * @returns {Promise<string>} - Generated text
+	 * @private
+	 */
 	async _generateContent(prompt, requestId, queryType) {
 		if (!this.client) {
 			this.initialize();
@@ -216,9 +425,9 @@ class BankingCommandService {
 				queryType
 			});
 
-			// Configure generation settings
+			// Configure generation settings - lower temperature for more consistency
 			const generationConfig = {
-				temperature: 0.3,
+				temperature: 0.1, // Reduced from 0.3 to make output more deterministic
 				topP: 0.95,
 				topK: 40,
 				maxOutputTokens: 800
@@ -226,12 +435,15 @@ class BankingCommandService {
 
 			// Adjust settings based on query type
 			if (queryType === 'education') {
-				generationConfig.temperature = 0.2;
+				generationConfig.temperature = 0.1;
 				generationConfig.maxOutputTokens = 1500;
 			} else if (queryType === 'risk') {
 				generationConfig.temperature = 0.1;
-			} else if (queryType === 'travel') {
-				generationConfig.temperature = 0.4;
+			} else if (queryType === 'spending') {
+				generationConfig.temperature = 0.1; // Reduced specifically for spending analysis
+				generationConfig.maxOutputTokens = 1000;
+			} else if (queryType === 'transactions') {
+				generationConfig.temperature = 0.1; // Reduced for transaction analysis
 			}
 
 			// Define the grounding tool
@@ -244,6 +456,9 @@ class BankingCommandService {
 				tools: [groundingTool]
 			};
 
+			// Enhanced system instruction that emphasizes using specific entity names
+			const enhancedSystemInstruction = `You are a banking intelligence analysis system. Provide clear, concise financial insights based on transaction and account data. CRITICALLY IMPORTANT: When provided with specific merchants, categories, or other entities in the prompt, you MUST reference those EXACT entities in your analysis rather than using generic examples. NEVER use generic placeholder merchants or categories. ALWAYS use the specific merchant names, transaction categories, and numerical data provided in the prompt. Be informative and data-driven, focusing on patterns, risks, and actionable recommendations.`;
+
 			// Generate content using the correct API structure
 			const response = await this.client.models.generateContent({
 				model: this.modelName,
@@ -254,7 +469,7 @@ class BankingCommandService {
 					}
 				],
 				generationConfig: generationConfig,
-				systemInstruction: "You are a banking intelligence analysis system. Provide clear, concise financial insights based on transaction and account data. Be informative and data-driven, focusing on patterns, risks, and actionable recommendations.",
+				systemInstruction: enhancedSystemInstruction,
 				config,
 			});
 
@@ -312,33 +527,30 @@ class BankingCommandService {
 		// Prepare financial context for Gemini
 		const financialContext = this._createFinancialContext(financialData);
 
+		// We can now pass empty arrays since the functions will process data directly
+		const topCategories = [];
+		const topMerchants = [];
+
 		// Generate each section of the report
 		const sections = {};
 
 		// Account Summary section
 		sections.accountSummary = await this._generateAccountSummary(financialData, financialContext, requestId);
 
-		// Behavior & Preferences section
-		sections.behaviorPreferences = await this._generateBehaviorPreferences(financialData, financialContext, requestId);
+		// Behavior & Preferences section - now processes data directly
+		sections.behaviorPreferences = await this._generateBehaviorPreferences(financialData, topCategories, requestId);
 
-		// Merchant Analysis section
-		sections.merchantAnalysis = await this._generateMerchantAnalysis(financialData, financialContext, requestId);
+		// Merchant Analysis section - now processes data directly
+		sections.merchantAnalysis = await this._generateMerchantAnalysis(financialData, topMerchants, requestId);
 
 		// Risk & Compliance section
 		sections.riskCompliance = await this._generateRiskCompliance(financialData, financialContext, requestId);
 
 		// Generate detailed sections if requested
 		if (includeDetailed) {
-			// Cadence & Routines section
 			sections.cadenceRoutines = await this._generateCadenceRoutines(financialData, financialContext, requestId);
-
-			// Recurring & Subscriptions section
 			sections.recurringSubscriptions = await this._generateRecurringSubscriptions(financialData, financialContext, requestId);
-
-			// Travel & Events section
 			sections.travelEvents = await this._generateTravelEvents(financialData, financialContext, requestId);
-
-			// Backend Rules & Triggers section
 			sections.backendRules = await this._generateBackendRules(financialData, financialContext, requestId);
 		}
 
@@ -396,7 +608,7 @@ class BankingCommandService {
 		// Calculate average daily spend
 		const averageDailySpend = expenses / daysInPeriod;
 
-		// Create prompt
+		// Create prompt with explicit few-shot example
 		const prompt = `
       Generate a professional Banking Intelligence 'Account Summary' analysis section based on this data:
       
@@ -414,6 +626,8 @@ class BankingCommandService {
       1 Proactively enable overdraft protection with soft-limit alerts (e.g., 70% utilization).
       2 Offer small revolving LOC (e.g., $1,500–$5,000) with auto-repayment from next deposits.
       3 Weekly savings 'sweep-back' rule: move surplus above a dynamic floor (2× avg daily spend)."
+      
+      Your response MUST include the exact financial values provided to you ($${totalBalance.toFixed(2)}, $${income.toFixed(2)}, $${expenses.toFixed(2)}, $${netChange.toFixed(2)}, ${daysInPeriod} days, $${averageDailySpend.toFixed(2)}/day).
       
       Tone should be analytical, data-driven, and geared toward financial professionals.
     `;
@@ -462,214 +676,325 @@ class BankingCommandService {
 	}
 
 	/**
-	 * Generate Behavior & Preferences section
-	 * @param {Object} data - Financial data
-	 * @param {string} financialContext - Financial context
-	 * @param {string} requestId - Request ID
-	 * @returns {Promise<Object>} - Generated section
-	 * @private
-	 */
-	async _generateBehaviorPreferences(data, financialContext, requestId) {
-		// Analyze transactions by category
+ * Generate Behavior & Preferences section with improved entity inclusion
+ * @param {Object} data - Financial data
+ * @param {Array} topCategories - Top categories
+ * @param {string} requestId - Request ID
+ * @returns {Promise<Object>} - Generated section
+ * @private
+ */
+	async _generateBehaviorPreferences(data, topCategories, requestId) {
 		const transactions = data.transactions || [];
-		const categoryMap = new Map();
 
-		// Group transactions by category
-		transactions.forEach(tx => {
-			const amount = typeof tx.amount === 'number' ? tx.amount : Number(tx.amount || 0);
-			if (amount < 0) { // Only count expenses
-				const category = tx.category || 'Uncategorized';
-
-				if (!categoryMap.has(category)) {
-					categoryMap.set(category, {
-						count: 0,
-						total: 0
-					});
-				}
-
-				const categoryData = categoryMap.get(category);
-				categoryData.count++;
-				categoryData.total += Math.abs(amount);
-			}
+		// Enhanced input data logging
+		logger.info('Behavior Preferences - Input data check:', {
+			transactionCount: transactions.length,
+			firstThreeTransactions: transactions.slice(0, 3).map(tx => ({
+				category: tx.category,
+				merchant: tx.merchantName,
+				amount: tx.amount,
+				description: tx.description
+			})),
+			hasCategories: transactions.some(tx => tx.category && tx.category !== 'Uncategorized'),
+			hasMerchants: transactions.some(tx => tx.merchantName && tx.merchantName !== 'Unknown')
 		});
 
-		// Convert to array and sort by frequency
-		const categories = Array.from(categoryMap.entries())
-			.map(([name, data]) => ({
-				name,
-				count: data.count,
-				total: data.total
-			}))
-			.sort((a, b) => b.count - a.count);
+		// Get ALL transactions for complete visibility
+		const allTransactionDetails = transactions.slice(0, 10).map(tx => {
+			const amount = typeof tx.amount === 'number' ? tx.amount : Number(tx.amount || 0);
+			const type = amount > 0 ? 'Income' : amount < 0 ? 'Expense' : 'Transfer';
 
-		// Take top 10 categories
-		const topCategories = categories.slice(0, 10);
+			// Ensure date is valid before formatting
+			let dateStr = 'Invalid Date';
+			try {
+				const txDate = new Date(tx.date);
+				if (!isNaN(txDate.getTime())) {
+					dateStr = txDate.toLocaleDateString();
+				}
+			} catch (e) {
+				logger.warn('Date parsing error for transaction', { date: tx.date });
+			}
 
-		// Calculate total transactions for percentage calculation
-		const totalTransactions = topCategories.reduce((sum, cat) => sum + cat.count, 0);
-
-		// Format category data for prompt
-		const categoriesText = topCategories.map(cat => {
-			const percent = totalTransactions > 0 ? (cat.count / totalTransactions) * 100 : 0;
-			return `- ${cat.name}: ${cat.count} mentions (${percent.toFixed(2)}% of detected)`;
+			return `  - Date: ${dateStr}, Amount: $${Math.abs(amount).toFixed(2)}, Type: ${type}, Category: ${tx.category || 'Uncategorized'}, Merchant: ${tx.merchantName || 'Unknown'}, Description: ${tx.description || 'N/A'}`;
 		}).join('\n');
 
-		// Create prompt
-		const prompt = `
-      Generate a professional Banking Intelligence 'Behavior & Preferences' analysis section based on this spending category data:
-      
-      ${categoriesText}
-      
-      Format your response as frequency signals with percentages and elasticity assessments, as in this example:
-      "- Rideshare: 40 mentions (28.17% of detected); elasticity proxy: Elastic-ish.
-      - Groceries/Drugstores: 25 mentions (17.61% of detected); elasticity proxy: Moderate.
-      - Transit: 16 mentions (11.27% of detected); elasticity proxy: Inelastic."
-      
-      Add a short explanation of the method used:
-      "Method: Keyword frequency across merchant descriptors; useful for engagement and rewards targeting when precise merchant totals are not available from PDF text extraction."
-      
-      Determine elasticity based on these criteria:
-      - Inelastic: Daily necessities, high frequency
-      - Moderate: Regular but not daily needs
-      - Elastic-ish: Discretionary spending, luxury, or occasional purchases
-      
-      Tone should be analytical, data-driven, and geared toward financial professionals.
-    `;
+		// Get only expense transactions
+		const expenseTransactions = transactions.filter(tx => {
+			const amount = typeof tx.amount === 'number' ? tx.amount : Number(tx.amount || 0);
+			return amount < 0;
+		});
 
-		try {
-			// Generate content
-			const content = await this._generateContent(
-				prompt,
-				`${requestId}-behavior`,
-				'spending'
-			);
+		// Log what we're finding
+		logger.info('Behavior analysis data:', {
+			totalTransactions: transactions.length,
+			expenseTransactions: expenseTransactions.length,
+			expenseSample: expenseTransactions.slice(0, 3).map(tx => ({
+				amount: tx.amount,
+				category: tx.category,
+				merchant: tx.merchantName
+			}))
+		});
 
-			// Return formatted section
-			return {
-				title: 'Behavior & Preferences (Frequency Signals)',
-				content,
-				categories: topCategories.map(cat => ({
-					name: cat.name,
-					count: cat.count,
-					total: cat.total,
-					percent: totalTransactions > 0 ? (cat.count / totalTransactions) * 100 : 0
-				}))
-			};
-		} catch (error) {
-			logger.error('Error generating Behavior & Preferences section', {
-				requestId,
-				error: error.message
+		// If we have real expense data with categories, use it directly
+		if (expenseTransactions.length > 0) {
+			const realCategories = {};
+			expenseTransactions.forEach(tx => {
+				const category = tx.category || 'Uncategorized';
+				const amount = Math.abs(typeof tx.amount === 'number' ? tx.amount : Number(tx.amount || 0));
+
+				if (!realCategories[category]) {
+					realCategories[category] = {
+						count: 0,
+						total: 0,
+						merchants: []
+					};
+				}
+
+				realCategories[category].count++;
+				realCategories[category].total += amount;
+				if (tx.merchantName && !realCategories[category].merchants.includes(tx.merchantName)) {
+					realCategories[category].merchants.push(tx.merchantName);
+				}
 			});
 
-			// Return fallback content if generation fails
-			return {
-				title: 'Behavior & Preferences (Frequency Signals)',
-				content: categoriesText + '\n\nMethod: Keyword frequency across transaction categories; useful for engagement and rewards targeting.',
-				categories: topCategories.map(cat => ({
-					name: cat.name,
-					count: cat.count,
-					total: cat.total,
-					percent: totalTransactions > 0 ? (cat.count / totalTransactions) * 100 : 0
+			// Log the categories we found
+			logger.info('Categories found for behavior analysis:', {
+				categories: Object.keys(realCategories),
+				categoryDetails: Object.entries(realCategories).map(([name, data]) => ({
+					name,
+					count: data.count,
+					total: data.total,
+					merchants: data.merchants
 				}))
-			};
+			});
+
+			// Format the real category data
+			const realCategoriesText = Object.entries(realCategories).map(([name, data]) => {
+				const percent = (data.count / expenseTransactions.length) * 100;
+				let text = `- ${name}: ${data.count} transactions, $${data.total.toFixed(2)} (${percent.toFixed(1)}%)`;
+				if (data.merchants.length > 0) {
+					text += `\n  Merchants: ${data.merchants.join(', ')}`;
+				}
+				return text;
+			}).join('\n');
+
+			// Rest of the function remains the same...
+			const prompt = `
+Generate a professional Banking Intelligence 'Behavior & Preferences' analysis based on this ACTUAL transaction data:
+
+ALL TRANSACTIONS IN THE DATASET:
+${allTransactionDetails}
+
+EXPENSE CATEGORIES BREAKDOWN (from actual data):
+${realCategoriesText}
+
+CRITICAL REQUIREMENTS:
+1. You MUST analyze the EXACT categories and merchants shown in the data above
+2. If you see "Food & Dining" with "Whole Foods" and "Fine Dining Restaurant", discuss THESE SPECIFIC entities
+3. DO NOT say everything is "Uncategorized" if the data shows specific categories
+4. DO NOT say merchants are "Unknown" if specific merchant names are provided
+
+Provide a professional analysis that:
+- References the specific categories from the data (e.g., "Food & Dining" if present)
+- Mentions the actual merchants by name (e.g., "Whole Foods", "Fine Dining Restaurant")
+- Assesses elasticity for each real category found
+- Avoids generic placeholders or examples not in the data
+
+Tone should be analytical, data-driven, and geared toward financial professionals.
+`;
+
+			try {
+				const content = await this._generateContent(
+					prompt,
+					`${requestId}-behavior`,
+					'spending'
+				);
+
+				return {
+					title: 'Behavior & Preferences (Frequency Signals)',
+					content,
+					categories: Object.entries(realCategories).map(([name, data]) => ({
+						name,
+						count: data.count,
+						total: data.total,
+						percent: (data.count / expenseTransactions.length) * 100
+					}))
+				};
+			} catch (error) {
+				logger.error('Error generating Behavior & Preferences section', {
+					requestId,
+					error: error.message
+				});
+
+				return {
+					title: 'Behavior & Preferences (Frequency Signals)',
+					content: `Based on actual transaction data:\n\n${realCategoriesText}`,
+					categories: []
+				};
+			}
 		}
+
+		// Fallback if no expense transactions
+		return {
+			title: 'Behavior & Preferences (Frequency Signals)',
+			content: 'No expense transactions found in the dataset for behavior analysis.',
+			categories: []
+		};
 	}
 
 	/**
-	 * Generate Merchant Analysis section
-	 * @param {Object} data - Financial data
-	 * @param {string} financialContext - Financial context
-	 * @param {string} requestId - Request ID
-	 * @returns {Promise<Object>} - Generated section
-	 * @private
-	 */
-	async _generateMerchantAnalysis(data, financialContext, requestId) {
-		// Analyze transactions by merchant
+ * Generate Merchant Analysis section with improved entity inclusion
+ * @param {Object} data - Financial data
+ * @param {Array} topMerchants - Top merchants
+ * @param {string} requestId - Request ID
+ * @returns {Promise<Object>} - Generated section
+ * @private
+ */
+	/**
+ * Generate Merchant Analysis section with improved entity inclusion
+ * @param {Object} data - Financial data
+ * @param {Array} topMerchants - Top merchants (can be empty array now)
+ * @param {string} requestId - Request ID
+ * @returns {Promise<Object>} - Generated section
+ * @private
+ */
+	async _generateMerchantAnalysis(data, topMerchants, requestId) {
 		const transactions = data.transactions || [];
-		const merchantMap = new Map();
 
-		// Group transactions by merchant
-		transactions.forEach(tx => {
+		// Get ALL transactions for complete visibility
+		const allTransactionDetails = transactions.slice(0, 10).map(tx => {
 			const amount = typeof tx.amount === 'number' ? tx.amount : Number(tx.amount || 0);
-			if (amount < 0) { // Only count expenses
-				const merchant = tx.merchantName || this._extractMerchantName(tx.description) || 'Unknown';
+			const type = amount > 0 ? 'Income' : amount < 0 ? 'Expense' : 'Transfer';
+			return `  - ${tx.merchantName || 'N/A'}: $${Math.abs(amount).toFixed(2)}, Type: ${type}, Category: ${tx.category || 'Uncategorized'}, Date: ${new Date(tx.date).toLocaleDateString()}`;
+		}).join('\n');
 
-				if (!merchantMap.has(merchant)) {
-					merchantMap.set(merchant, {
-						count: 0,
-						total: 0
-					});
-				}
-
-				const merchantData = merchantMap.get(merchant);
-				merchantData.count++;
-				merchantData.total += Math.abs(amount);
-			}
+		// Get only expense transactions
+		const expenseTransactions = transactions.filter(tx => {
+			const amount = typeof tx.amount === 'number' ? tx.amount : Number(tx.amount || 0);
+			return amount < 0;
 		});
 
-		// Convert to array and sort by frequency
-		const merchants = Array.from(merchantMap.entries())
-			.map(([name, data]) => ({
-				name,
-				count: data.count,
-				total: data.total
+		// Log what we're finding
+		logger.info('Merchant analysis data:', {
+			totalTransactions: transactions.length,
+			expenseTransactions: expenseTransactions.length,
+			expenseSample: expenseTransactions.slice(0, 3).map(tx => ({
+				amount: tx.amount,
+				merchant: tx.merchantName,
+				category: tx.category
 			}))
-			.sort((a, b) => b.count - a.count);
+		});
 
-		// Take top 10 merchants
-		const topMerchants = merchants.slice(0, 10);
+		// Process merchant data directly from transactions
+		if (expenseTransactions.length > 0) {
+			const realMerchants = {};
 
-		// Format merchant data for prompt
-		const merchantsText = topMerchants.map(m =>
-			`- ${m.name} — ${m.count}`
-		).join('\n');
+			expenseTransactions.forEach(tx => {
+				const merchant = tx.merchantName || 'Unknown';
+				const amount = Math.abs(typeof tx.amount === 'number' ? tx.amount : Number(tx.amount || 0));
 
-		// Create prompt
-		const prompt = `
-      Generate a professional Banking Intelligence 'Merchant Concentration' analysis section based on this merchant data:
-      
-      ${merchantsText}
-      
-      Format your response as a list of top merchant descriptors with frequency counts, as in this example:
-      "- UBER * PENDI — 25
-      - MBTA-5 — 10
-      - PURCHASE CVS — 8
-      - DRAFTKINGS DES — 8
-      - APPLE.COM/BILL — 7"
-      
-      Add a short note explaining the format:
-      "Note: Tokens are extracted from transaction descriptions and may include formatting artifacts but reliably show brand concentration and habit anchors."
-      
-      Tone should be analytical, data-driven, and geared toward financial professionals.
-    `;
+				if (!realMerchants[merchant]) {
+					realMerchants[merchant] = {
+						count: 0,
+						total: 0,
+						categories: [],
+						dates: []
+					};
+				}
 
-		try {
-			// Generate content
-			const content = await this._generateContent(
-				prompt,
-				`${requestId}-merchants`,
-				'transactions'
-			);
+				realMerchants[merchant].count++;
+				realMerchants[merchant].total += amount;
 
-			// Return formatted section
-			return {
-				title: 'Merchant Concentration (Top Descriptors)',
-				content,
-				merchants: topMerchants
-			};
-		} catch (error) {
-			logger.error('Error generating Merchant Analysis section', {
-				requestId,
-				error: error.message
+				const category = tx.category || 'Uncategorized';
+				if (!realMerchants[merchant].categories.includes(category)) {
+					realMerchants[merchant].categories.push(category);
+				}
+
+				realMerchants[merchant].dates.push(new Date(tx.date).toLocaleDateString());
 			});
 
-			// Return fallback content if generation fails
-			return {
-				title: 'Merchant Concentration (Top Descriptors)',
-				content: merchantsText + '\n\nNote: Merchants extracted from transaction descriptions show brand concentration and habit anchors.',
-				merchants: topMerchants
-			};
+			// Format the real merchant data
+			const realMerchantsText = Object.entries(realMerchants)
+				.sort(([, a], [, b]) => b.total - a.total) // Sort by total amount
+				.map(([name, data]) => {
+					let text = `- ${name}: ${data.count} transaction${data.count > 1 ? 's' : ''}, $${data.total.toFixed(2)}`;
+					if (data.categories.length > 0) {
+						text += `\n  Categories: ${data.categories.join(', ')}`;
+					}
+					if (data.dates.length <= 3) {
+						text += `\n  Dates: ${data.dates.join(', ')}`;
+					}
+					return text;
+				}).join('\n');
+
+			// Create the prompt with actual data
+			const prompt = `
+Generate a professional Banking Intelligence 'Merchant Concentration' analysis based on this ACTUAL transaction data:
+
+ALL TRANSACTIONS IN THE DATASET:
+${allTransactionDetails}
+
+EXPENSE MERCHANTS BREAKDOWN (from actual data):
+${realMerchantsText}
+
+CRITICAL REQUIREMENTS:
+1. You MUST analyze the EXACT merchants shown in the data above
+2. If you see "Whole Foods", "Fine Dining Restaurant", etc., discuss THESE SPECIFIC merchants
+3. DO NOT say merchants are "Unknown" if specific merchant names are provided in the data
+4. DO NOT use generic examples - only discuss the merchants actually present in the data
+
+Format your response as:
+"**Merchant Concentration Analysis: Specific Spending Patterns**
+
+Analysis of customer spending with specific merchants:
+
+* [Use actual merchant names from the data above]
+* [Provide insights based on the actual spending patterns shown]
+
+[Summary of what these specific merchant patterns reveal about the customer]"
+
+Tone should be analytical, data-driven, and geared toward financial professionals.
+`;
+
+			try {
+				const content = await this._generateContent(
+					prompt,
+					`${requestId}-merchants`,
+					'transactions'
+				);
+
+				return {
+					title: 'Merchant Concentration (Top Descriptors)',
+					content,
+					merchants: Object.entries(realMerchants)
+						.sort(([, a], [, b]) => b.total - a.total)
+						.slice(0, 5)
+						.map(([name, data]) => ({
+							name,
+							count: data.count,
+							total: data.total
+						}))
+				};
+			} catch (error) {
+				logger.error('Error generating Merchant Analysis section', {
+					requestId,
+					error: error.message
+				});
+
+				return {
+					title: 'Merchant Concentration (Top Descriptors)',
+					content: `Based on actual transaction data:\n\n${realMerchantsText}`,
+					merchants: []
+				};
+			}
 		}
+
+		// Fallback if no expense transactions
+		return {
+			title: 'Merchant Concentration (Top Descriptors)',
+			content: 'No expense transactions found in the dataset for merchant analysis.',
+			merchants: []
+		};
 	}
 
 	/**
@@ -773,6 +1098,8 @@ class BankingCommandService {
       1 Retention stack: auto-enroll in overdraft grace; boost rewards on top-3 categories next 60 days.
       2 Churn trigger: if end-bal < 1.2× avg daily spend for 2 consecutive cycles, launch save-offer.
       3 AML: rule to review when gambling debits > 40% of 'Other subtractions' or 25% of total outflows."
+      
+      Your response MUST include the exact financial values provided to you ($${totalBalance.toFixed(2)}, $${averageDailySpend.toFixed(2)}/day, ${daysOfRunway.toFixed(1)} days).
       
       Tone should be analytical, data-driven, and focused on risk mitigation strategies for financial professionals.
     `;
@@ -899,6 +1226,8 @@ class BankingCommandService {
       Format your response with an observed pattern and implications, as in this example:
       "Observed pattern: clustered spend around travel/event windows; consistent small-ticket activity (coffee, transit) during non-travel days.
       Implications: Daily anchors (inelastic categories) support reliable rewards hooks; travel/event clusters suitable for seasonal or pre-trip limit increases and insurance cross-sell."
+      
+      Your response MUST include the exact percentage values provided to you (Weekday: ${weekdayPercent.toFixed(1)}%, Weekend: ${weekendPercent.toFixed(1)}%, Morning: ${morningPercent.toFixed(1)}%, Afternoon: ${afternoonPercent.toFixed(1)}%, Evening: ${eveningPercent.toFixed(1)}%).
       
       Tone should be analytical, data-driven, and focused on actionable insights for financial marketing professionals.
     `;
@@ -1043,7 +1372,7 @@ class BankingCommandService {
 			? `Detected tech/utility merchants: ${techSubscriptions.map(s => s.merchant).join(', ')}.`
 			: 'No tech/utility subscription merchants detected.';
 
-		// Create prompt
+		// Create prompt with requirement to include actual merchant names
 		const prompt = `
       Generate a professional Banking Intelligence 'Recurring & Subscriptions' analysis section based on this data:
       
@@ -1054,6 +1383,10 @@ class BankingCommandService {
       Format your response with detected merchants and a signal analysis, as in this example:
       "Detected recurring tech/utility merchants: Apple.com/Bill, GoDaddy, AWS (Amazon Web Services).
       Signal: tech-forward user with entrepreneurial patterns (domain + cloud + app store). Fit for business/creator bundles, bookkeeping add-ons, and SaaS-linked credit."
+      
+      If no clear subscription patterns are detected, analyze what this absence might indicate about the customer's financial behavior.
+      
+      You MUST include all merchant names if any are detected. Be specific and avoid generic references.
       
       Tone should be analytical, data-driven, and focused on product recommendation opportunities for financial professionals.
     `;
@@ -1196,6 +1529,8 @@ class BankingCommandService {
       2 Cross-sell: miles/points card; event ticket perks; micro travel insurance.
       3 Fraud model feature: geo-hopping with stadium/airline tokens → reduce false positives."
       
+      If no travel activity is detected, analyze what this absence suggests about the customer's lifestyle and appropriate banking strategies.
+      
       Tone should be analytical, data-driven, and focused on travel-related banking opportunities for financial professionals.
     `;
 
@@ -1295,13 +1630,14 @@ class BankingCommandService {
 						total: 0
 					});
 				}
+
 				const categoryData = categoryMap.get(category);
 				categoryData.count++;
 				categoryData.total += Math.abs(amount);
 			}
 		});
 
-		// Convert to array and sort by frequency
+		// Convert categoryMap to an array of categories - ADD THIS LINE TO FIX THE ERROR
 		const categories = Array.from(categoryMap.entries())
 			.map(([name, data]) => ({
 				name,
@@ -1347,7 +1683,7 @@ class BankingCommandService {
 		const rulesText = rules.length > 0 ? rules.join(',\n') : '{ "example_rule": { "if": "condition", "then": ["action1", "action2"] } }';
 		const actionsText = actions.length > 0 ? actions.join('\n') : '1) Default action — placeholder.';
 
-		// Create prompt
+		// Create prompt with examples and explicit formatting
 		const prompt = `
       Generate a professional Banking Intelligence 'Appendix — Backend Rules, Triggers & Scoring' section based on this data:
       
@@ -1375,6 +1711,8 @@ class BankingCommandService {
       Next-Best-Action (Priority Stack)
       1) Liquidity guardrail (overdraft grace + LOC) — prevents attrition.
       2) Coffee rewards activation — daily engagement anchor."
+      
+      Use the EXACT rules and actions from the provided data in your response.
       
       Tone should be technical, concise, and focused on actionable rules for banking systems.
     `;
@@ -1478,15 +1816,71 @@ class BankingCommandService {
 	 * @private
 	 */
 	_generateHtmlReport(report) {
-		// Generate HTML sections
-		const sectionsHtml = report.sections.map(section => `
-      <div class="report-section">
-        <h3>${section.title}</h3>
-        <div class="section-content">
-          ${section.content.replace(/\n/g, '<br>')}
+		// Generate HTML sections with entity highlighting
+		const sectionsHtml = report.sections.map(section => {
+			// Special handling for sections with entities
+			let sectionContent = section.content;
+
+			// Highlight category names in behavior preferences
+			if (section.id === 'behaviorPreferences' && section.categories) {
+				section.categories.forEach(cat => {
+					// Use a regex with word boundaries to avoid partial matches
+					const regex = new RegExp(`\\b${cat.name}\\b`, 'gi');
+					sectionContent = sectionContent.replace(regex, `<strong class="highlight-category">${cat.name}</strong>`);
+				});
+			}
+
+			// Highlight merchant names in merchant analysis
+			if (section.id === 'merchantAnalysis' && section.merchants) {
+				section.merchants.forEach(merch => {
+					// Use a regex with word boundaries to avoid partial matches
+					const regex = new RegExp(`\\b${merch.name}\\b`, 'gi');
+					sectionContent = sectionContent.replace(regex, `<strong class="highlight-merchant">${merch.name}</strong>`);
+				});
+			}
+
+			return `
+        <div class="report-section" id="${section.id}">
+          <h3>${section.title}</h3>
+          <div class="section-content">
+            ${sectionContent.replace(/\n/g, '<br>')}
+          </div>
+        </div>
+      `;
+		}).join('');
+
+		// Enhanced CSS with entity highlighting
+		const css = `
+      body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 1200px; margin: 0 auto; padding: 20px; }
+      .report-header { margin-bottom: 30px; padding-bottom: 20px; border-bottom: 2px solid #3498db; }
+      .report-section { margin-bottom: 25px; border-bottom: 1px solid #eee; padding-bottom: 20px; }
+      h1 { color: #2c3e50; }
+      h3 { color: #3498db; }
+      .highlight-category { color: #e74c3c; font-weight: bold; }
+      .highlight-merchant { color: #27ae60; font-weight: bold; }
+      .summary-metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin: 20px 0; }
+      .metric-card { background: #f8f9fa; padding: 15px; border-radius: 5px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+      .metric-value { font-size: 24px; font-weight: bold; color: #2c3e50; }
+      .metric-label { font-size: 14px; color: #7f8c8d; }
+    `;
+
+		// Generate summary metrics HTML
+		const summaryMetricsHtml = `
+      <div class="summary-metrics">
+        <div class="metric-card">
+          <div class="metric-value">$${report.summary.totalBalance.toFixed(2)}</div>
+          <div class="metric-label">Total Balance</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-value">${report.summary.transactionCount}</div>
+          <div class="metric-label">Transactions</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-value">$${report.summary.accountSummary?.averageDailySpend.toFixed(2) || '0.00'}/day</div>
+          <div class="metric-label">Average Daily Spend</div>
         </div>
       </div>
-    `).join('');
+    `;
 
 		// Generate full HTML document
 		const html = `
@@ -1494,19 +1888,14 @@ class BankingCommandService {
       <html>
       <head>
         <title>${report.title}</title>
-        <style>
-          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-          .report-header { margin-bottom: 30px; }
-          .report-section { margin-bottom: 25px; border-bottom: 1px solid #eee; padding-bottom: 20px; }
-          h1 { color: #2c3e50; }
-          h3 { color: #3498db; }
-        </style>
+        <style>${css}</style>
       </head>
       <body>
         <div class="report-header">
           <h1>${report.title}</h1>
           <p>Period: ${report.period}</p>
           <p>Generated: ${new Date(report.generated).toLocaleString()}</p>
+          ${summaryMetricsHtml}
         </div>
         
         <div class="report-content">
@@ -1565,12 +1954,13 @@ class BankingCommandService {
 	_extractMerchantName(description) {
 		if (!description) return 'Unknown';
 
-		// Strip common prefixes and suffixes
+		// Enhanced merchant name extraction with more comprehensive prefix removal
 		const cleanDesc = description
-			.replace(/^(POS |ACH |DEBIT |CREDIT |PMT |PYMT |PUR |PURCH |PURCHASE |PMNT |)/i, '')
-			.replace(/\s+\d+\/\d+\/\d+$/, ''); // Remove dates at the end
+			.replace(/^(POS |ACH |DEBIT |CREDIT |PMT |PYMT |PUR |PURCH |PURCHASE |PMNT |CHK |CHECK |DEPOSIT |DEB |CRED |ATM |ONLINE |WEB |MOBILE |APP |BILL |PAYMENT |AUTOPAY |)/i, '')
+			.replace(/\s+\d+\/\d+\/\d+$/, '') // Remove dates at the end
+			.replace(/\s+\d{4,}$/, ''); // Remove long numbers (like reference numbers) at the end
 
-		return cleanDesc;
+		return cleanDesc.trim() || 'Unknown';
 	}
 
 	/**
@@ -1580,19 +1970,37 @@ class BankingCommandService {
 	 * @private
 	 */
 	_createFinancialContext(data) {
+		// Normalize data first
+		data = this._normalizeNumericFields(data);
+
 		const { accounts = [], transactions = [] } = data;
 
 		// Calculate total balance
-		const totalBalance = accounts.reduce((sum, account) => sum + (account.balance || 0), 0);
+		const totalBalance = accounts.reduce((sum, account) => {
+			const balance = typeof account.balance === 'number' ? account.balance : Number(account.balance || 0);
+			return sum + balance;
+		}, 0);
 
 		// Calculate income and expenses
 		const income = transactions
-			.filter(tx => tx.amount > 0)
-			.reduce((sum, tx) => sum + tx.amount, 0);
+			.filter(tx => {
+				const amount = typeof tx.amount === 'number' ? tx.amount : Number(tx.amount || 0);
+				return amount > 0;
+			})
+			.reduce((sum, tx) => {
+				const amount = typeof tx.amount === 'number' ? tx.amount : Number(tx.amount || 0);
+				return sum + amount;
+			}, 0);
 
 		const expenses = transactions
-			.filter(tx => tx.amount < 0)
-			.reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
+			.filter(tx => {
+				const amount = typeof tx.amount === 'number' ? tx.amount : Number(tx.amount || 0);
+				return amount < 0;
+			})
+			.reduce((sum, tx) => {
+				const amount = typeof tx.amount === 'number' ? tx.amount : Number(tx.amount || 0);
+				return sum + Math.abs(amount);
+			}, 0);
 
 		// Calculate net change
 		const netChange = income - expenses;
@@ -1602,20 +2010,68 @@ class BankingCommandService {
 			`${account.name || 'Account'}: $${account.balance.toFixed(2)} (${account.type || 'Unknown'})`
 		).join('\n');
 
-		// Format recent transactions (up to 10) with proper type handling
+		// Process categories directly from transactions (replacing _getTopCategories)
+		const categoryMap = new Map();
+		transactions
+			.filter(tx => {
+				const amount = typeof tx.amount === 'number' ? tx.amount : Number(tx.amount || 0);
+				return amount < 0;
+			})
+			.forEach(tx => {
+				const category = tx.category || 'Uncategorized';
+				const amount = Math.abs(typeof tx.amount === 'number' ? tx.amount : Number(tx.amount || 0));
+
+				if (!categoryMap.has(category)) {
+					categoryMap.set(category, { count: 0, total: 0 });
+				}
+
+				const catData = categoryMap.get(category);
+				catData.count++;
+				catData.total += amount;
+			});
+
+		const categoryAnalysis = Array.from(categoryMap.entries())
+			.sort(([, a], [, b]) => b.total - a.total)
+			.slice(0, 5)
+			.map(([name, data]) => `${name}: ${data.count} transactions ($${data.total.toFixed(2)})`)
+			.join('\n');
+
+		// Process merchants directly from transactions (replacing _getTopMerchants)
+		const merchantMap = new Map();
+		transactions
+			.filter(tx => {
+				const amount = typeof tx.amount === 'number' ? tx.amount : Number(tx.amount || 0);
+				return amount < 0;
+			})
+			.forEach(tx => {
+				const merchant = tx.merchantName || 'Unknown';
+				const amount = Math.abs(typeof tx.amount === 'number' ? tx.amount : Number(tx.amount || 0));
+
+				if (!merchantMap.has(merchant)) {
+					merchantMap.set(merchant, { count: 0, total: 0 });
+				}
+
+				const merchData = merchantMap.get(merchant);
+				merchData.count++;
+				merchData.total += amount;
+			});
+
+		const merchantAnalysis = Array.from(merchantMap.entries())
+			.sort(([, a], [, b]) => b.total - a.total)
+			.slice(0, 5)
+			.map(([name, data]) => `${name}: ${data.count} transactions ($${data.total.toFixed(2)})`)
+			.join('\n');
+
+		// Format recent transactions (up to 10)
 		const recentTransactions = [...transactions]
 			.sort((a, b) => new Date(b.date) - new Date(a.date))
 			.slice(0, 10)
 			.map(tx => {
-				// Ensure amount is a number with fallback to 0
-				const amount = typeof tx.amount === 'number' ?
-					tx.amount :
-					parseFloat(tx.amount || 0);
-
-				return `${tx.date}: ${Math.abs(amount).toFixed(2)} ${amount < 0 ? 'expense' : 'income'} - ${tx.category || 'Uncategorized'} - ${tx.description || ''}`;
+				const amount = typeof tx.amount === 'number' ? tx.amount : Number(tx.amount || 0);
+				return `${tx.date}: ${Math.abs(amount).toFixed(2)} ${amount < 0 ? 'expense' : 'income'} - ${tx.category || 'Uncategorized'} - ${tx.merchantName || 'Unknown'} - ${tx.description || ''}`;
 			}).join('\n');
 
-		// Format financial context
+		// Format enhanced financial context
 		return `
 FINANCIAL SUMMARY:
 Total Balance: $${totalBalance.toFixed(2)}
@@ -1625,6 +2081,12 @@ Net Change: $${netChange.toFixed(2)}
 
 ACCOUNTS:
 ${accountsSummary || 'No account information available'}
+
+TOP SPENDING CATEGORIES:
+${categoryAnalysis || 'No category information available'}
+
+TOP MERCHANTS:
+${merchantAnalysis || 'No merchant information available'}
 
 RECENT TRANSACTIONS:
 ${recentTransactions || 'No transaction history available'}

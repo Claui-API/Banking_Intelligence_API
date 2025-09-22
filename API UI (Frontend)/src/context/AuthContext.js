@@ -1,4 +1,4 @@
-// src/context/AuthContext.js - Properly fixed logout function for frontend
+// src/context/AuthContext.js - With improved client status handling
 import React, { createContext, useState, useEffect, useContext, useRef } from 'react';
 import { authService } from '../services/auth';
 import api from '../services/api'; // Import API service instead
@@ -9,11 +9,15 @@ const AuthContext = createContext();
 export const useAuth = () => useContext(AuthContext);
 
 export const AuthProvider = ({ children }) => {
+  // Initialize clientStatus from localStorage if available
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [user, setUser] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [clientStatus, setClientStatus] = useState('unknown');
+  const [clientStatus, setClientStatus] = useState(() => {
+    const savedStatus = localStorage.getItem('clientStatus');
+    return savedStatus || 'unknown';
+  });
 
   // Add a flag to prevent multiple simultaneous status refreshes
   const refreshingStatus = useRef(false);
@@ -21,6 +25,14 @@ export const AuthProvider = ({ children }) => {
   const statusRefreshTimer = useRef(null);
   // Track last refresh time to prevent too frequent refreshes
   const lastRefreshTime = useRef(0);
+
+  // Helper function to store client status
+  const storeClientStatus = (status) => {
+    if (status) {
+      localStorage.setItem('clientStatus', status);
+      logger.info(`Stored client status in localStorage: ${status}`);
+    }
+  };
 
   useEffect(() => {
     // Check authentication status on initial load
@@ -31,6 +43,14 @@ export const AuthProvider = ({ children }) => {
         if (auth) {
           // If authenticated, get user info from token
           const userData = authService.getUserFromToken();
+
+          // Log token data for debugging
+          logger.info('User data from token:', {
+            userId: userData.id,
+            email: userData.email,
+            clientId: userData.clientId,
+            role: userData.role
+          });
 
           // Store the user ID in localStorage for validation checks
           if (userData && userData.id) {
@@ -49,22 +69,38 @@ export const AuthProvider = ({ children }) => {
 
           // For admin users, don't worry about client status
           if (isUserAdmin) {
-            setClientStatus('active'); // Always treat admin users as having active status
+            const adminStatus = 'active';
+            setClientStatus(adminStatus);
+            storeClientStatus(adminStatus);
           }
-          // For regular users, set initial client status from token if available
-          else if (userData.clientId && userData.clientStatus) {
-            setClientStatus(userData.clientStatus);
+          // For regular users, handle client status
+          else if (userData.clientId) {
+            // Check if we have a stored active client ID
+            const activeClientId = localStorage.getItem('activeClientId');
 
-            // Only fetch fresh status if we haven't refreshed recently
-            const now = Date.now();
-            if (now - lastRefreshTime.current > 30000) { // 30 second cooldown
-              // Schedule a status refresh (debounced)
-              if (statusRefreshTimer.current) {
-                clearTimeout(statusRefreshTimer.current);
+            if (activeClientId) {
+              // If we have a stored active client, use 'active' status
+              setClientStatus('active');
+              storeClientStatus('active');
+              logger.info(`Using stored active client: ${activeClientId}`);
+            } else {
+              // Otherwise, use a fallback or stored status
+              const storedStatus = localStorage.getItem('clientStatus');
+              if (storedStatus) {
+                setClientStatus(storedStatus);
+                logger.info(`Using stored client status: ${storedStatus}`);
+              } else {
+                // Set a temporary status
+                setClientStatus('pending');
+
+                // Schedule an immediate status refresh
+                if (statusRefreshTimer.current) {
+                  clearTimeout(statusRefreshTimer.current);
+                }
+                statusRefreshTimer.current = setTimeout(() => {
+                  refreshClientStatus();
+                }, 100);
               }
-              statusRefreshTimer.current = setTimeout(() => {
-                refreshClientStatus();
-              }, 500); // Debounce for 500ms
             }
           }
         }
@@ -93,7 +129,9 @@ export const AuthProvider = ({ children }) => {
 
     // Admin users always have 'active' status
     if (user.role === 'admin') {
-      setClientStatus('active');
+      const adminStatus = 'active';
+      setClientStatus(adminStatus);
+      storeClientStatus(adminStatus);
       return;
     }
 
@@ -114,16 +152,62 @@ export const AuthProvider = ({ children }) => {
       refreshingStatus.current = true;
       lastRefreshTime.current = now;
 
-      // Make an API call to get the current client status
+      // First, try to get all clients for this user
+      logger.info('Fetching all clients for user');
+      const userClientsResponse = await api.get('/clients/user-client');
+
+      if (userClientsResponse.data && userClientsResponse.data.success) {
+        const clients = userClientsResponse.data.data;
+        logger.info(`Found ${clients.length} clients for user`);
+
+        // Find the first active client
+        const activeClient = clients.find(client => client.status === 'active');
+
+        if (activeClient) {
+          logger.info(`Found active client: ${activeClient.clientId}`);
+          // Store the active client ID and status
+          localStorage.setItem('activeClientId', activeClient.clientId);
+          setClientStatus('active');
+          storeClientStatus('active');
+          return;
+        }
+      }
+
+      // Fallback to checking the specific client
+      logger.info(`Checking specific client status: ${user.clientId}`);
       const response = await api.get(`/clients/status/${user.clientId}`);
 
       if (response.data && response.data.success) {
-        logger.info(`Client status refreshed: ${response.data.data.status}`);
-        setClientStatus(response.data.data.status);
+        const clientData = response.data.data;
+        const newStatus = clientData.status;
+
+        logger.info(`Client status from API: ${newStatus} for client ${clientData.clientId}`);
+
+        // Store the client ID if it's active
+        if (newStatus === 'active') {
+          localStorage.setItem('activeClientId', clientData.clientId);
+        }
+
+        setClientStatus(newStatus);
+        storeClientStatus(newStatus);
       }
     } catch (error) {
       logger.error('Failed to refresh client status:', error);
-      // Don't change the status on error, keep the current value
+      // If the API call fails, check if we already have an active client ID
+      const activeClientId = localStorage.getItem('activeClientId');
+      if (activeClientId) {
+        logger.info(`Using stored active client after error: ${activeClientId}`);
+        setClientStatus('active');
+        storeClientStatus('active');
+      } else {
+        // If we have a clientId in the user object, just set it to active as a fallback
+        logger.info('Setting fallback active status for client');
+        setClientStatus('active');
+        storeClientStatus('active');
+        if (user.clientId) {
+          localStorage.setItem('activeClientId', user.clientId);
+        }
+      }
     } finally {
       refreshingStatus.current = false;
     }
@@ -193,7 +277,20 @@ export const AuthProvider = ({ children }) => {
 
       // Set client status
       if (userData.clientId) {
-        setClientStatus(loginResult.clientStatus || 'pending');
+        // Get client status, defaulting to active if it's a client login
+        const newStatus = loginResult.clientStatus || (isClientIdLogin ? 'active' : 'pending');
+        setClientStatus(newStatus);
+        storeClientStatus(newStatus);
+
+        // If it's active, store the client ID
+        if (newStatus === 'active' || isClientIdLogin) {
+          localStorage.setItem('activeClientId', userData.clientId);
+        }
+
+        // Refresh client status to get latest info
+        setTimeout(() => {
+          refreshClientStatus();
+        }, 500);
       }
 
       setIsLoading(false);
@@ -233,6 +330,8 @@ export const AuthProvider = ({ children }) => {
       sessionStorage.removeItem('plaidConnected');
       sessionStorage.removeItem('plaidAccounts');
       localStorage.removeItem('financialData');
+      localStorage.removeItem('clientStatus'); // Clear client status
+      localStorage.removeItem('activeClientId'); // Clear active client ID
 
       // Notify the backend to clear server-side user data (if user is logged in)
       if (currentUserId) {
@@ -270,6 +369,8 @@ export const AuthProvider = ({ children }) => {
       localStorage.removeItem('token');
       localStorage.removeItem('refreshToken');
       localStorage.removeItem('userId');
+      localStorage.removeItem('clientStatus');
+      localStorage.removeItem('activeClientId');
     }
   };
 
@@ -289,6 +390,16 @@ export const AuthProvider = ({ children }) => {
 
       // Update admin status if needed
       setIsAdmin(userData.role === 'admin');
+
+      // If not admin and has clientId, schedule a status refresh
+      if (userData.role !== 'admin' && userData.clientId) {
+        if (statusRefreshTimer.current) {
+          clearTimeout(statusRefreshTimer.current);
+        }
+        statusRefreshTimer.current = setTimeout(() => {
+          refreshClientStatus();
+        }, 500);
+      }
     }
   };
 
@@ -319,7 +430,40 @@ export const AuthProvider = ({ children }) => {
       }
 
       setIsAdmin(userData.role === 'admin');
-      setClientStatus(userData.clientStatus || 'active');
+
+      // If admin, always set active status
+      if (userData.role === 'admin') {
+        setClientStatus('active');
+        storeClientStatus('active');
+      }
+      // For non-admin users with clientId
+      else if (userData.clientId) {
+        // Check for stored active client ID
+        const activeClientId = localStorage.getItem('activeClientId');
+        if (activeClientId) {
+          setClientStatus('active');
+          storeClientStatus('active');
+        } else {
+          // Otherwise use stored status or default to active
+          const savedStatus = localStorage.getItem('clientStatus');
+          const newStatus = savedStatus || 'active';  // Default to active as fallback
+          setClientStatus(newStatus);
+          storeClientStatus(newStatus);
+
+          // If status is active, store the client ID
+          if (newStatus === 'active') {
+            localStorage.setItem('activeClientId', userData.clientId);
+          }
+
+          // Schedule a refresh to update from server
+          if (statusRefreshTimer.current) {
+            clearTimeout(statusRefreshTimer.current);
+          }
+          statusRefreshTimer.current = setTimeout(() => {
+            refreshClientStatus();
+          }, 500);
+        }
+      }
     }
   };
 
