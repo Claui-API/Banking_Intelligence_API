@@ -72,29 +72,45 @@ const Token = sequelize.define('Token', {
 });
 
 // Utility method to find valid tokens
-Token.findValidToken = async function(token, type) {
-	const now = new Date();
-	
-	return await this.findOne({
-	  where: {
-		token,
-		tokenType: type,
-		expiresAt: {
-		  [Op.gt]: now  // Use the imported Op instead of sequelize.Op
-		},
-		isRevoked: false
-	  }
-	});
-  };
+Token.findValidToken = async function (token, type) {
+  const { Op } = require('sequelize');
+  const now = new Date();
+
+  // Build the token type condition to handle both 'access' and 'api' tokens
+  let tokenTypeCondition;
+  if (type === 'access') {
+    // When checking for access tokens, also accept api tokens
+    tokenTypeCondition = {
+      [Op.or]: [
+        { tokenType: 'access' },
+        { tokenType: 'api' }
+      ]
+    };
+  } else {
+    // For other types (like refresh), use exact match
+    tokenTypeCondition = { tokenType: type };
+  }
+
+  return await this.findOne({
+    where: {
+      token,
+      ...tokenTypeCondition,
+      expiresAt: {
+        [Op.gt]: now
+      },
+      isRevoked: false
+    }
+  });
+};
 
 // Import model relationships after defining all models
 const setupAssociations = () => {
   const { User, Client } = require('./User');
-  
+
   // Set up associations
   User.hasMany(Token, { foreignKey: 'userId' });
   Token.belongsTo(User, { foreignKey: 'userId' });
-  
+
   if (Client) {
     Client.hasMany(Token, { foreignKey: 'clientId', targetKey: 'clientId' });
     Token.belongsTo(Client, { foreignKey: 'clientId', targetKey: 'clientId' });

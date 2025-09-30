@@ -2,8 +2,12 @@
 const express = require('express');
 const authController = require('../controllers/auth.controller');
 const { authMiddleware, authorize } = require('../middleware/auth');
+const { sessionMiddleware, requireSession } = require('../middleware/session.middleware'); // Add session middleware
 
 const router = express.Router();
+
+// Apply session middleware to all routes
+router.use(sessionMiddleware);
 
 /**
  * @route POST /api/auth/register
@@ -81,5 +85,12 @@ router.post('/enable-2fa', authMiddleware, authController.enable2FA);
  * @access Private
  */
 router.post('/disable-2fa', authMiddleware, authController.disable2FA);
+
+/**
+ * @route GET /api/auth/session-status
+ * @desc Check current session status
+ * @access Public (with session ID)
+ */
+router.get('/session-status', authController.getSessionStatus);
 
 module.exports = router;

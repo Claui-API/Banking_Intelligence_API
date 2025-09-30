@@ -1,8 +1,10 @@
-// src/routes/bank-api.routes.js
+// src/routes/bank-api.routes.js - Enhanced with Session Isolation
 const express = require('express');
 const { authMiddleware } = require('../middleware/auth');
 const bankUserService = require('../services/bank-user.service');
 const insightsController = require('../controllers/insights.controller');
+const sessionManager = require('../services/session.service'); // Add session manager
+const geminiService = require('../services/gemini.service'); // Direct access for isolated insights
 const logger = require('../utils/logger');
 
 const router = express.Router();
@@ -217,14 +219,15 @@ router.get('/users/:bankUserId/financial-data', authMiddleware, getClientIdMiddl
 
 /**
  * @route POST /api/bank/users/:bankUserId/insights
- * @desc Generate insights for a bank user
+ * @desc Generate insights for a bank user with isolated session
  * @access Private
  */
 router.post('/users/:bankUserId/insights', authMiddleware, getClientIdMiddleware, async (req, res) => {
 	try {
 		const { clientId } = req;
+		const userId = req.auth.userId;
 		const { bankUserId } = req.params;
-		const { query, requestId } = req.body;
+		const { query, requestId, sessionId: providedSessionId } = req.body;
 
 		if (!bankUserId || !query) {
 			return res.status(400).json({
@@ -233,35 +236,205 @@ router.post('/users/:bankUserId/insights', authMiddleware, getClientIdMiddleware
 			});
 		}
 
+		// Create a unique identifier for this bank user
+		const subUserId = `${clientId}_bank_${bankUserId}`;
+
+		// Get or create session for this specific bank user
+		let sessionId = providedSessionId;
+		if (!sessionId) {
+			// Check if we already have a session for this bank user
+			sessionId = sessionManager.getOrCreateSubUserSession(userId, subUserId);
+		} else {
+			// Validate the provided session belongs to this bank user
+			const session = sessionManager.getSession(sessionId);
+			if (!session || session.subUserId !== subUserId) {
+				// Invalid or wrong session, create new one
+				sessionId = sessionManager.getOrCreateSubUserSession(userId, subUserId);
+				logger.warn('Invalid session provided for bank user, created new session', {
+					bankUserId,
+					newSessionId: sessionId
+				});
+			}
+		}
+
+		logger.info('Processing bank user insight request', {
+			clientId,
+			bankUserId,
+			subUserId,
+			sessionId,
+			query: query.substring(0, 50)
+		});
+
 		// Get financial data for this bank user
 		const financialData = await bankUserService.getBankUserFinancialData(clientId, bankUserId);
 
-		// Call the insights controller with this data
+		// Prepare the request data with session isolation
 		const insightData = {
 			query,
+			queryType: classifyQuery(query),
 			requestId: requestId || `bank-${clientId}-${bankUserId}-${Date.now()}`,
-			...financialData
+			userId: userId, // Main user ID
+			subUserId: subUserId, // Bank user identifier
+			sessionId: sessionId, // Bank user's specific session
+			accounts: financialData.accounts || [],
+			transactions: financialData.transactions || [],
+			userProfile: {
+				name: financialData.bankUserName || `Bank User ${bankUserId}`,
+				email: financialData.bankUserEmail,
+				bankUserId: bankUserId
+			}
 		};
 
-		// Generate insights
-		const insights = await insightsController.generateInsightsInternal(insightData);
+		// Generate insights using Gemini directly with session isolation
+		const insights = await geminiService.generateInsights(insightData);
 
 		return res.status(200).json({
 			success: true,
 			data: {
 				bankUserId,
 				query,
-				insights,
-				timestamp: new Date().toISOString()
+				insights: insights.insight,
+				sessionId: sessionId, // Return session for future requests
+				timestamp: new Date().toISOString(),
+				queryType: insights.queryType
 			}
 		});
 	} catch (error) {
-		logger.error('Error generating insights:', error);
+		logger.error('Error generating insights for bank user:', error);
 		return res.status(500).json({
 			success: false,
 			message: error.message || 'Failed to generate insights'
 		});
 	}
 });
+
+/**
+ * @route DELETE /api/bank/users/:bankUserId/session
+ * @desc Clear conversation session for a bank user
+ * @access Private
+ */
+router.delete('/users/:bankUserId/session', authMiddleware, getClientIdMiddleware, async (req, res) => {
+	try {
+		const { clientId } = req;
+		const userId = req.auth.userId;
+		const { bankUserId } = req.params;
+		const { sessionId } = req.body;
+
+		if (!bankUserId) {
+			return res.status(400).json({
+				success: false,
+				message: 'Bank user ID is required'
+			});
+		}
+
+		const subUserId = `${clientId}_bank_${bankUserId}`;
+
+		// Delete the session for this bank user
+		if (sessionId) {
+			const deleted = sessionManager.deleteSession(sessionId);
+			if (deleted) {
+				logger.info('Deleted session for bank user', {
+					bankUserId,
+					sessionId
+				});
+			}
+		} else {
+			// Find and delete all sessions for this bank user
+			const deletedCount = sessionManager.deleteSubUserSessions(userId, subUserId);
+			logger.info('Deleted all sessions for bank user', {
+				bankUserId,
+				count: deletedCount
+			});
+		}
+
+		// Create a new session for future requests
+		const newSessionId = sessionManager.createSubUserSession(userId, subUserId);
+
+		return res.status(200).json({
+			success: true,
+			message: 'Session cleared for bank user',
+			data: {
+				bankUserId,
+				sessionId: newSessionId
+			}
+		});
+	} catch (error) {
+		logger.error('Error clearing bank user session:', error);
+		return res.status(500).json({
+			success: false,
+			message: error.message || 'Failed to clear session'
+		});
+	}
+});
+
+/**
+ * @route GET /api/bank/users/:bankUserId/session-status
+ * @desc Check session status for a bank user
+ * @access Private
+ */
+router.get('/users/:bankUserId/session-status', authMiddleware, getClientIdMiddleware, async (req, res) => {
+	try {
+		const { clientId } = req;
+		const userId = req.auth.userId;
+		const { bankUserId } = req.params;
+		const { sessionId } = req.query;
+
+		const subUserId = `${clientId}_bank_${bankUserId}`;
+
+		if (sessionId) {
+			const session = sessionManager.getSession(sessionId);
+			if (session && session.subUserId === subUserId) {
+				return res.status(200).json({
+					success: true,
+					data: {
+						hasSession: true,
+						sessionId: sessionId,
+						bankUserId: bankUserId,
+						createdAt: session.createdAt,
+						lastAccessed: session.lastAccessed,
+						queryCount: session.conversationHistory?.recentQueries?.length || 0
+					}
+				});
+			}
+		}
+
+		// No valid session found
+		return res.status(200).json({
+			success: true,
+			data: {
+				hasSession: false,
+				bankUserId: bankUserId,
+				message: 'No active session for this bank user'
+			}
+		});
+	} catch (error) {
+		logger.error('Error checking bank user session status:', error);
+		return res.status(500).json({
+			success: false,
+			message: 'Failed to check session status'
+		});
+	}
+});
+
+/**
+ * Helper function to classify query type
+ */
+function classifyQuery(query) {
+	if (!query) return 'general';
+	const normalizedQuery = query.trim().toLowerCase();
+
+	if (/\b(cocaine|heroin|hack|bomb|illegal|drug|weapon)\b/.test(normalizedQuery)) {
+		return 'harmful';
+	}
+	if (/^(hi|hello|hey)/.test(normalizedQuery)) return 'greeting';
+	if (/joke|funny/.test(normalizedQuery)) return 'joke';
+	if (/budget/.test(normalizedQuery)) return 'budgeting';
+	if (/spend/.test(normalizedQuery)) return 'spending';
+	if (/save|saving/.test(normalizedQuery)) return 'saving';
+	if (/invest/.test(normalizedQuery)) return 'investing';
+	if (/debt|loan/.test(normalizedQuery)) return 'debt';
+
+	return 'general';
+}
 
 module.exports = router;

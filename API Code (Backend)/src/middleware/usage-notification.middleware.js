@@ -50,8 +50,8 @@ const saveClientSafely = async (client, updates) => {
 const usageNotificationMiddleware = async (req, res, next) => {
 	try {
 		// Skip if no client in request (happens for admin routes or non-API routes)
-		if (!req.client || !req.auth || !req.auth.userId) {
-			return next();
+		if (!req.client || !req.client.clientId || !req.auth || !req.auth.userId) {
+			return next(); // Skip if no valid client
 		}
 
 		// Get the client from the request (added by auth middleware)

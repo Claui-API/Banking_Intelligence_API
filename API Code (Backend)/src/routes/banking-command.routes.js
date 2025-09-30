@@ -1,12 +1,13 @@
 // src/routes/banking-command.routes.js
 const express = require('express');
+const bankingCommandController = require('../controllers/banking-command.controller');
 const router = express.Router();
 const { authMiddleware } = require('../middleware/auth');
 const logger = require('../utils/logger');
-const bankingCommandService = require('../services/banking-command.service');
+const reportCache = require('../utils/report-cache');
 
 // Log route initialization
-logger.info('Initializing Banking Command routes with service implementation');
+logger.info('Initializing Banking Command routes with caching support');
 
 // Timeout configuration
 const LONG_TIMEOUT = 120000; // 120 seconds for report generation
@@ -57,232 +58,124 @@ const setExtendedTimeout = (req, res, next) => {
  */
 router.get('/health', (req, res) => {
 	logger.info('Banking Command health check');
-	res.status(200).json(formatResponse({ status: 'healthy' }, 'Banking Command routes are available'));
+	const cacheStats = reportCache.getStats();
+	res.status(200).json(formatResponse({
+		status: 'healthy',
+		cache: cacheStats
+	}, 'Banking Command routes are available'));
 });
 
 /**
  * @route POST /api/banking-command/report
- * @desc Generate a banking intelligence command report
+ * @desc Generate a banking intelligence command report with smart caching
+ * @desc Supports both JSON and PDF formats based on format parameter
  * @access Private
  */
-router.post('/report', authMiddleware, setExtendedTimeout, async (req, res) => {
-	try {
-		logger.info('Banking Command report endpoint called', {
-			userId: req.body.userId,
-			hasData: !!req.body.statementData
-		});
+router.post('/report', authMiddleware, setExtendedTimeout, bankingCommandController.generateReport);
 
-		const { userId, timeframe, includeDetailed, format, statementData } = req.body;
-		const requestId = `web-${Date.now()}-${Math.random().toString(36).substring(2, 10)}`;
-		const startTime = Date.now();
+// Add these routes to your existing banking-command.routes.js file
+// Place them after the existing POST /report route
 
-		// Validate required parameters
-		if (!userId) {
-			return res.status(400).json(formatError('Missing required parameter: userId'));
-		}
+/**
+ * @route GET /api/banking-command/report
+ * @desc Generate a banking intelligence report via GET (useful for HTML links)
+ * @access Private
+ */
+router.get('/report', authMiddleware, setExtendedTimeout, (req, res) => {
+	// Convert query parameters to request body format
+	const { userId, timeframe, includeDetailed, format } = req.query;
 
-		// For streaming progress updates (optional - comment out if not needed)
-		const useStreaming = req.headers['accept'] === 'text/event-stream';
-
-		if (useStreaming) {
-			// Set up SSE headers for progress streaming
-			res.writeHead(200, {
-				'Content-Type': 'text/event-stream',
-				'Cache-Control': 'no-cache',
-				'Connection': 'keep-alive',
-				'X-Accel-Buffering': 'no' // Disable Nginx buffering
-			});
-
-			// Send initial progress
-			res.write(`data: ${JSON.stringify({
-				status: 'processing',
-				message: 'Starting report generation...',
-				progress: 0
-			})}\n\n`);
-
-			// Keep connection alive
-			const keepAlive = setInterval(() => {
-				res.write(`: keep-alive\n\n`);
-			}, 15000);
-
-			try {
-				// Generate report with progress callback
-				const report = await bankingCommandService.generateReport({
-					userId,
-					timeframe,
-					requestId,
-					includeDetailed: includeDetailed !== false,
-					format: format || 'json',
-					statementData,
-					onProgress: (progress, message) => {
-						// Send progress updates
-						res.write(`data: ${JSON.stringify({
-							status: 'processing',
-							message,
-							progress
-						})}\n\n`);
-					}
-				});
-
-				// Clear keep-alive
-				clearInterval(keepAlive);
-
-				// Send completion
-				res.write(`data: ${JSON.stringify({
-					status: 'complete',
-					data: report,
-					duration: Date.now() - startTime
-				})}\n\n`);
-
-				res.end();
-			} catch (error) {
-				clearInterval(keepAlive);
-				res.write(`data: ${JSON.stringify({
-					status: 'error',
-					error: error.message
-				})}\n\n`);
-				res.end();
-			}
-		} else {
-			// Standard JSON response
-			const report = await bankingCommandService.generateReport({
-				userId,
-				timeframe,
-				requestId,
-				includeDetailed: includeDetailed !== false,
-				format: format || 'json',
-				statementData
-			});
-
-			logger.info(`Report generated successfully in ${Date.now() - startTime}ms`, {
-				userId,
-				requestId
-			});
-
-			// Return the report
-			return res.status(200).json(formatResponse(report));
-		}
-	} catch (error) {
-		logger.error('Error generating Banking Intelligence Command report', {
-			error: error.message,
-			stack: error.stack
-		});
-
-		// Only send response if not streaming
-		if (!res.headersSent) {
-			return res.status(500).json(formatError('Failed to generate report', error.message));
-		}
+	// Validate required parameters
+	if (!userId) {
+		return res.status(400).json(formatError('Missing required parameter: userId'));
 	}
+
+	// Create request object that matches POST format
+	req.body = {
+		userId,
+		timeframe: timeframe || '30d',
+		includeDetailed: includeDetailed !== 'false', // Convert string to boolean
+		format: format || 'json'
+	};
+
+	logger.info('Banking Command GET report request', {
+		userId,
+		format: format || 'json',
+		timeframe: timeframe || '30d',
+		query: req.query
+	});
+
+	// Forward to the POST handler
+	bankingCommandController.generateReport(req, res);
 });
 
 /**
- * @route POST /api/banking-command/report-chunked
- * @desc Generate a banking intelligence report with chunked transfer encoding
+ * @route GET /api/banking-command/html-report/:userId
+ * @desc Generate an HTML banking intelligence report with clean URL
  * @access Private
  */
-router.post('/report-chunked', authMiddleware, setExtendedTimeout, async (req, res) => {
-	try {
-		const { userId, timeframe, includeDetailed, format, statementData } = req.body;
-		const requestId = `chunked-${Date.now()}-${Math.random().toString(36).substring(2, 10)}`;
+router.get('/html-report/:userId', authMiddleware, setExtendedTimeout, (req, res) => {
+	const { userId } = req.params;
+	const { timeframe, includeDetailed } = req.query;
 
-		if (!userId) {
-			return res.status(400).json(formatError('Missing required parameter: userId'));
-		}
+	// Create request object for HTML format
+	req.body = {
+		userId,
+		timeframe: timeframe || '30d',
+		includeDetailed: includeDetailed !== 'false',
+		format: 'html'
+	};
 
-		// Set chunked transfer encoding
-		res.writeHead(200, {
-			'Content-Type': 'application/json',
-			'Transfer-Encoding': 'chunked',
-			'X-Content-Type-Options': 'nosniff'
-		});
+	logger.info('Banking Command HTML report request', {
+		userId,
+		timeframe: timeframe || '30d',
+		includeDetailed: includeDetailed !== 'false'
+	});
 
-		// Send progress chunks to prevent timeout
-		const progressInterval = setInterval(() => {
-			if (!res.writableEnded) {
-				res.write(JSON.stringify({
-					type: 'progress',
-					timestamp: new Date().toISOString()
-				}) + '\n');
-			}
-		}, 10000); // Send keep-alive every 10 seconds
+	// Forward to the main controller
+	bankingCommandController.generateReport(req, res);
+});
 
-		try {
-			// Generate the report
-			const report = await bankingCommandService.generateReport({
-				userId,
-				timeframe,
-				requestId,
-				includeDetailed: includeDetailed !== false,
-				format: format || 'json',
-				statementData
-			});
+/**
+ * @route GET /api/banking-command/pdf-report/:userId
+ * @desc Generate a PDF-ready banking intelligence report
+ * @access Private
+ */
+router.get('/pdf-report/:userId', authMiddleware, setExtendedTimeout, (req, res) => {
+	const { userId } = req.params;
+	const { timeframe, includeDetailed } = req.query;
 
-			// Clear progress interval
-			clearInterval(progressInterval);
+	// Create request object for PDF format
+	req.body = {
+		userId,
+		timeframe: timeframe || '30d',
+		includeDetailed: includeDetailed !== 'false',
+		format: 'pdf'
+	};
 
-			// Send final result
-			res.write(JSON.stringify({
-				type: 'complete',
-				data: report
-			}));
-			res.end();
-		} catch (error) {
-			clearInterval(progressInterval);
-			if (!res.writableEnded) {
-				res.write(JSON.stringify({
-					type: 'error',
-					error: error.message
-				}));
-				res.end();
-			}
-		}
-	} catch (error) {
-		logger.error('Error in chunked report generation', {
-			error: error.message
-		});
+	logger.info('Banking Command PDF report request', {
+		userId,
+		timeframe: timeframe || '30d',
+		includeDetailed: includeDetailed !== 'false'
+	});
 
-		if (!res.headersSent && !res.writableEnded) {
-			res.end(JSON.stringify(formatError('Failed to generate report', error.message)));
-		}
-	}
+	// Forward to the main controller
+	bankingCommandController.generateReport(req, res);
 });
 
 /**
  * @route POST /api/banking-command/pdf-report
- * @desc Generate a banking intelligence report in PDF format
+ * @desc DEPRECATED: Generate a banking intelligence report in PDF format
+ * @desc Use /report with format='pdf' instead for better caching
  * @access Private
  */
-router.post('/pdf-report', authMiddleware, setExtendedTimeout, async (req, res) => {
-	try {
-		logger.info('Banking Command PDF report endpoint called');
-
-		const { userId, timeframe, includeDetailed } = req.body;
-		const requestId = `pdf-${Date.now()}-${Math.random().toString(36).substring(2, 10)}`;
-
-		// Validate required parameters
-		if (!userId) {
-			return res.status(400).json(formatError('Missing required parameter: userId'));
-		}
-
-		// Generate report using the service with PDF format
-		const report = await bankingCommandService.generateReport({
-			userId,
-			timeframe,
-			requestId,
-			includeDetailed: includeDetailed !== false,
-			format: 'pdf'
-		});
-
-		// Return the report
-		return res.status(200).json(formatResponse(report));
-	} catch (error) {
-		logger.error('Error generating Banking Intelligence Command PDF report', {
-			error: error.message,
-			stack: error.stack
-		});
-
-		return res.status(500).json(formatError('Failed to generate PDF report', error.message));
-	}
+router.post('/pdf-report', authMiddleware, setExtendedTimeout, (req, res, next) => {
+	logger.warn('DEPRECATED: /pdf-report endpoint used. Consider using /report with format=pdf');
+	// Add deprecation header
+	res.setHeader('X-Deprecation-Warning', 'This endpoint is deprecated. Use /report with format=pdf');
+	// Set format and forward to main controller
+	req.body.format = 'pdf';
+	bankingCommandController.generateReport(req, res);
 });
 
 /**
@@ -290,44 +183,50 @@ router.post('/pdf-report', authMiddleware, setExtendedTimeout, async (req, res) 
  * @desc Analyze a bank statement and generate insights
  * @access Private
  */
-router.post('/statement-analysis', authMiddleware, setExtendedTimeout, async (req, res) => {
+router.post('/statement-analysis', authMiddleware, setExtendedTimeout, bankingCommandController.analyzeStatement);
+
+/**
+ * @route GET /api/banking-command/cache/stats
+ * @desc Get cache statistics for monitoring
+ * @access Private
+ */
+router.get('/cache/stats', authMiddleware, bankingCommandController.getCacheStats);
+
+/**
+ * @route POST /api/banking-command/cache/clear
+ * @desc Clear the report cache (admin function)
+ * @access Private
+ */
+router.post('/cache/clear', authMiddleware, bankingCommandController.clearCache);
+
+/**
+ * @route DELETE /api/banking-command/cache/:userId
+ * @desc Clear cache entries for a specific user
+ * @access Private
+ */
+router.delete('/cache/:userId', authMiddleware, (req, res) => {
 	try {
-		logger.info('Banking Command statement analysis endpoint called');
+		const { userId } = req.params;
 
-		const { userId, statementData, includeDetailed } = req.body;
-		const requestId = `stmt-${Date.now()}-${Math.random().toString(36).substring(2, 10)}`;
+		// This is a simplified approach - in a more sophisticated implementation,
+		// you'd iterate through cache keys and delete matching ones
+		logger.info(`Cache invalidation requested for user: ${userId}`);
 
-		// Validate required parameters
-		if (!userId) {
-			return res.status(400).json(formatError('Missing required parameter: userId'));
-		}
+		// For now, we'll just clear the entire cache
+		// In production, implement user-specific cache invalidation
+		reportCache.clear();
 
-		if (!statementData) {
-			return res.status(400).json(formatError('Missing required parameter: statementData'));
-		}
-
-		// Generate report based on statement data using the service
-		const report = await bankingCommandService.generateReport({
+		res.status(200).json(formatResponse({
 			userId,
-			statementData,
-			requestId,
-			includeDetailed: includeDetailed !== false,
-			format: 'json'
-		});
-
-		// Return the report
-		return res.status(200).json(formatResponse(report));
+			action: 'cache_cleared'
+		}, 'User cache entries cleared'));
 	} catch (error) {
-		logger.error('Error analyzing statement with Banking Intelligence Command', {
-			error: error.message,
-			stack: error.stack
-		});
-
-		return res.status(500).json(formatError('Failed to analyze statement', error.message));
+		logger.error('Error clearing user cache:', error);
+		res.status(500).json(formatError('Failed to clear user cache'));
 	}
 });
 
-// In-memory store for report jobs (consider using Redis in production)
+// Legacy async endpoints (keeping for backward compatibility)
 const reportJobs = {};
 
 // Clean up old jobs periodically (every hour)
@@ -359,6 +258,22 @@ router.post('/async-report', authMiddleware, async (req, res) => {
 		// Validate required parameters
 		if (!userId) {
 			return res.status(400).json(formatError('Missing required parameter: userId'));
+		}
+
+		// Check if report is already cached
+		const cacheParams = { userId, timeframe, includeDetailed, statementData };
+		if (reportCache.has(cacheParams)) {
+			// Return immediately if cached
+			const cachedReport = reportCache.get(cacheParams);
+			logger.info(`Async request served immediately from cache: ${jobId}`);
+
+			return res.status(200).json(formatResponse({
+				jobId,
+				status: 'completed',
+				data: cachedReport,
+				fromCache: true,
+				resultUrl: `/api/banking-command/report-result/${jobId}`
+			}, 'Report available immediately from cache'));
 		}
 
 		// Store job info
@@ -394,7 +309,7 @@ router.post('/async-report', authMiddleware, async (req, res) => {
 });
 
 /**
- * Background report generation function
+ * Background report generation function with caching integration
  * @param {string} jobId - Job ID
  */
 async function generateReportAsync(jobId) {
@@ -404,34 +319,70 @@ async function generateReportAsync(jobId) {
 		// Update status
 		job.status = 'processing';
 		job.progress = 10;
-		job.progressMessage = 'Initializing report generation...';
+		job.progressMessage = 'Checking cache...';
 
-		// Add progress callback to parameters
-		const paramsWithProgress = {
-			...job.parameters,
-			requestId: jobId,
-			onProgress: (progress, message) => {
-				job.progress = progress;
-				job.progressMessage = message;
-				logger.debug(`Job ${jobId} progress: ${progress}% - ${message}`);
-			}
+		// Check cache first
+		const cacheParams = {
+			userId: job.parameters.userId,
+			timeframe: job.parameters.timeframe,
+			includeDetailed: job.parameters.includeDetailed,
+			statementData: job.parameters.statementData
 		};
 
-		// Generate report
-		const report = await bankingCommandService.generateReport(paramsWithProgress);
+		let report = reportCache.get(cacheParams);
 
-		// Store result and update status
-		job.result = report;
-		job.status = 'completed';
-		job.completedAt = new Date();
-		job.progress = 100;
-		job.progressMessage = 'Report generation completed';
+		if (report) {
+			// Serve from cache
+			job.result = report;
+			job.status = 'completed';
+			job.completedAt = new Date();
+			job.progress = 100;
+			job.progressMessage = 'Report served from cache';
+			job.fromCache = true;
 
-		logger.info('Async report generation completed', {
-			jobId,
-			userId: job.parameters.userId,
-			duration: new Date() - job.requestedAt
-		});
+			logger.info('Async report served from cache', {
+				jobId,
+				userId: job.parameters.userId
+			});
+		} else {
+			// Generate new report
+			job.progress = 20;
+			job.progressMessage = 'Generating new report...';
+
+			const bankingCommandService = require('../services/banking-command.service');
+
+			// Add progress callback to parameters
+			const paramsWithProgress = {
+				...job.parameters,
+				requestId: jobId,
+				format: 'json', // Always generate JSON for caching
+				onProgress: (progress, message) => {
+					job.progress = Math.max(20, Math.min(90, progress)); // Keep within 20-90 range
+					job.progressMessage = message;
+					logger.debug(`Job ${jobId} progress: ${job.progress}% - ${message}`);
+				}
+			};
+
+			// Generate report
+			report = await bankingCommandService.generateReport(paramsWithProgress);
+
+			// Cache the new report
+			reportCache.set(cacheParams, report);
+
+			// Store result and update status
+			job.result = report;
+			job.status = 'completed';
+			job.completedAt = new Date();
+			job.progress = 100;
+			job.progressMessage = 'Report generation completed';
+			job.fromCache = false;
+
+			logger.info('Async report generation completed and cached', {
+				jobId,
+				userId: job.parameters.userId,
+				duration: new Date() - job.requestedAt
+			});
+		}
 	} catch (error) {
 		// Handle failure
 		job.status = 'failed';
@@ -468,7 +419,8 @@ router.get('/report-status/:jobId', authMiddleware, (req, res) => {
 			userId: job.userId,
 			requestedAt: job.requestedAt,
 			progress: job.progress,
-			progressMessage: job.progressMessage
+			progressMessage: job.progressMessage,
+			fromCache: job.fromCache || false
 		};
 
 		if (job.status === 'completed') {
@@ -510,7 +462,15 @@ router.get('/report-result/:jobId', authMiddleware, (req, res) => {
 		}
 
 		// Clean up job after successful retrieval (optional)
-		const result = job.result;
+		const result = {
+			...job.result,
+			_metadata: {
+				fromCache: job.fromCache || false,
+				completedAt: job.completedAt,
+				requestedAt: job.requestedAt,
+				duration: job.completedAt - job.requestedAt
+			}
+		};
 		delete reportJobs[jobId];
 
 		return res.status(200).json(formatResponse(result));

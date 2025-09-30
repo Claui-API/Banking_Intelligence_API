@@ -52,7 +52,7 @@
     "node-fetch": "^2.7.0",
     "node-schedule": "^2.1.1",
     "nodemailer": "^7.0.3",
-    "pdfkit": "^0.17.1",
+    "pdfkit": "^0.17.2",
     "pg": "^8.15.6",
     "pg-hstore": "^2.3.4",
     "plaid": "^31.1.0",

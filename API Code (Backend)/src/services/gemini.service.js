@@ -1,16 +1,14 @@
 // src/services/gemini.service.js
 const nodeFetch = require('node-fetch');
-// Explicitly set fetch as a global
 global.fetch = nodeFetch;
-// Import these classes from node-fetch
 const { Headers, Request, Response } = nodeFetch;
-// Set them as globals
 global.Headers = Headers;
 global.Request = Request;
 global.Response = Response;
 
 const { GoogleGenAI } = require('@google/genai');
 const logger = require('../utils/logger');
+const sessionManager = require('./session.service');
 
 /**
  * Service for generating insights using Google's Gemini API
@@ -21,8 +19,6 @@ class GeminiService {
 		this.modelName = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 		this.client = null;
 		this.initialize();
-		this.conversationHistory = new Map(); // Store conversation context
-		this.responseHistory = new Map(); // Store AI responses
 	}
 
 	/**
@@ -59,27 +55,42 @@ class GeminiService {
 			}
 		}
 
-		const { query, queryType, requestId, userId } = userData;
+		const { query, queryType, requestId, userId, sessionId } = userData;
+
+		// Get or create session
+		let currentSessionId = sessionId;
+		let session = null;
+
+		if (currentSessionId) {
+			session = sessionManager.getSession(currentSessionId);
+		}
+
+		// If no session exists or invalid sessionId, create new one
+		if (!session && userId) {
+			currentSessionId = sessionManager.createSession(userId);
+			session = sessionManager.getSession(currentSessionId);
+		}
 
 		try {
 			logger.info('Generating insights with Gemini service', {
 				queryType,
 				model: this.modelName,
-				requestId
+				requestId,
+				sessionId: currentSessionId
 			});
 
 			// Check if this is a short follow-up query that needs context
-			const isFollowUp = this._isFollowUpQuery(query, userId);
+			const isFollowUp = session ? this._isFollowUpQuery(query, session) : false;
 			let contextEnrichedQueryType = queryType;
 			let contextEnrichedQuery = query;
 
-			// Track conversation context if user ID is available
-			if (userId) {
-				this._updateConversationContext(userId, query, queryType);
+			// Track conversation context if session is available
+			if (session) {
+				this._updateConversationContext(session, query, queryType);
 
 				// If this is a follow-up query, enrich it with context
 				if (isFollowUp) {
-					const enrichedContext = this._getEnrichedContext(userId, query);
+					const enrichedContext = this._getEnrichedContext(session, query);
 					if (enrichedContext) {
 						contextEnrichedQueryType = enrichedContext.contextType || queryType;
 						contextEnrichedQuery = `${query} (in reference to: ${enrichedContext.contextQuery})`;
@@ -89,40 +100,41 @@ class GeminiService {
 							enhancedQuery: contextEnrichedQuery,
 							originalType: queryType,
 							enhancedType: contextEnrichedQueryType,
-							requestId
+							requestId,
+							sessionId: currentSessionId
 						});
 					}
 				}
 			}
 
 			// Detect if this is a follow-up explanation request
-			const isExplanationRequest = this._isExplanationRequest(contextEnrichedQuery, userId);
+			const isExplanationRequest = this._isExplanationRequest(contextEnrichedQuery, session);
 
 			// Select appropriate prompt based on query type
 			let promptText;
-			let temperature = 0.3; // Default temperature
-			let maxTokens = 800;   // Default token limit
+			let temperature = 0.3;
+			let maxTokens = 800;
 
 			// If this is an explanation request, override with educational prompt
 			if (isExplanationRequest) {
-				const topicsToExplain = this._extractTopicsFromQuery(contextEnrichedQuery, userId);
+				const topicsToExplain = this._extractTopicsFromQuery(contextEnrichedQuery, session);
 				promptText = this._createEnhancedEducationPrompt(userData, topicsToExplain);
-				temperature = 0.2; // More consistent for educational content
-				maxTokens = 1500;  // Allow longer responses for explanations
+				temperature = 0.2;
+				maxTokens = 1500;
 				logger.info('Using enhanced education prompt for explanation request', {
 					topics: topicsToExplain,
 					requestId
 				});
 			} else {
-				// Select prompt based on enriched query type using your existing methods
+				// Select prompt based on enriched query type
 				switch (contextEnrichedQueryType) {
 					case 'harmful':
 						promptText = this._createHarmfulContentPrompt(userData);
-						temperature = 0.1; // Very consistent for harm refusals
+						temperature = 0.1;
 						break;
 					case 'greeting':
 						promptText = this._createGreetingPrompt(userData);
-						temperature = 0.2; // More consistency for greetings
+						temperature = 0.2;
 						break;
 					case 'joke':
 						promptText = this._createJokePrompt(userData);
@@ -192,8 +204,8 @@ class GeminiService {
 			}
 
 			// Enhance the prompt with conversation context if this is a follow-up
-			if (isFollowUp && userId) {
-				promptText = this._enhancePromptWithContext(promptText, userId, query);
+			if (isFollowUp && session) {
+				promptText = this._enhancePromptWithContext(promptText, session, query);
 			}
 
 			// Define the grounding tool
@@ -206,7 +218,7 @@ class GeminiService {
 				tools: [groundingTool],
 			};
 
-			// Generate content using the correct API structure
+			// Generate content using Gemini API
 			const response = await this.client.models.generateContent({
 				model: this.modelName,
 				contents: [
@@ -245,19 +257,21 @@ class GeminiService {
 					requestId,
 					responseLength: generatedText.length,
 					model: this.modelName,
-					isEducationalResponse: isExplanationRequest
+					isEducationalResponse: isExplanationRequest,
+					sessionId: currentSessionId
 				});
 
-				// Store the response in history if user ID is available
-				if (userId) {
-					this._storeResponse(userId, generatedText, contextEnrichedQueryType);
+				// Store the response in session history
+				if (session) {
+					this._storeResponse(session, generatedText, contextEnrichedQueryType);
 				}
 
 				return {
 					insight: generatedText,
 					timestamp: new Date().toISOString(),
 					queryType: isExplanationRequest ? 'enhanced_education' : contextEnrichedQueryType,
-					source: 'gemini'
+					source: 'gemini',
+					sessionId: currentSessionId // Include sessionId in response
 				};
 			} else {
 				logger.warn('Empty response from Gemini API, falling back', {
@@ -272,50 +286,46 @@ class GeminiService {
 				errorStack: error.stack,
 				query: userData.query,
 				queryType: userData.queryType,
-				requestId
+				requestId,
+				sessionId: currentSessionId
 			});
 
-			// Use fallback when API fails
 			return this._getFallbackResponse(userData);
 		}
 	}
 
 	/**
-	 * Store AI response in history
-	 * @param {string} userId - User ID
+	 * Store AI response in session history
+	 * @param {Object} session - Session object
 	 * @param {string} response - AI response
 	 * @param {string} queryType - Query type
 	 * @private
 	 */
-	_storeResponse(userId, response, queryType) {
-		if (!this.responseHistory.has(userId)) {
-			this.responseHistory.set(userId, []);
-		}
-
-		const userResponses = this.responseHistory.get(userId);
+	_storeResponse(session, response, queryType) {
+		const responseHistory = session.responseHistory;
 
 		// Add new response at the beginning
-		userResponses.unshift({
+		responseHistory.unshift({
 			response,
 			queryType,
 			timestamp: Date.now()
 		});
 
 		// Keep only the 5 most recent responses
-		if (userResponses.length > 5) {
-			userResponses.pop();
+		if (responseHistory.length > 5) {
+			responseHistory.pop();
 		}
 	}
 
 	/**
 	 * Check if query is a brief follow-up that needs context
 	 * @param {string} query - User query
-	 * @param {string} userId - User ID
+	 * @param {Object} session - Session object
 	 * @returns {boolean} - True if query is a follow-up
 	 * @private
 	 */
-	_isFollowUpQuery(query, userId) {
-		if (!userId || !this.conversationHistory.has(userId)) {
+	_isFollowUpQuery(query, session) {
+		if (!session || !session.conversationHistory.recentQueries.length) {
 			return false;
 		}
 
@@ -339,25 +349,25 @@ class GeminiService {
 
 	/**
 	 * Get enriched context for a follow-up query
-	 * @param {string} userId - User ID
+	 * @param {Object} session - Session object
 	 * @param {string} query - Current query
 	 * @returns {Object|null} - Enriched context info or null
 	 * @private
 	 */
-	_getEnrichedContext(userId, query) {
-		if (!userId || !this.conversationHistory.has(userId)) {
+	_getEnrichedContext(session, query) {
+		if (!session || !session.conversationHistory.recentQueries.length) {
 			return null;
 		}
 
-		const userContext = this.conversationHistory.get(userId);
+		const recentQueries = session.conversationHistory.recentQueries;
 
 		// Need at least 2 queries in history (current + previous)
-		if (userContext.recentQueries.length < 2) {
+		if (recentQueries.length < 2) {
 			return null;
 		}
 
 		// Get previous query (index 1 since current is at index 0)
-		const previousQuery = userContext.recentQueries[1];
+		const previousQuery = recentQueries[1];
 
 		return {
 			contextQuery: previousQuery.query,
@@ -366,38 +376,48 @@ class GeminiService {
 		};
 	}
 
+	clearUserHistory(userId) {
+		if (userId) {
+			// Use sessionManager instead
+			const deletedCount = sessionManager.deleteUserSessions(userId);
+			logger.info('Cleared conversation history for user', {
+				userId,
+				sessionsDeleted: deletedCount
+			});
+		}
+	}
+
 	/**
 	 * Enhance a prompt with conversation context
 	 * @param {string} basePrompt - Original prompt
-	 * @param {string} userId - User ID
+	 * @param {Object} session - Session object
 	 * @param {string} currentQuery - Current user query
 	 * @returns {string} - Enhanced prompt with context
 	 * @private
 	 */
-	_enhancePromptWithContext(basePrompt, userId, currentQuery) {
-		if (!userId || !this.conversationHistory.has(userId) || !this.responseHistory.has(userId)) {
+	_enhancePromptWithContext(basePrompt, session, currentQuery) {
+		if (!session ||
+			!session.conversationHistory.recentQueries.length ||
+			!session.responseHistory.length) {
 			return basePrompt;
 		}
 
-		const userContext = this.conversationHistory.get(userId);
-		const userResponses = this.responseHistory.get(userId);
+		const recentQueries = session.conversationHistory.recentQueries;
+		const responseHistory = session.responseHistory;
 
 		// Need at least 2 queries and 1 previous response
-		if (userContext.recentQueries.length < 2 || userResponses.length < 1) {
+		if (recentQueries.length < 2 || responseHistory.length < 1) {
 			return basePrompt;
 		}
 
-		// Build conversation context section with the previous exchange
-		let conversationContext = '';
-
 		// Get previous query (index 1 since current is at index 0)
-		const previousQuery = userContext.recentQueries[1];
+		const previousQuery = recentQueries[1];
 
 		// Get previous response (index 0 is the most recent)
-		const previousResponse = userResponses[0];
+		const previousResponse = responseHistory[0];
 
 		// Create conversation context section
-		conversationContext = `
+		const conversationContext = `
 CONVERSATION CONTEXT:
 Previous user query: "${previousQuery.query}"
 Your previous response: "${this._summarizeText(previousResponse.response, 150)}"
@@ -437,43 +457,36 @@ If the current query is brief or vague (like "show me how", "tell me more"), int
 	}
 
 	/**
-	 * Update conversation context for a user
-	 * @param {string} userId - User ID
+	 * Update conversation context in session
+	 * @param {Object} session - Session object
 	 * @param {string} query - Current query
 	 * @param {string} queryType - Query type
 	 * @private
 	 */
-	_updateConversationContext(userId, query, queryType) {
-		if (!this.conversationHistory.has(userId)) {
-			this.conversationHistory.set(userId, {
-				recentQueries: [],
-				recentTopics: [],
-				lastInteraction: Date.now()
-			});
-		}
-
-		const userContext = this.conversationHistory.get(userId);
+	_updateConversationContext(session, query, queryType) {
+		const conversationHistory = session.conversationHistory;
 
 		// Add current query to history
-		userContext.recentQueries.unshift({ query, queryType, timestamp: Date.now() });
+		conversationHistory.recentQueries.unshift({
+			query,
+			queryType,
+			timestamp: Date.now()
+		});
 
 		// Keep only the 5 most recent queries
-		if (userContext.recentQueries.length > 5) {
-			userContext.recentQueries.pop();
+		if (conversationHistory.recentQueries.length > 5) {
+			conversationHistory.recentQueries.pop();
 		}
 
 		// Extract and store financial topics from the query
 		const financialTopics = this._extractFinancialTopics(query, queryType);
 		if (financialTopics.length > 0) {
-			userContext.recentTopics = [...new Set([...financialTopics, ...userContext.recentTopics])].slice(0, 10);
+			conversationHistory.recentTopics = [
+				...new Set([...financialTopics, ...conversationHistory.recentTopics])
+			].slice(0, 10);
 		}
 
-		userContext.lastInteraction = Date.now();
-
-		// Clean up old entries every 100 requests
-		if (Math.random() < 0.01) {
-			this._cleanupConversationHistory();
-		}
+		conversationHistory.lastInteraction = Date.now();
 	}
 
 	/**
@@ -547,11 +560,11 @@ If the current query is brief or vague (like "show me how", "tell me more"), int
 	/**
 	 * Determine if the query is asking for an explanation of financial topics
 	 * @param {string} query - User query
-	 * @param {string} userId - User ID for context
+	 * @param {Object} session - Session object for context
 	 * @returns {boolean} - True if the query is an explanation request
 	 * @private
 	 */
-	_isExplanationRequest(query, userId) {
+	_isExplanationRequest(query, session) {
 		const lowerQuery = query.toLowerCase();
 
 		// Check for visual explanation requests
@@ -576,18 +589,18 @@ If the current query is brief or vague (like "show me how", "tell me more"), int
 		}
 
 		// Check if query is about topics mentioned in previous conversations
-		if (userId && this.conversationHistory.has(userId)) {
-			const userContext = this.conversationHistory.get(userId);
+		if (session && session.conversationHistory) {
+			const conversationHistory = session.conversationHistory;
 
 			// If user is asking about previously mentioned topics
-			for (const topic of userContext.recentTopics) {
+			for (const topic of conversationHistory.recentTopics) {
 				if (lowerQuery.includes(topic.toLowerCase())) {
 					return true;
 				}
 			}
 
 			// Check if it's a direct follow-up to a previous query
-			const recentQueries = userContext.recentQueries;
+			const recentQueries = conversationHistory.recentQueries;
 			if (recentQueries.length > 1) {
 				const previousQuery = recentQueries[1].query.toLowerCase();
 
@@ -609,11 +622,11 @@ If the current query is brief or vague (like "show me how", "tell me more"), int
 	/**
 	 * Extract topics to explain from a query and conversation context
 	 * @param {string} query - User query
-	 * @param {string} userId - User ID for context
+	 * @param {Object} session - Session object for context
 	 * @returns {Array<string>} - Topics to explain
 	 * @private
 	 */
-	_extractTopicsFromQuery(query, userId) {
+	_extractTopicsFromQuery(query, session) {
 		const lowerQuery = query.toLowerCase();
 		let topics = [];
 
@@ -635,11 +648,11 @@ If the current query is brief or vague (like "show me how", "tell me more"), int
 		}
 
 		// If no explicit topics found, check context for implicit topics
-		if (topics.length === 0 && userId && this.conversationHistory.has(userId)) {
-			const userContext = this.conversationHistory.get(userId);
+		if (topics.length === 0 && session && session.conversationHistory) {
+			const conversationHistory = session.conversationHistory;
 
 			// Check most recent queries for topics
-			for (const prevQuery of userContext.recentQueries) {
+			for (const prevQuery of conversationHistory.recentQueries) {
 				const extractedTopics = this._extractFinancialTopics(prevQuery.query, prevQuery.queryType);
 				if (extractedTopics.length > 0) {
 					topics = [...extractedTopics];
@@ -648,8 +661,8 @@ If the current query is brief or vague (like "show me how", "tell me more"), int
 			}
 
 			// If still no topics, use the most recent stored topics
-			if (topics.length === 0 && userContext.recentTopics.length > 0) {
-				topics = userContext.recentTopics.slice(0, 2); // Use up to 2 recent topics
+			if (topics.length === 0 && conversationHistory.recentTopics.length > 0) {
+				topics = conversationHistory.recentTopics.slice(0, 2); // Use up to 2 recent topics
 			}
 		}
 

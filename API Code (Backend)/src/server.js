@@ -23,6 +23,29 @@ const logger = require('./utils/logger');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// CRITICAL: Body parsing middleware must come FIRST - MOVED FROM BELOW
+app.use(express.json({
+  verify: (req, res, buf) => {
+    // Store the raw body for verification or debugging if needed
+    req.rawBody = buf.toString();
+  }
+}));
+app.use(express.urlencoded({ extended: true }));
+
+// Add debugging middleware to inspect request bodies
+app.use((req, res, next) => {
+  if (req.method === 'POST' && req.path.includes('/api/bank/users')) {
+    console.log('==== DEBUG REQUEST BODY ====');
+    console.log('Request URL:', req.originalUrl);
+    console.log('Content-Type:', req.get('Content-Type'));
+    console.log('Body:', req.body);
+    console.log('Keys:', Object.keys(req.body));
+    console.log('Has bankUserId:', req.body.bankUserId !== undefined);
+    console.log('===========================');
+  }
+  next();
+});
+
 // Import middleware
 const { errorHandler, notFoundHandler } = require('./middleware/errorHandler');
 const retentionLoggingMiddleware = require('./middleware/retention-logging.middleware');
@@ -156,6 +179,25 @@ safeMount('/api/v1/notifications/preferences', notificationPreferencesRoutes, 'N
 // Apply 2FA rate limiter to specific endpoint
 app.use('/api/auth/verify-2fa', twoFactorLimiter);
 app.use('/api/bank', bankApiRoutes);
+
+// Add debug endpoint for direct testing
+app.use('/api/bank-debug/users', (req, res) => {
+  console.log('DIRECT BANK USERS DEBUG ENDPOINT');
+  console.log('Headers:', req.headers);
+  console.log('Body:', req.body);
+  console.log('Raw:', req.rawBody);
+
+  // Echo back what was received
+  res.json({
+    success: true,
+    received: {
+      body: req.body,
+      contentType: req.get('Content-Type'),
+      authorization: req.headers.authorization ? 'Present (hidden)' : 'Missing'
+    }
+  });
+});
+
 // Test insights metrics on startup
 const initializeMetrics = async () => {
   try {
@@ -210,7 +252,7 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true
 }));
-app.use(express.json());
+// REMOVED: app.use(express.json()); - Already added at the top
 app.use(requestLogger(logger));
 app.use(insightMetricsMiddleware);
 app.use(mobileOptimizer); // Add mobile optimization middleware

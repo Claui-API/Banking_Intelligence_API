@@ -1,12 +1,13 @@
-/* src/components/HomePage.css */
-/* Base styles */
+/* src/components/HomePage.css - Fixed to eliminate duplicate scrollbars */
+
+/* Base styles - CRITICAL FIX: Remove overflow-y: visible */
 .home-page-container {
   position: relative;
   overflow-x: hidden;
   /* Keep this to prevent horizontal scrolling */
-  overflow-y: visible !important;
-  /* Change from auto/scroll to visible */
+  /* REMOVED: overflow-y: visible - this was causing issues */
   background-color: #000000;
+  min-height: 100vh;
 }
 
 .particles-container {
@@ -95,19 +96,19 @@
   }
 }
 
-/* Fix container-fluid scrollbar issues */
+/* CRITICAL FIX: Remove overflow settings that create nested scrolling */
 .container-fluid {
   background-color: #000000 !important;
   max-width: 100% !important;
-  overflow: visible !important;
-  /* Change from auto/scroll to visible */
+  /* REMOVED: overflow: visible - let natural flow handle this */
 }
 
 /* Ensure body background is consistent */
 body {
   background-color: #000000 !important;
   overflow-x: hidden;
-  /* Prevent horizontal scrollbar */
+  /* Only prevent horizontal scroll */
+  /* Let body handle vertical scrolling naturally */
 }
 
 /* Fix heading colors */
@@ -115,14 +116,12 @@ body {
 .home-page-container h2,
 .home-page-container h3 {
   color: #4CAF50 !important;
-  /* Green color for headings */
 }
 
-/* Fix the "How It Works" section to prevent scrollbar issues */
+/* CRITICAL FIX: Remove overflow settings from rows */
 .home-page-container .row {
   margin-bottom: 40px;
-  overflow: visible !important;
-  /* Ensure these don't create their own scrollbars */
+  /* REMOVED: overflow: visible - this was creating issues */
 }
 
 /* Add better styling for the steps */
@@ -156,7 +155,6 @@ body {
 .home-page-container .bg-black {
   background-color: #000000 !important;
   color: #66ff66 !important;
-  /* Light green text */
   border: 1px solid #333;
 }
 
@@ -165,10 +163,10 @@ body {
   color: white !important;
 }
 
-/* Stats section styling - fix potential overflow issues */
+/* Stats section styling - FIXED: Remove overflow settings */
 .stats-container {
   padding: 2rem 0;
-  overflow: visible !important;
+  /* REMOVED: overflow: visible */
 }
 
 .stat-card {
@@ -200,12 +198,12 @@ body {
   margin-bottom: 0.5rem;
 }
 
-/* CTA section styling - prevent overflow issues */
+/* CTA section styling - FIXED: Remove overflow settings */
 .cta-section {
   position: relative;
   padding: 4rem 0;
   background: linear-gradient(180deg, #000000 0%, #0f1a0f 100%);
-  overflow: visible !important;
+  /* REMOVED: overflow: visible */
 }
 
 .cta-section::before {
@@ -218,19 +216,16 @@ body {
   background: linear-gradient(90deg, transparent 0%, #28a745 50%, transparent 100%);
 }
 
-/* Particle background container - fix overflow issues */
+/* Particle background container - FIXED: Remove overflow hidden */
 #tsparticles {
   position: fixed !important;
-  /* Ensure it stays fixed */
   top: 0;
   left: 0;
   width: 100%;
   height: 100%;
   z-index: -1;
-  overflow: hidden !important;
-  /* Prevent any overflow from particles */
+  /* REMOVED: overflow: hidden - let particles flow naturally */
   pointer-events: none;
-  /* Allow interaction with elements beneath */
 }
 
 /* Fix for particles container size */
@@ -363,7 +358,7 @@ canvas.tsparticles-canvas-el {
   }
 }
 
-/* Fix for React Bootstrap container potential issue */
+/* CRITICAL FIX: Remove overflow settings from Bootstrap containers */
 .container,
 .container-fluid,
 .container-lg,
@@ -371,15 +366,12 @@ canvas.tsparticles-canvas-el {
 .container-sm,
 .container-xl,
 .container-xxl {
-  overflow: visible !important;
+  /* REMOVED: overflow: visible - let natural flow handle this */
 }
 
-/* Fix for column overflow issues */
+/* CRITICAL FIX: Remove overflow settings from Bootstrap columns */
 .col,
 .col-1,
-.col-10,
-.col-11,
-.col-12,
 .col-2,
 .col-3,
 .col-4,
@@ -388,12 +380,12 @@ canvas.tsparticles-canvas-el {
 .col-7,
 .col-8,
 .col-9,
+.col-10,
+.col-11,
+.col-12,
 .col-auto,
 .col-lg,
 .col-lg-1,
-.col-lg-10,
-.col-lg-11,
-.col-lg-12,
 .col-lg-2,
 .col-lg-3,
 .col-lg-4,
@@ -402,12 +394,12 @@ canvas.tsparticles-canvas-el {
 .col-lg-7,
 .col-lg-8,
 .col-lg-9,
+.col-lg-10,
+.col-lg-11,
+.col-lg-12,
 .col-lg-auto,
 .col-md,
 .col-md-1,
-.col-md-10,
-.col-md-11,
-.col-md-12,
 .col-md-2,
 .col-md-3,
 .col-md-4,
@@ -416,12 +408,12 @@ canvas.tsparticles-canvas-el {
 .col-md-7,
 .col-md-8,
 .col-md-9,
+.col-md-10,
+.col-md-11,
+.col-md-12,
 .col-md-auto,
 .col-sm,
 .col-sm-1,
-.col-sm-10,
-.col-sm-11,
-.col-sm-12,
 .col-sm-2,
 .col-sm-3,
 .col-sm-4,
@@ -430,12 +422,12 @@ canvas.tsparticles-canvas-el {
 .col-sm-7,
 .col-sm-8,
 .col-sm-9,
+.col-sm-10,
+.col-sm-11,
+.col-sm-12,
 .col-sm-auto,
 .col-xl,
 .col-xl-1,
-.col-xl-10,
-.col-xl-11,
-.col-xl-12,
 .col-xl-2,
 .col-xl-3,
 .col-xl-4,
@@ -444,12 +436,12 @@ canvas.tsparticles-canvas-el {
 .col-xl-7,
 .col-xl-8,
 .col-xl-9,
+.col-xl-10,
+.col-xl-11,
+.col-xl-12,
 .col-xl-auto,
 .col-xxl,
 .col-xxl-1,
-.col-xxl-10,
-.col-xxl-11,
-.col-xxl-12,
 .col-xxl-2,
 .col-xxl-3,
 .col-xxl-4,
@@ -458,14 +450,18 @@ canvas.tsparticles-canvas-el {
 .col-xxl-7,
 .col-xxl-8,
 .col-xxl-9,
+.col-xxl-10,
+.col-xxl-11,
+.col-xxl-12,
 .col-xxl-auto {
-  overflow: visible !important;
+  /* REMOVED: overflow: visible - let natural flow handle this */
 }
 
 .mobile-video-container {
   width: 100%;
 }
 
+/* Mobile responsive styles */
 @media (max-width: 767px) {
   .mobile-responsive-video {
     max-width: 100%;
@@ -538,12 +534,8 @@ canvas.tsparticles-canvas-el {
   }
 }
 
-/* Additional Mobile Enhancements for HomePage.css */
-
-/* Base mobile adjustments */
+/* Additional Mobile Enhancements */
 @media (max-width: 991px) {
-
-  /* Adjust the main title size for different screen sizes */
   .home-page-container h1 {
     font-size: 2.5rem !important;
     line-height: 1.2 !important;
@@ -561,7 +553,6 @@ canvas.tsparticles-canvas-el {
     }
   }
 
-  /* Adjust section spacing */
   .home-page-container .py-5 {
     padding-top: 2rem !important;
     padding-bottom: 2rem !important;
@@ -572,7 +563,6 @@ canvas.tsparticles-canvas-el {
     margin-bottom: 2rem !important;
   }
 
-  /* Adjust the video container margins */
   .mobile-video-container {
     margin-bottom: 1.5rem !important;
   }
@@ -580,8 +570,6 @@ canvas.tsparticles-canvas-el {
 
 /* Improved Grid Layouts for Mobile */
 @media (max-width: 767px) {
-
-  /* Refine the stats grid */
   .mobile-stats-row {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
@@ -593,7 +581,6 @@ canvas.tsparticles-canvas-el {
     grid-column: span 2;
   }
 
-  /* Better features card layout */
   .mobile-features-row {
     display: grid;
     grid-template-columns: 1fr;
@@ -602,7 +589,6 @@ canvas.tsparticles-canvas-el {
     padding-right: 1rem !important;
   }
 
-  /* Fix the "How It Works" section */
   .mobile-step-row {
     margin-bottom: 2rem !important;
   }
@@ -616,7 +602,6 @@ canvas.tsparticles-canvas-el {
     overflow-x: auto !important;
   }
 
-  /* CTA Section adjustments */
   .cta-section {
     padding: 2rem 0 !important;
   }
@@ -686,7 +671,6 @@ canvas.tsparticles-canvas-el {
     width: 100% !important;
   }
 
-  /* Also ensure CTA button is properly sized */
   .cta-section .btn-lg {
     font-size: 1rem !important;
     padding: 0.6rem 1.5rem !important;
@@ -705,7 +689,6 @@ canvas.tsparticles-canvas-el {
     grid-column: span 1 !important;
   }
 
-  /* Adjust How It Works steps */
   .mobile-step-row .col-md-6 {
     padding-left: 1rem !important;
     padding-right: 1rem !important;
@@ -716,17 +699,6 @@ canvas.tsparticles-canvas-el {
 @media (max-width: 767px) {
   #tsparticles {
     opacity: 0.5;
-  }
-
-  /* Reduce animation complexity for better performance */
-  @keyframes codeSweep {
-    0% {
-      transform: translateX(-100%) translateY(-100%) rotate(45deg);
-    }
-
-    100% {
-      transform: translateX(100%) translateY(100%) rotate(45deg);
-    }
   }
 
   .code-block::after {
@@ -771,7 +743,6 @@ canvas.tsparticles-canvas-el {
     height: 100% !important;
     object-fit: cover !important;
     opacity: 0.3 !important;
-    /* Slightly darker on mobile for better contrast */
   }
 }
 
@@ -781,11 +752,11 @@ canvas.tsparticles-canvas-el {
     line-height: 1.5 !important;
   }
 
-  .feature-card Card.Title {
+  .feature-card .card-title {
     font-size: 1.3rem !important;
   }
 
-  .feature-card Card.Text {
+  .feature-card .card-text {
     font-size: 0.9rem !important;
     line-height: 1.4 !important;
   }
@@ -801,13 +772,10 @@ canvas.tsparticles-canvas-el {
 
 /* iOS-specific fixes */
 @supports (-webkit-touch-callout: none) {
-
-  /* Fix for iOS Safari 100vh issue */
   .home-page-container {
     min-height: -webkit-fill-available;
   }
 
-  /* Fix for iOS input zoom */
   @media (max-width: 767px) {
 
     input,
@@ -818,9 +786,7 @@ canvas.tsparticles-canvas-el {
   }
 }
 
-/* Targeted fixes for narrow screens (350-470px) where content gets cut off */
-
-/* First, ensure the root container allows for proper overflow handling */
+/* Narrow screen fixes (350-470px) */
 html,
 body {
   width: 100%;
@@ -828,10 +794,7 @@ body {
   overflow-x: hidden;
 }
 
-/* Fix for homepage container on narrow screens */
 @media (min-width: 350px) and (max-width: 470px) {
-
-  /* Ensure the container properly constrains its children */
   .home-page-container {
     width: 100% !important;
     max-width: 100% !important;
@@ -841,7 +804,6 @@ body {
     box-sizing: border-box !important;
   }
 
-  /* Fix Bootstrap container padding */
   .container,
   .container-fluid {
     padding-left: 10px !important;
@@ -851,25 +813,21 @@ body {
     box-sizing: border-box !important;
   }
 
-  /* Fix row margins that can cause overflow */
   .row {
     margin-left: -5px !important;
     margin-right: -5px !important;
   }
 
-  /* Adjust column padding */
   [class*="col-"] {
     padding-left: 5px !important;
     padding-right: 5px !important;
   }
 
-  /* Ensure videos and iframes don't overflow */
   iframe,
   video {
     max-width: 100% !important;
   }
 
-  /* Adjust feature cards */
   .feature-card {
     padding-left: 8px !important;
     padding-right: 8px !important;
@@ -881,7 +839,6 @@ body {
     margin-right: 5px !important;
   }
 
-  /* Fix code blocks that might be causing overflow */
   .code-block,
   pre {
     max-width: 100% !important;
@@ -890,14 +847,12 @@ body {
     word-break: break-word !important;
   }
 
-  /* Ensure buttons don't overflow */
   .btn {
     padding-left: 8px !important;
     padding-right: 8px !important;
     white-space: normal !important;
   }
 
-  /* Fix the YouTube video container */
   .mobile-video-container {
     width: 100% !important;
     margin-left: 0 !important;
@@ -906,7 +861,6 @@ body {
     padding-right: 0 !important;
   }
 
-  /* Ensure text doesn't overflow */
   h1,
   h2,
   h3,
@@ -918,7 +872,6 @@ body {
     white-space: normal !important;
   }
 
-  /* How It Works section adjustments */
   .mobile-step-content,
   .mobile-code-block {
     width: 100% !important;
@@ -927,74 +880,15 @@ body {
     padding-right: 8px !important;
   }
 
-  /* Fix any absolute positioned elements */
   .mobile-responsive-video {
     padding-bottom: 58% !important;
-    /* Slightly increased to prevent cutoff */
   }
 
-  /* Fix stats cards */
   .stat-card {
     width: 100% !important;
     max-width: 100% !important;
     padding-left: 8px !important;
     padding-right: 8px !important;
-  }
-}
-
-/* Debug outline - uncomment to see element boundaries 
-@media (min-width: 350px) and (max-width: 470px) {
-  * {
-    outline: 1px solid red !important;
-  }
-}
-*/
-
-/* Additional fixes for specific elements that might be causing the issue */
-@media (min-width: 350px) and (max-width: 470px) {
-
-  /* Fix for any potential transforms that push content right */
-  .mobile-features-row,
-  .mobile-stats-row,
-  .mobile-step-row {
-    transform: none !important;
-  }
-
-  /* Reduce padding on mobile steps */
-  .mobile-step-content {
-    padding: 10px !important;
-  }
-
-  .mobile-step-content h4 {
-    font-size: 1.1rem !important;
-  }
-
-  .mobile-step-content p {
-    font-size: 0.85rem !important;
-  }
-
-  /* Fix code blocks font size and padding */
-  .code-block code {
-    font-size: 0.7rem !important;
-  }
-
-  pre {
-    padding: 8px !important;
-  }
-
-  /* Fix potential animation issues */
-  .animate-presence {
-    width: 100% !important;
-    max-width: 100% !important;
-    overflow: hidden !important;
-  }
-
-  /* Fix any framer-motion overflow issues */
-  .motion-div,
-  [class^="motion-"],
-  .framer-motion {
-    max-width: 100% !important;
-    overflow: hidden !important;
   }
 }
 
@@ -1004,7 +898,6 @@ body {
   html,
   body {
     min-width: 320px !important;
-    /* Set a minimum width */
   }
 
   .home-page-container h1 {
@@ -1020,26 +913,20 @@ body {
   }
 }
 
-/* Video fade in/out animations - improved performance */
+/* Video fade animations - improved performance */
 .background-video {
   transition: opacity 0.8s ease-in-out;
-  /* Faster transition */
   backface-visibility: hidden;
-  /* Reduce flicker on some browsers */
   transform: translateZ(0);
-  /* Force GPU acceleration */
   will-change: opacity;
-  /* Hint to browser for optimization */
 }
 
 .video-fade-in {
   animation: fadeInVideo 0.8s ease-in-out forwards;
-  /* Faster animation */
 }
 
 .video-fade-out {
   animation: fadeOutVideo 0.8s ease-in-out forwards;
-  /* Faster animation */
 }
 
 @keyframes fadeInVideo {
@@ -1074,11 +961,9 @@ video.background-video {
   z-index: 0 !important;
 }
 
-/* Better mobile video handling */
 @media (max-width: 767px) {
   .background-video {
     transform: scale(1.05);
-    /* Slight scale to avoid white edges */
   }
 }
 
@@ -1098,7 +983,6 @@ video.background-video {
   }
 }
 
-/* Fix for very small screens where video might cause layout issues */
 @media (max-width: 360px) {
   .background-video {
     display: block !important;
@@ -1108,7 +992,7 @@ video.background-video {
   }
 }
 
-/* Fix any choppy animation with will-change for better hardware acceleration */
+/* Optimize animations */
 .motion-div,
 [class^="motion-"],
 .framer-motion {
@@ -1129,22 +1013,19 @@ video.background-video {
 .features-container {
   margin-top: 1rem;
   margin-bottom: 2rem;
-  overflow: visible !important;
+  /* REMOVED: overflow: visible */
 }
 
-/* Ensure feature cards have consistent heights */
 .feature-card {
   height: 100%;
   transition: transform 0.3s ease, box-shadow 0.3s ease, opacity 0.4s ease;
 }
 
-/* Add extra animation flair to feature cards */
 .feature-card:hover {
   transform: translateY(-10px) scale(1.02);
   box-shadow: 0 12px 24px rgba(40, 167, 69, 0.25);
 }
 
-/* Enhanced feature icon animation */
 .feature-icon {
   transition: all 0.4s ease-out;
   position: relative;
@@ -1174,7 +1055,6 @@ video.background-video {
   opacity: 1;
 }
 
-/* Responsive adjustments for features section */
 @media (max-width: 767px) {
   .features-container {
     margin-top: 0.5rem;
@@ -1186,7 +1066,6 @@ video.background-video {
   }
 }
 
-/* Ensure all animation-dependent elements have proper transitions */
 .mobile-feature-card,
 .mobile-feature-col motion.div {
   will-change: transform, opacity;

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Container, Card, Button, Form, Alert, InputGroup, Row, Col, Spinner } from 'react-bootstrap';
+import { Container, Card, Button, Form, Alert, InputGroup, Row, Col, Spinner, Badge } from 'react-bootstrap';
 import { authService } from '../services/auth';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
@@ -22,19 +22,19 @@ const APITokenManagement = () => {
     const fetchClientData = async () => {
       try {
         setLoading(true);
-        
+
         // Fetch clients directly from the database
         const response = await api.get('/clients/user-client');
-        
+
         if (response.data && response.data.success) {
           const clientsData = response.data.data;
-          
+
           // Just use the first client (assuming one client per user)
           if (clientsData.length > 0) {
             const client = clientsData[0];
             setClientData(client);
             setClientId(client.clientId);
-            
+
             logger.info('Client data fetched successfully');
           } else {
             throw new Error('No clients found for your account');
@@ -58,7 +58,7 @@ const APITokenManagement = () => {
     setIsGenerating(true);
     setError('');
     setSuccess('');
-  
+
     try {
       // For admin users, show different message
       if (isAdmin) {
@@ -67,42 +67,47 @@ const APITokenManagement = () => {
         setIsGenerating(false);
         return;
       }
-  
+
       if (!clientId) {
         throw new Error('Client ID not found. Please contact support.');
       }
-      
+
       if (!clientSecret.trim()) {
         throw new Error('Please enter your client secret to generate an API token');
       }
-  
-      const generatedToken = await authService.generateApiToken(clientId, clientSecret);
+
+      const response = await api.post('/auth/generate-token', {
+        clientId,
+        clientSecret
+      });
+
+      const generatedToken = response.data.data.token;
       setToken(generatedToken);
       setSuccess('API token generated successfully');
-      
-      // Save token but NOT the secret
-      localStorage.setItem('apiToken', generatedToken);
-      
+
+      // SECURITY FIX: Remove the localStorage line
+      // localStorage.setItem('apiToken', generatedToken);
+
       // Clear the secret field after successful generation for security
       setClientSecret('');
-      
-      logger.info('API Token generated');
-      
+
+      logger.info('API token generated');
+
       // Refresh client data after token generation
       await refreshClientData();
     } catch (err) {
-      setError(err.message || 'Failed to generate API token');
+      setError(err.response?.data?.message || err.message || 'Failed to generate API token');
       logger.logError('API Token Generation', err);
     } finally {
       setIsGenerating(false);
     }
   };
-  
+
   // Refresh client data after actions
   const refreshClientData = async () => {
     try {
       if (!clientId) return;
-      
+
       const response = await api.get(`/clients/status/${clientId}`);
       if (response.data && response.data.success) {
         setClientData(response.data.data);
@@ -149,7 +154,7 @@ const APITokenManagement = () => {
   return (
     <Container fluid className="py-4 px-4">
       <h2 className="text-white mb-4">API Keys</h2>
-      
+
       {error && <Alert variant="danger">{error}</Alert>}
       {success && <Alert variant="success">{success}</Alert>}
 
@@ -186,7 +191,7 @@ const APITokenManagement = () => {
                           </InputGroup>
                         </Form.Group>
                       </Col>
-                      
+
                       <Col md={6}>
                         <Form.Group className="mb-3">
                           <Form.Label>Client Secret</Form.Label>
@@ -198,8 +203,8 @@ const APITokenManagement = () => {
                               onChange={(e) => setClientSecret(e.target.value)}
                               className="input-dark"
                             />
-                            <Button 
-                              variant="outline-secondary" 
+                            <Button
+                              variant="outline-secondary"
                               onClick={() => setShowSecret(!showSecret)}
                             >
                               <i className={`bi ${showSecret ? 'bi-eye-slash' : 'bi-eye'}`}></i>
@@ -212,14 +217,14 @@ const APITokenManagement = () => {
                       </Col>
                     </Row>
                   </div>
-                  
+
                   <div className="mb-4">
                     <h5 className="mb-3 text-black">API Token</h5>
                     <p className="text-black mb-3">Generate a token to use the API with your client credentials.</p>
-                    
+
                     <div className="mb-3">
-                      <Button 
-                        variant="success" 
+                      <Button
+                        variant="success"
                         onClick={handleGenerateToken}
                         disabled={isGenerating || !clientSecret.trim() || clientData?.status !== 'active'}
                       >
@@ -235,7 +240,7 @@ const APITokenManagement = () => {
                           </>
                         )}
                       </Button>
-                      
+
                       {clientData?.status !== 'active' && (
                         <div className="text-warning mt-2">
                           <i className="bi bi-exclamation-triangle me-2"></i>
@@ -254,16 +259,19 @@ const APITokenManagement = () => {
                             readOnly
                             className="text-monospace me-2 input-dark"
                           />
-                          <Button 
-                            variant="outline-secondary" 
+                          <Button
+                            variant="outline-secondary"
                             onClick={handleCopyToken}
                           >
                             Copy
                           </Button>
                         </div>
-                        <Form.Text className="text-muted">
-                          Keep this token secure and do not share it with anyone.
-                        </Form.Text>
+                        <div className="d-flex align-items-center mt-2">
+                          <Badge bg="info" className="me-2">API Token</Badge>
+                          <Form.Text className="text-muted">
+                            Keep this token secure and do not share it with anyone.
+                          </Form.Text>
+                        </div>
                       </Form.Group>
                     )}
                   </div>
@@ -282,23 +290,23 @@ const APITokenManagement = () => {
               <Card.Header>API Usage</Card.Header>
               <Card.Body>
                 <p className="text-black">Your API key carries many privileges. Please keep it secure! Do not share your API key in publicly accessible areas such as GitHub, client-side code, or in requests to our API.</p>
-                
+
                 <h5 className="mt-4 mb-3 text-black">Authentication</h5>
                 <p className="text-black">Use your API key to authenticate requests to the Banking Intelligence API by providing it in the Authorization header:</p>
                 <div className="code-snippet mb-4 bg-dark p-3 rounded">
                   <code className="text-white">Authorization: Bearer YOUR_API_KEY</code>
                 </div>
-                
+
                 <div className="usage-stats p-4 bg-dark rounded">
                   <h6 className='text-white'>This Month's Usage</h6>
                   <div className="d-flex justify-content-between align-items-center">
                     <div className="progress flex-grow-1 me-3" style={{ height: '10px' }}>
-                      <div 
+                      <div
                         className={`progress-bar ${getProgressBarColor()}`}
-                        role="progressbar" 
+                        role="progressbar"
                         style={{ width: `${calculateUsagePercentage()}%` }}
-                        aria-valuenow={calculateUsagePercentage()} 
-                        aria-valuemin="0" 
+                        aria-valuenow={calculateUsagePercentage()}
+                        aria-valuemin="0"
                         aria-valuemax="100"
                       ></div>
                     </div>
@@ -310,7 +318,7 @@ const APITokenManagement = () => {
                     API calls reset on {formatDate(clientData.resetDate)}
                   </div>
                 </div>
-                
+
                 <div className="mt-4">
                   <h5 className="mb-3 text-black">Client Status</h5>
                   <div className="p-3 bg-dark rounded">
@@ -319,11 +327,10 @@ const APITokenManagement = () => {
                         <strong className='text-white'>Status:</strong>
                       </div>
                       <div>
-                        <span className={`badge bg-${
-                          clientData.status === 'active' ? 'success' :
+                        <span className={`badge bg-${clientData.status === 'active' ? 'success' :
                           clientData.status === 'pending' ? 'warning' :
-                          'danger'
-                        }`}>
+                            'danger'
+                          }`}>
                           {clientData.status}
                         </span>
                       </div>
@@ -352,17 +359,17 @@ const APITokenManagement = () => {
               <i className="bi bi-info-circle me-2"></i>
               As an admin user, you have additional privileges including the ability to manage client status and quotas.
             </Alert>
-            
+
             <div className="d-flex gap-2 mt-3">
-              <Button 
-                variant="outline-success" 
+              <Button
+                variant="outline-success"
                 onClick={() => window.location.href = '/admin'}
               >
                 <i className="bi bi-speedometer me-2"></i>
                 Go to Admin Dashboard
               </Button>
-              
-              <Button 
+
+              <Button
                 variant="outline-primary"
                 onClick={() => window.location.href = '/admin/clients'}
               >

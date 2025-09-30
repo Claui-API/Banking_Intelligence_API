@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Container, Row, Col, Card, Table, Button, Spinner, Badge, Nav, Form, Alert, Modal, Tabs, Tab } from 'react-bootstrap';
+import { Container, Row, Col, Card, Table, Button, Spinner, Badge, Nav, Form, Alert, Modal, Tabs, Tab, ButtonGroup } from 'react-bootstrap';
 import { useNavigate } from 'react-router-dom';
 import { apiClient, bankClientApi, bankingCommandApi } from '../../services/api-client';
 import logger from '../../utils/logger';
@@ -126,10 +126,10 @@ const BankDashboard = () => {
 		accountId: '',
 		type: ''
 	});
-	const [dateRange, setDateRange] = useState('7'); // Default to 7 days
+	const [dateRange, setDateRange] = useState('7');
 	const [activityData, setActivityData] = useState([]);
 
-	// Report state
+	// Consolidated report state (single API approach)
 	const [showReportModal, setShowReportModal] = useState(false);
 	const [reportLoading, setReportLoading] = useState(false);
 	const [reportData, setReportData] = useState(null);
@@ -137,7 +137,6 @@ const BankDashboard = () => {
 	const [reportOptions, setReportOptions] = useState({
 		timeframe: '30d',
 		includeDetailed: true,
-		format: 'json'
 	});
 
 	// Bulk report state
@@ -224,7 +223,6 @@ const BankDashboard = () => {
 	// Fetch activity data
 	const fetchActivityData = async () => {
 		try {
-			// Calculate date range
 			const endDate = new Date();
 			const startDate = new Date();
 			startDate.setDate(endDate.getDate() - parseInt(dateRange));
@@ -237,8 +235,8 @@ const BankDashboard = () => {
 		}
 	};
 
-	// Generate a banking report for the selected user
-	const generateReport = async () => {
+	// Optimized single API call for both JSON and PDF generation
+	const generateReport = async (format = 'json') => {
 		if (!selectedUser) return;
 
 		setReportLoading(true);
@@ -246,51 +244,106 @@ const BankDashboard = () => {
 		setReportData(null);
 
 		try {
-			const response = await bankingCommandApi.generateReport(
-				selectedUser.bankUserId,
-				reportOptions
-			);
-
-			if (response.success && response.data) {
-				setReportData(response.data);
-				setShowReportModal(true);
-			} else {
-				setReportError('Failed to generate report. Invalid response format.');
+			const token = localStorage.getItem('token');
+			if (!token) {
+				setReportError('Authentication required. Please log in again.');
+				setReportLoading(false);
+				return;
 			}
+
+			// Single API call that can handle JSON, HTML, and PDF formats
+			const response = await fetch('/api/banking-command/report', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					'Authorization': `Bearer ${token}`
+				},
+				body: JSON.stringify({
+					userId: selectedUser.bankUserId,
+					timeframe: reportOptions.timeframe,
+					includeDetailed: reportOptions.includeDetailed,
+					format: format
+				})
+			});
+
+			if (!response.ok) {
+				if (response.status === 401) {
+					throw new Error('Authentication expired. Please log in again.');
+				} else if (response.status === 500) {
+					const errorText = await response.text();
+					throw new Error(`Server error: ${errorText}`);
+				} else {
+					throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+				}
+			}
+
+			const contentType = response.headers.get('content-type');
+
+			if (format === 'html' && contentType && contentType.includes('text/html')) {
+				// Handle HTML response - open in new window
+				const htmlContent = await response.text();
+				const newWindow = window.open('', '_blank');
+				if (newWindow) {
+					newWindow.document.write(htmlContent);
+					newWindow.document.close();
+					alert('HTML report opened in new window');
+				} else {
+					// Fallback: create blob and download
+					const blob = new Blob([htmlContent], { type: 'text/html' });
+					const url = window.URL.createObjectURL(blob);
+					const link = document.createElement('a');
+					link.href = url;
+					link.download = `banking-report-${selectedUser.bankUserId}-${reportOptions.timeframe}.html`;
+					document.body.appendChild(link);
+					link.click();
+					document.body.removeChild(link);
+					window.URL.revokeObjectURL(url);
+					alert('HTML report downloaded');
+				}
+			} else if (format === 'pdf' && contentType && contentType.includes('text/html')) {
+				// Handle PDF-ready HTML response
+				const htmlContent = await response.text();
+				const newWindow = window.open('', '_blank');
+				if (newWindow) {
+					newWindow.document.write(htmlContent);
+					newWindow.document.close();
+					// Auto-trigger print dialog after a short delay
+					setTimeout(() => {
+						newWindow.print();
+					}, 500);
+					alert('PDF-ready report opened. Print dialog will appear shortly.');
+				}
+			} else if (format === 'pdf' && contentType && contentType.includes('application/pdf')) {
+				// Handle direct PDF response (if implemented later)
+				const blob = await response.blob();
+				if (blob.size === 0) {
+					throw new Error('Received empty PDF file');
+				}
+
+				const url = window.URL.createObjectURL(blob);
+				const link = document.createElement('a');
+				link.href = url;
+				const filename = `banking-report-${selectedUser.bankUserId}-${reportOptions.timeframe}.pdf`;
+				link.download = filename;
+				document.body.appendChild(link);
+				link.click();
+				document.body.removeChild(link);
+				window.URL.revokeObjectURL(url);
+				alert(`PDF report "${filename}" downloaded successfully!`);
+			} else {
+				// Handle JSON response
+				const data = await response.json();
+				if (data.success && data.data) {
+					setReportData(data.data);
+					setShowReportModal(true);
+				} else {
+					setReportError('Failed to generate report. Invalid response format.');
+				}
+			}
+
 		} catch (err) {
 			logger.error(`Failed to generate report for user ${selectedUser.bankUserId}:`, err);
 			setReportError(`Failed to generate report: ${err.message}`);
-		} finally {
-			setReportLoading(false);
-		}
-	};
-
-	// Generate PDF report
-	const generatePdfReport = async () => {
-		if (!selectedUser) return;
-
-		setReportLoading(true);
-		setReportError(null);
-
-		try {
-			const response = await bankingCommandApi.generatePdfReport(
-				selectedUser.bankUserId,
-				{
-					timeframe: reportOptions.timeframe,
-					includeDetailed: reportOptions.includeDetailed
-				}
-			);
-
-			if (response.success && response.data) {
-				// For a real application, this would typically download the PDF or open it in a new tab
-				// Since we're mocking this, we'll just show an alert
-				alert('PDF report generated successfully. In a production environment, this would download or open the PDF.');
-			} else {
-				setReportError('Failed to generate PDF report. Invalid response format.');
-			}
-		} catch (err) {
-			logger.error(`Failed to generate PDF report for user ${selectedUser.bankUserId}:`, err);
-			setReportError(`Failed to generate PDF report: ${err.message}`);
 		} finally {
 			setReportLoading(false);
 		}
@@ -352,12 +405,9 @@ const BankDashboard = () => {
 
 			try {
 				console.log('Loading dashboard data...');
-
-				// Load each piece of data individually
 				await fetchStats();
 				await fetchBankUsers();
 				await fetchActivityData();
-
 				console.log('Dashboard data loaded successfully');
 			} catch (err) {
 				console.error('Error loading dashboard data:', err);
@@ -386,6 +436,7 @@ const BankDashboard = () => {
 	// Handle user selection
 	const handleUserSelect = (user) => {
 		setSelectedUser(user);
+		setReportData(null);
 		setActiveTab('userDetails');
 	};
 
@@ -411,7 +462,7 @@ const BankDashboard = () => {
 		}
 	};
 
-	// Report Modal
+	// Report Modal with optimized generation buttons
 	const renderReportModal = () => (
 		<Modal show={showReportModal} onHide={() => setShowReportModal(false)} size="lg" backdrop="static">
 			<Modal.Header closeButton>
@@ -432,6 +483,33 @@ const BankDashboard = () => {
 						<h3 className="mb-3">{reportData.title}</h3>
 						<p><strong>Period:</strong> {reportData.period}</p>
 						<p><strong>Generated:</strong> {formatDate(reportData.generated)}</p>
+
+						{/* Report format buttons */}
+						<div className="mb-4 p-3 bg-light rounded">
+							<h6 className="mb-3">View Report in Different Formats:</h6>
+							<div className="d-flex gap-2 flex-wrap">
+								<Button
+									variant="success"
+									size="sm"
+									onClick={() => generateReport('html')}
+									disabled={reportLoading || !selectedUser}
+								>
+									📄 Open HTML Report
+								</Button>
+								<Button
+									variant="danger"
+									size="sm"
+									onClick={() => generateReport('pdf')}
+									disabled={reportLoading || !selectedUser}
+								>
+									📁 Print/Save as PDF
+								</Button>
+							</div>
+							<small className="text-muted d-block mt-2">
+								HTML report opens in a new window with interactive features.
+								PDF option opens print-ready version.
+							</small>
+						</div>
 
 						<Tabs defaultActiveKey="sections" id="report-tabs" className="mb-3">
 							<Tab eventKey="sections" title="Report Sections">
@@ -484,30 +562,6 @@ const BankDashboard = () => {
 											<p>No category data available</p>
 										)}
 
-										<h5 className="mt-4">Top Merchants</h5>
-										{reportData.summary.topMerchants && reportData.summary.topMerchants.length > 0 ? (
-											<Table striped bordered hover variant="light" size="sm">
-												<thead>
-													<tr>
-														<th>Merchant</th>
-														<th>Count</th>
-														<th>Total</th>
-													</tr>
-												</thead>
-												<tbody>
-													{reportData.summary.topMerchants.map((merchant, index) => (
-														<tr key={index}>
-															<td>{merchant.name}</td>
-															<td>{merchant.count}</td>
-															<td>{formatCurrency(merchant.total)}</td>
-														</tr>
-													))}
-												</tbody>
-											</Table>
-										) : (
-											<p>No merchant data available</p>
-										)}
-
 										<h5 className="mt-4">Risk Assessment</h5>
 										<p>
 											<strong>Risk Count:</strong> {reportData.summary.riskCount}<br />
@@ -517,7 +571,7 @@ const BankDashboard = () => {
 								</Card>
 							</Tab>
 							<Tab eventKey="raw" title="Raw JSON">
-								<pre className="bg-light p-3 rounded" style={{ maxHeight: '500px', overflow: 'auto' }}>
+								<pre className="bg-light text-black p-3 rounded" style={{ maxHeight: '500px', overflow: 'auto' }}>
 									{JSON.stringify(reportData, null, 2)}
 								</pre>
 							</Tab>
@@ -525,27 +579,75 @@ const BankDashboard = () => {
 					</div>
 				) : (
 					<Alert variant="info">
-						Click "Generate Report" to create a Banking Intelligence Command report.
+						<h6>Banking Intelligence Report Generator</h6>
+						<p>Generate comprehensive financial intelligence reports with AI-powered insights.</p>
+
+						<div className="mt-3">
+							<h6>Report Options:</h6>
+							<Form>
+								<Form.Group className="mb-3">
+									<Form.Label>Time Period</Form.Label>
+									<Form.Select
+										className='text-dark bg-white'
+										value={reportOptions.timeframe}
+										onChange={(e) => setReportOptions({ ...reportOptions, timeframe: e.target.value })}
+									>
+										<option value="30d">Last 30 Days</option>
+										<option value="90d">Last 90 Days</option>
+										<option value="180d">Last 180 Days</option>
+										<option value="1y">Last Year</option>
+									</Form.Select>
+								</Form.Group>
+								<Form.Group className="mb-3">
+									<Form.Check
+										type="checkbox"
+										label="Include Detailed Analysis Sections"
+										checked={reportOptions.includeDetailed}
+										onChange={(e) => setReportOptions({ ...reportOptions, includeDetailed: e.target.checked })}
+									/>
+								</Form.Group>
+							</Form>
+						</div>
+
+						<div className="d-grid gap-2 d-md-flex justify-content-md-start mt-4">
+							<Button
+								variant="primary"
+								onClick={() => generateReport('json')}
+								disabled={reportLoading || !selectedUser}
+								className="me-md-2"
+							>
+								{reportLoading ? 'Generating...' : '📊 Generate JSON Report'}
+							</Button>
+							<Button
+								variant="success"
+								onClick={() => generateReport('html')}
+								disabled={reportLoading || !selectedUser}
+								className="me-md-2"
+							>
+								📄 Generate HTML Report
+							</Button>
+							<Button
+								variant="danger"
+								onClick={() => generateReport('pdf')}
+								disabled={reportLoading || !selectedUser}
+							>
+								🖨️ Generate PDF Report
+							</Button>
+						</div>
 					</Alert>
 				)}
 			</Modal.Body>
 			<Modal.Footer>
 				{!reportLoading && (
 					<>
-						<Button
-							variant="primary"
-							onClick={generateReport}
-							disabled={reportLoading || !selectedUser}
-						>
-							{reportLoading ? 'Generating...' : 'Generate Report'}
-						</Button>
-						<Button
-							variant="success"
-							onClick={generatePdfReport}
-							disabled={reportLoading || !selectedUser}
-						>
-							Generate PDF
-						</Button>
+						{reportData && (
+							<div className="me-auto">
+								<small className="text-muted">
+									Generated in {reportData._metadata?.generationTime || 'unknown'}ms
+									{reportData._metadata?.fromCache && ' (from cache)'}
+								</small>
+							</div>
+						)}
 						<Button variant="secondary" onClick={() => setShowReportModal(false)}>
 							Close
 						</Button>
@@ -627,6 +729,7 @@ const BankDashboard = () => {
 							<Form.Group className="mb-3">
 								<Form.Label>Time Period</Form.Label>
 								<Form.Select
+									className='text-dark bg-white'
 									value={bulkReportOptions.timeframe}
 									onChange={(e) => setBulkReportOptions({ ...bulkReportOptions, timeframe: e.target.value })}
 								>
@@ -662,17 +765,17 @@ const BankDashboard = () => {
 							<Table striped bordered hover>
 								<thead>
 									<tr>
-										<th>Select</th>
-										<th>Bank User ID</th>
-										<th>Name</th>
-										<th>Status</th>
-										<th>Accounts</th>
+										<th className="text-dark bg-white">Select</th>
+										<th className="text-dark bg-white">Bank User ID</th>
+										<th className="text-dark bg-white">Name</th>
+										<th className="text-dark bg-white">Status</th>
+										<th className="text-dark bg-white">Accounts</th>
 									</tr>
 								</thead>
 								<tbody>
 									{bankUsers.map((user, index) => (
 										<tr key={index}>
-											<td>
+											<td className="bg-white">
 												<Form.Check
 													type="checkbox"
 													checked={selectedUsers.includes(user.bankUserId)}
@@ -680,14 +783,14 @@ const BankDashboard = () => {
 													id={`user-check-${index}`}
 												/>
 											</td>
-											<td className="text-truncate" style={{ maxWidth: '150px' }}>
+											<td className="text-truncate text-black bg-white" style={{ maxWidth: '150px' }}>
 												{user.bankUserId}
 											</td>
-											<td>{user.name || 'N/A'}</td>
-											<td>
+											<td className="text-dark bg-white">{user.name || 'N/A'}</td>
+											<td className="bg-white">
 												<BankUserStatusBadge status={user.status} />
 											</td>
-											<td>{user.accountCount || 0}</td>
+											<td className="text-dark bg-white">{user.accountCount || 0}</td>
 										</tr>
 									))}
 								</tbody>
@@ -888,7 +991,7 @@ const BankDashboard = () => {
 		</>
 	);
 
-	// Render user details
+	// Render user details (simplified for brevity - same as original)
 	const renderUserDetails = () => {
 		if (!selectedUser) {
 			return (
@@ -907,21 +1010,33 @@ const BankDashboard = () => {
 							<small className="text-muted">{selectedUser.email || 'No email'}</small>
 						</div>
 						<div>
-							<Button
-								variant="primary"
-								size="sm"
-								onClick={() => setShowReportModal(true)}
-								className="me-2"
-							>
-								Generate Banking Report
-							</Button>
-							<Button
-								variant="outline-secondary"
-								size="sm"
-								onClick={() => setActiveTab('overview')}
-							>
-								Back to Overview
-							</Button>
+							<ButtonGroup>
+								<Button
+									variant="primary"
+									size="sm"
+									onClick={() => setShowReportModal(true)}
+									className="me-2"
+								>
+									📊 Generate Report
+								</Button>
+								<Button
+									variant="success"
+									size="sm"
+									onClick={() => generateReport('html')}
+									disabled={reportLoading}
+									className="me-2"
+								>
+									📄 HTML Report
+								</Button>
+								<Button
+									variant="outline-danger"
+									size="sm"
+									onClick={() => generateReport('pdf')}
+									disabled={reportLoading}
+								>
+									🖨️ PDF Report
+								</Button>
+							</ButtonGroup>
 						</div>
 					</Card.Header>
 					<Card.Body>
@@ -995,44 +1110,54 @@ const BankDashboard = () => {
 					<Card.Header className="bg-white">
 						<div className="d-flex justify-content-between align-items-center">
 							<h5 className="mb-0">Transactions</h5>
-							<Button
-								size="sm"
-								variant="outline-primary"
-								onClick={() => document.getElementById('filterCollapse').classList.toggle('show')}
+							<button
+								className="btn btn-sm btn-outline-primary"
+								type="button"
+								onClick={() => {
+									const collapseElement = document.getElementById('filterCollapse');
+									if (collapseElement.classList.contains('show')) {
+										collapseElement.classList.remove('show');
+									} else {
+										collapseElement.classList.add('show');
+									}
+								}}
 							>
 								Filters
-							</Button>
+							</button>
 						</div>
 					</Card.Header>
 
 					<div className="collapse" id="filterCollapse">
-						<Card.Body className="border-bottom bg-light">
-							<Form onSubmit={handleApplyFilters}>
-								<Row>
-									<Col md={3}>
-										<Form.Group className="mb-3">
-											<Form.Label>Start Date</Form.Label>
-											<Form.Control
+						<div className="card-body border-bottom bg-light">
+							<form onSubmit={handleApplyFilters}>
+								<div className="row">
+									<div className="col-md-3">
+										<div className="form-group mb-3">
+											<label className="form-label">Start Date</label>
+											<input
 												type="date"
+												className="form-control"
 												value={transactionFilters.startDate}
 												onChange={(e) => setTransactionFilters({ ...transactionFilters, startDate: e.target.value })}
 											/>
-										</Form.Group>
-									</Col>
-									<Col md={3}>
-										<Form.Group className="mb-3">
-											<Form.Label>End Date</Form.Label>
-											<Form.Control
+										</div>
+									</div>
+									<div className="col-md-3">
+										<div className="form-group mb-3">
+											<label className="form-label">End Date</label>
+											<input
 												type="date"
+												className="form-control"
 												value={transactionFilters.endDate}
 												onChange={(e) => setTransactionFilters({ ...transactionFilters, endDate: e.target.value })}
 											/>
-										</Form.Group>
-									</Col>
-									<Col md={3}>
-										<Form.Group className="mb-3">
-											<Form.Label>Account</Form.Label>
-											<Form.Select
+										</div>
+									</div>
+									<div className="col-md-3">
+										<div className="form-group mb-3">
+											<label className="form-label">Account</label>
+											<select
+												className="form-select"
 												value={transactionFilters.accountId}
 												onChange={(e) => setTransactionFilters({ ...transactionFilters, accountId: e.target.value })}
 											>
@@ -1042,13 +1167,14 @@ const BankDashboard = () => {
 														{account.name}
 													</option>
 												))}
-											</Form.Select>
-										</Form.Group>
-									</Col>
-									<Col md={3}>
-										<Form.Group className="mb-3">
-											<Form.Label>Type</Form.Label>
-											<Form.Select
+											</select>
+										</div>
+									</div>
+									<div className="col-md-3">
+										<div className="form-group mb-3">
+											<label className="form-label">Type</label>
+											<select
+												className="form-select"
 												value={transactionFilters.type}
 												onChange={(e) => setTransactionFilters({ ...transactionFilters, type: e.target.value })}
 											>
@@ -1056,16 +1182,16 @@ const BankDashboard = () => {
 												<option value="income">Income</option>
 												<option value="expense">Expense</option>
 												<option value="transfer">Transfer</option>
-											</Form.Select>
-										</Form.Group>
-									</Col>
-								</Row>
-								<div className="d-flex gap-2">
-									<Button type="submit" variant="primary" size="sm">Apply Filters</Button>
-									<Button type="button" variant="outline-secondary" size="sm" onClick={handleResetFilters}>Reset</Button>
+											</select>
+										</div>
+									</div>
 								</div>
-							</Form>
-						</Card.Body>
+								<div className="d-flex gap-2">
+									<button type="submit" className="btn btn-primary btn-sm">Apply Filters</button>
+									<button type="button" className="btn btn-outline-secondary btn-sm" onClick={handleResetFilters}>Reset</button>
+								</div>
+							</form>
+						</div>
 					</div>
 
 					<Card.Body>

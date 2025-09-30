@@ -356,53 +356,89 @@ const authService = {
     }
   },
 
-  // Generate a new API token
   generateApiToken: async (clientId, clientSecret) => {
     try {
-      // Find client with the provided credentials
+      // Debug logging
+      logger.info(`API Token generation attempt for clientId: ${clientId}`);
+      logger.info(`Provided client secret length: ${clientSecret ? clientSecret.length : 'undefined'}`);
+
+      // First, just get the client by ID
       const client = await Client.findOne({
-        where: { clientId, clientSecret },
+        where: { clientId },
         include: [{ model: User, where: { status: 'active' }, required: true }]
       });
 
       if (!client) {
+        logger.warn(`Client not found with ID: ${clientId}`);
         throw new Error('Invalid client credentials');
       }
 
-      // Check if client is approved
+      // Debug logging about the found client
+      logger.info(`Client found: ${client.id}, status: ${client.status}`);
+      logger.info(`DB client secret length: ${client.clientSecret ? client.clientSecret.length : 'undefined'}`);
+      logger.info(`Are strings identical? ${clientSecret === client.clientSecret ? 'Yes' : 'No'}`);
+
+      // For deeper debugging, log the first few characters of both strings
+      if (clientSecret && client.clientSecret) {
+        logger.info(`Provided secret prefix: ${clientSecret.substring(0, 5)}...`);
+        logger.info(`DB secret prefix: ${client.clientSecret.substring(0, 5)}...`);
+      }
+
+      // Check if client is active
       if (client.status !== 'active') {
+        logger.warn(`Client ${clientId} has non-active status: ${client.status}`);
         throw new Error(`Client status is ${client.status}. Cannot generate API token until approved.`);
       }
 
+      // Manual comparison
+      if (clientSecret !== client.clientSecret) {
+        logger.warn(`Invalid client secret for client ${clientId}`);
+        throw new Error('Invalid client credentials');
+      }
+
       const user = client.User;
+      logger.info(`User found: ${user.id}, role: ${user.role}`);
 
       // Generate a long-lived token
       const payload = {
         userId: user.id,
         clientId: client.clientId,
         role: user.role,
-        twoFactorEnabled: user.twoFactorEnabled, // Include 2FA status
-        type: 'api'
+        twoFactorEnabled: user.twoFactorEnabled,
+        type: 'api' // Explicitly set token type to "api"
       };
 
-      // API tokens could have longer expiry
+      // API tokens could have longer expiry - 30 days is fine
       const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '30d' });
 
       // Calculate expiration date
       const decoded = jwt.decode(token);
       const expiresAt = new Date(decoded.exp * 1000);
 
-      // Store token in database
+      // Double-check token type to ensure it matches what we want
+      if (decoded.type !== 'api') {
+        logger.error(`Token type mismatch during API token generation: ${decoded.type}`);
+        throw new Error('Token generation error: incorrect type');
+      }
+
+      // Store token in database with explicit tokenType
       await Token.create({
         userId: user.id,
         clientId: client.clientId,
-        tokenType: 'api',
+        tokenType: 'api', // Ensure correct token type in DB
         token,
         expiresAt
       });
 
+      // Update client last used timestamp
+      client.lastUsedAt = new Date();
+      await client.save();
+
+      logger.info(`API token generated successfully for user ${user.id}, client ${clientId}`);
+
       return {
         token,
+        userId: user.id,
         expiresAt: expiresAt.toISOString()
       };
     } catch (error) {

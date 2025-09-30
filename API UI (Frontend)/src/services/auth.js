@@ -1,9 +1,31 @@
-// src/services/auth.js - Frontend
+// src/services/auth.js - Frontend with Session Management
 import api from './api';
 import logger from '../utils/logger';
 import { jwtDecode } from 'jwt-decode';
 
 export const authService = {
+  // Get current session ID
+  getSessionId: () => {
+    return localStorage.getItem('sessionId');
+  },
+
+  // Set session ID and add to API headers
+  setSessionId: (sessionId) => {
+    if (sessionId) {
+      localStorage.setItem('sessionId', sessionId);
+      // Update API default headers to include session ID
+      api.defaults.headers.common['X-Session-Id'] = sessionId;
+      logger.info('Session ID set', { sessionId });
+    }
+  },
+
+  // Clear session ID
+  clearSessionId: () => {
+    localStorage.removeItem('sessionId');
+    delete api.defaults.headers.common['X-Session-Id'];
+    logger.info('Session ID cleared');
+  },
+
   // Decode and extract user info from token
   getUserFromToken: () => {
     try {
@@ -24,12 +46,13 @@ export const authService = {
         email: decoded.email,
         clientId: decoded.clientId,
         role: decoded.role || 'user',
-        twoFactorEnabled: decoded.twoFactorEnabled || false // Get 2FA status from token
+        twoFactorEnabled: decoded.twoFactorEnabled || false
       };
     } catch (error) {
       logger.logError('Token Decoding Failed', error);
       localStorage.removeItem('token');
       localStorage.removeItem('refreshToken');
+      authService.clearSessionId(); // Clear session on token failure
       return null;
     }
   },
@@ -38,17 +61,23 @@ export const authService = {
   register: async (userData) => {
     try {
       const response = await api.post('/auth/register', userData);
+      const { data } = response.data;
+
+      // Store session ID if returned
+      if (data.sessionId) {
+        authService.setSessionId(data.sessionId);
+      }
 
       logger.info('Registration successful', {
         clientName: userData.clientName,
-        email: userData.email
+        email: userData.email,
+        sessionId: data.sessionId
       });
 
       return response.data;
     } catch (error) {
       logger.logError('Registration Error', error);
 
-      // Enhanced error handling
       if (error.response) {
         const errorMessage = error.response.data?.message || 'Registration failed';
         throw new Error(errorMessage);
@@ -94,10 +123,15 @@ export const authService = {
         };
       }
 
-      // Standard login
+      // Standard login - store tokens and session
       localStorage.setItem('token', data.accessToken);
       if (data.refreshToken) {
         localStorage.setItem('refreshToken', data.refreshToken);
+      }
+
+      // Store session ID
+      if (data.sessionId) {
+        authService.setSessionId(data.sessionId);
       }
 
       // Store client credentials if using clientId login
@@ -114,7 +148,8 @@ export const authService = {
         userId: data.userId,
         clientId: data.clientId,
         email: credentials.email,
-        role: data.role
+        role: data.role,
+        sessionId: data.sessionId
       });
 
       return data;
@@ -138,90 +173,6 @@ export const authService = {
         throw new Error('No response from server. Please check your network connection.');
       } else {
         throw new Error('Error setting up login request');
-      }
-    }
-  },
-
-  // Generate 2FA secret
-  generate2FASecret: async () => {
-    try {
-      const response = await api.post('/auth/generate-2fa');
-
-      if (!response.data || !response.data.success) {
-        throw new Error(response.data?.message || 'Failed to generate 2FA secret');
-      }
-
-      logger.info('2FA secret generated successfully');
-      return response.data.data;
-    } catch (error) {
-      logger.logError('2FA Secret Generation Failed', error);
-
-      if (error.response) {
-        const errorMessage = error.response.data?.message || 'Failed to generate 2FA secret';
-        throw new Error(errorMessage);
-      } else if (error.request) {
-        throw new Error('No response from server. Please check your network connection.');
-      } else {
-        throw new Error('Error setting up 2FA secret generation request: ' + error.message);
-      }
-    }
-  },
-
-  // Enable 2FA
-  enable2FA: async (secret, token) => {
-    try {
-      if (!secret || !token) {
-        throw new Error('Secret and verification token are required');
-      }
-
-      const response = await api.post('/auth/enable-2fa', {
-        secret,
-        token: token.trim() // Clean the token
-      });
-
-      if (!response.data || !response.data.success) {
-        throw new Error(response.data?.message || 'Failed to enable 2FA');
-      }
-
-      logger.info('2FA enabled successfully');
-      return response.data.data;
-    } catch (error) {
-      logger.logError('2FA Enablement Failed', error);
-
-      if (error.response) {
-        const errorMessage = error.response.data?.message || 'Failed to enable 2FA';
-        throw new Error(errorMessage);
-      } else if (error.request) {
-        throw new Error('No response from server. Please check your network connection.');
-      } else {
-        throw new Error('Error setting up 2FA enablement request: ' + error.message);
-      }
-    }
-  },
-
-  // Disable 2FA
-  disable2FA: async (token) => {
-    try {
-      const response = await api.post('/auth/disable-2fa', {
-        token: token ? token.trim() : undefined // Clean the token if provided
-      });
-
-      if (!response.data || !response.data.success) {
-        throw new Error(response.data?.message || 'Failed to disable 2FA');
-      }
-
-      logger.info('2FA disabled successfully');
-      return true;
-    } catch (error) {
-      logger.logError('2FA Disablement Failed', error);
-
-      if (error.response) {
-        const errorMessage = error.response.data?.message || 'Failed to disable 2FA';
-        throw new Error(errorMessage);
-      } else if (error.request) {
-        throw new Error('No response from server. Please check your network connection.');
-      } else {
-        throw new Error('Error setting up 2FA disablement request: ' + error.message);
       }
     }
   },
@@ -254,7 +205,15 @@ export const authService = {
         localStorage.setItem('refreshToken', authData.refreshToken);
       }
 
-      logger.info('2FA verification successful');
+      // Store session ID if returned
+      if (authData.sessionId) {
+        authService.setSessionId(authData.sessionId);
+      }
+
+      logger.info('2FA verification successful', {
+        sessionId: authData.sessionId
+      });
+
       return authData;
     } catch (error) {
       logger.logError('2FA Verification Failed', error);
@@ -270,50 +229,6 @@ export const authService = {
     }
   },
 
-  // Verify 2FA with backup code
-  verifyBackupCode: async (userId, backupCode) => {
-    try {
-      if (!userId || !backupCode) {
-        throw new Error('User ID and backup code are required');
-      }
-
-      const cleanBackupCode = backupCode.replace(/\s+/g, '');
-
-      const response = await api.post('/auth/verify-2fa', {
-        userId,
-        backupCode: cleanBackupCode
-      });
-
-      if (!response.data || !response.data.success) {
-        throw new Error(response.data?.message || 'Failed to verify backup code');
-      }
-
-      // Store tokens from the response
-      const authData = response.data.data;
-      if (authData.accessToken) {
-        localStorage.setItem('token', authData.accessToken);
-      }
-
-      if (authData.refreshToken) {
-        localStorage.setItem('refreshToken', authData.refreshToken);
-      }
-
-      logger.info('Backup code verification successful');
-      return authData;
-    } catch (error) {
-      logger.logError('Backup Code Verification Failed', error);
-
-      if (error.response) {
-        const errorMessage = error.response.data?.message || 'Failed to verify backup code';
-        throw new Error(errorMessage);
-      } else if (error.request) {
-        throw new Error('No response from server. Please check your network connection.');
-      } else {
-        throw new Error('Error setting up backup code verification request: ' + error.message);
-      }
-    }
-  },
-
   // Generate API token
   generateApiToken: async (clientId, clientSecret) => {
     try {
@@ -324,26 +239,35 @@ export const authService = {
 
       const { data } = response.data;
 
-      logger.info('API Token generated', {
-        clientId: data.clientId
-      });
+      // Validate the token type
+      try {
+        const { jwtDecode } = require('jwt-decode');
+        const tokenData = jwtDecode(data.token);
+
+        // Verify it's actually an API token
+        if (tokenData.type !== 'api') {
+          logger.error('Security issue: Received non-API token type', {
+            tokenType: tokenData.type,
+            clientId: clientId
+          });
+          throw new Error('Invalid token type received. Please contact support.');
+        }
+      } catch (decodeError) {
+        logger.error('Token validation error', decodeError);
+        throw new Error('Unable to validate token. Please try again later.');
+      }
+
+      // Store session ID if returned
+      if (data.sessionId) {
+        authService.setSessionId(data.sessionId);
+      }
+
+      logger.info('API Token generated and validated');
 
       return data.token;
     } catch (error) {
       logger.logError('API Token Generation Failed', error);
-
-      if (error.response) {
-        if (error.response.status === 403) {
-          throw new Error(error.response.data?.message || 'Your account requires approval to generate tokens.');
-        }
-
-        const errorMessage = error.response.data?.message || 'Token generation failed';
-        throw new Error(errorMessage);
-      } else if (error.request) {
-        throw new Error('No response from server. Please check your network connection.');
-      } else {
-        throw new Error('Error setting up token generation request');
-      }
+      throw error;
     }
   },
 
@@ -351,16 +275,29 @@ export const authService = {
   refreshToken: async () => {
     try {
       const refreshToken = localStorage.getItem('refreshToken');
+      const sessionId = authService.getSessionId();
+
       if (!refreshToken) {
         throw new Error('No refresh token available');
       }
 
-      const response = await api.post('/auth/refresh', { refreshToken });
+      const response = await api.post('/auth/refresh', {
+        refreshToken,
+        sessionId // Include session ID in refresh request
+      });
+
       const { data } = response.data;
 
       localStorage.setItem('token', data.accessToken);
 
-      logger.info('Token refreshed successfully');
+      // Update session ID if returned
+      if (data.sessionId) {
+        authService.setSessionId(data.sessionId);
+      }
+
+      logger.info('Token refreshed successfully', {
+        sessionId: data.sessionId || sessionId
+      });
 
       return data.accessToken;
     } catch (error) {
@@ -368,6 +305,7 @@ export const authService = {
 
       localStorage.removeItem('token');
       localStorage.removeItem('refreshToken');
+      authService.clearSessionId();
 
       if (error.response) {
         const errorMessage = error.response.data?.message || 'Token refresh failed';
@@ -380,13 +318,44 @@ export const authService = {
     }
   },
 
-  // Log out - clear tokens
-  logout: () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('refreshToken');
-    localStorage.removeItem('userEmail');
+  // Log out - clear tokens and session
+  logout: async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const refreshToken = localStorage.getItem('refreshToken');
+      const sessionId = authService.getSessionId();
 
-    logger.info('Logout - tokens cleared');
+      // Call logout endpoint to clear server-side session
+      if (token || sessionId) {
+        try {
+          await api.post('/auth/logout', {
+            refreshToken,
+            sessionId
+          }, {
+            headers: {
+              'Authorization': token ? `Bearer ${token}` : undefined,
+              'X-Session-Id': sessionId
+            }
+          });
+
+          logger.info('Server logout successful');
+        } catch (error) {
+          // Log error but continue with local cleanup
+          logger.warn('Server logout failed, continuing with local cleanup', error);
+        }
+      }
+    } catch (error) {
+      logger.warn('Logout error, continuing with cleanup', error);
+    } finally {
+      // Always clear local storage
+      localStorage.removeItem('token');
+      localStorage.removeItem('refreshToken');
+      localStorage.removeItem('userEmail');
+      localStorage.removeItem('clientId');
+      authService.clearSessionId();
+
+      logger.info('Logout - tokens and session cleared');
+    }
   },
 
   // Check if user is authenticated
@@ -405,6 +374,7 @@ export const authService = {
       if (isExpired) {
         logger.warn('Token has expired');
         localStorage.removeItem('token');
+        authService.clearSessionId();
         return false;
       }
 
@@ -415,14 +385,48 @@ export const authService = {
     }
   },
 
+  // Check session status
+  checkSessionStatus: async () => {
+    try {
+      const sessionId = authService.getSessionId();
+
+      if (!sessionId) {
+        return {
+          hasSession: false,
+          message: 'No session ID found'
+        };
+      }
+
+      const response = await api.get('/auth/session-status', {
+        params: { sessionId }
+      });
+
+      return response.data.data;
+    } catch (error) {
+      logger.warn('Session status check failed', error);
+      return {
+        hasSession: false,
+        message: 'Session check failed'
+      };
+    }
+  },
+
   // Change password
   changePassword: async (currentPassword, newPassword) => {
     try {
+      const sessionId = authService.getSessionId();
+
       const response = await api.post('/auth/change-password', {
         currentPassword,
         newPassword,
-        confirmPassword: newPassword
+        confirmPassword: newPassword,
+        sessionId
       });
+
+      // Handle session reset if needed
+      if (response.data.data?.sessionId) {
+        authService.setSessionId(response.data.data.sessionId);
+      }
 
       logger.info('Password changed successfully');
 
@@ -441,30 +445,17 @@ export const authService = {
     }
   },
 
-  // Change client secret
-  changeClientSecret: async (clientId, currentSecret) => {
-    try {
-      const response = await api.post('/auth/change-secret', {
-        clientId,
-        currentSecret
-      });
-
-      logger.info('Client secret changed successfully');
-
-      return response.data;
-    } catch (error) {
-      logger.logError('Client Secret Change Failed', error);
-
-      if (error.response) {
-        const errorMessage = error.response.data?.message || 'Client secret change failed';
-        throw new Error(errorMessage);
-      } else if (error.request) {
-        throw new Error('No response from server. Please check your network connection.');
-      } else {
-        throw new Error('Error setting up client secret change request');
-      }
+  // Initialize auth service (call on app start)
+  initialize: () => {
+    const sessionId = authService.getSessionId();
+    if (sessionId) {
+      api.defaults.headers.common['X-Session-Id'] = sessionId;
+      logger.info('Auth service initialized with session', { sessionId });
     }
   }
 };
+
+// Initialize on module load
+authService.initialize();
 
 export default authService;
