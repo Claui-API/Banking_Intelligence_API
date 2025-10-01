@@ -6,6 +6,8 @@ const Transaction = require('../models/Transaction');
 const { sequelize } = require('../config/database');
 const { Op } = require('sequelize');
 
+const AccountDataService = require('./account-data.service');
+
 class BankUserService {
 	/**
 	 * Create or update a bank user
@@ -68,7 +70,7 @@ class BankUserService {
 	}
 
 	/**
-	 * Store accounts for a bank user
+	 * Store accounts for a bank user - UPDATED to use AccountDataService
 	 * @param {string} clientId - Client ID (bank)
 	 * @param {string} bankUserId - Bank user ID
 	 * @param {Array} accountsData - Array of account objects
@@ -84,7 +86,7 @@ class BankUserService {
 
 			const storedAccounts = [];
 
-			// Process each account
+			// Process each account using the new AccountDataService
 			for (const accountData of accountsData) {
 				// Validate required fields
 				if (!accountData.accountId) {
@@ -92,49 +94,22 @@ class BankUserService {
 					continue;
 				}
 
-				// Find or create the account
-				const [account, created] = await Account.findOrCreate({
-					where: {
+				try {
+					// Use AccountDataService instead of direct Account.findOrCreate
+					const { account, created } = await AccountDataService.createOrUpdateAccount(
+						accountData,
 						clientId,
-						bankUserId,
-						accountId: accountData.accountId
-					},
-					defaults: {
-						name: accountData.name || 'Account',
-						type: accountData.type || 'Other',
-						subtype: accountData.subtype,
-						balance: accountData.balance || 0,
-						availableBalance: accountData.availableBalance,
-						currency: accountData.currency || 'USD',
-						creditLimit: accountData.creditLimit,
-						metadata: accountData.metadata || {},
-						lastUpdated: new Date()
-					}
-				});
+						bankUserId
+					);
 
-				// If account already exists, update it
-				if (!created) {
-					account.name = accountData.name || account.name;
-					account.type = accountData.type || account.type;
-					account.subtype = accountData.subtype || account.subtype;
-					account.balance = accountData.balance !== undefined ? accountData.balance : account.balance;
-					account.availableBalance = accountData.availableBalance || account.availableBalance;
-					account.currency = accountData.currency || account.currency;
-					account.creditLimit = accountData.creditLimit !== undefined ? accountData.creditLimit : account.creditLimit;
+					storedAccounts.push(account);
 
-					// Merge metadata if provided
-					if (accountData.metadata) {
-						account.metadata = {
-							...(account.metadata || {}),
-							...accountData.metadata
-						};
-					}
-
-					account.lastUpdated = new Date();
-					await account.save();
+					logger.debug(`${created ? 'Created' : 'Updated'} account ${accountData.accountId} for user ${bankUserId}`);
+				} catch (error) {
+					logger.error(`Error storing account ${accountData.accountId}:`, error);
+					// Continue with other accounts instead of failing completely
+					continue;
 				}
-
-				storedAccounts.push(account);
 			}
 
 			logger.info(`Successfully stored ${storedAccounts.length} accounts for bank user ${bankUserId}`);

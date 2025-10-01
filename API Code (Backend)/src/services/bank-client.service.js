@@ -1,10 +1,14 @@
 // src/services/bank-client.service.js
+// Minor updates needed for Account normalization integration
+
 const logger = require('../utils/logger');
 const BankUser = require('../models/BankUser');
 const Account = require('../models/Account');
 const Transaction = require('../models/Transaction');
 const { sequelize } = require('../config/database');
 const { Op } = require('sequelize');
+// ADD THIS IMPORT for data quality monitoring
+const AccountDataService = require('./account-data.service');
 
 class BankClientService {
 	/**
@@ -39,6 +43,22 @@ class BankClientService {
 			const totalAccounts = await Account.count({
 				where: { clientId }
 			});
+
+			// ADD: Get account balance health check
+			const accountBalanceStats = await sequelize.query(
+				`SELECT 
+					COUNT(*) as total,
+					COUNT(CASE WHEN balance = 0 AND "availableBalance" = 0 THEN 1 END) as zero_balance,
+					COUNT(CASE WHEN "dataQualityFlags" IS NOT NULL THEN 1 END) as normalized_accounts,
+					AVG(balance) as avg_balance,
+					SUM(balance) as total_balance
+				FROM "Accounts" 
+				WHERE "clientId" = :clientId AND "isActive" = true`,
+				{
+					replacements: { clientId },
+					type: sequelize.QueryTypes.SELECT
+				}
+			);
 
 			const accountTypes = await sequelize.query(
 				`SELECT "type", COUNT(*) as count 
@@ -96,6 +116,7 @@ class BankClientService {
 				}
 			);
 
+			// ENHANCED RETURN: Include account balance health info
 			return {
 				users: {
 					total: totalUsers,
@@ -103,6 +124,10 @@ class BankClientService {
 				},
 				accounts: {
 					total: totalAccounts,
+					totalBalance: parseFloat(accountBalanceStats[0]?.total_balance || 0),
+					averageBalance: parseFloat(accountBalanceStats[0]?.avg_balance || 0),
+					zeroBalanceAccounts: parseInt(accountBalanceStats[0]?.zero_balance || 0),
+					normalizedAccounts: parseInt(accountBalanceStats[0]?.normalized_accounts || 0),
 					byType: accountTypes
 				},
 				transactions: {
@@ -167,8 +192,9 @@ class BankClientService {
 			});
 
 			// For each user, get their account count and transaction count
+			// ENHANCED: Also get total balance for each user
 			const usersWithCounts = await Promise.all(rows.map(async (user) => {
-				const [accountCount, transactionCount] = await Promise.all([
+				const [accountCount, transactionCount, balanceInfo] = await Promise.all([
 					Account.count({
 						where: {
 							clientId,
@@ -180,13 +206,27 @@ class BankClientService {
 							clientId,
 							bankUserId: user.bankUserId
 						}
-					})
+					}),
+					// ADD: Get user's total balance and account health
+					sequelize.query(
+						`SELECT 
+							SUM(balance) as total_balance,
+							COUNT(CASE WHEN "dataQualityFlags" IS NOT NULL THEN 1 END) as accounts_with_flags
+						FROM "Accounts" 
+						WHERE "clientId" = :clientId AND "bankUserId" = :bankUserId AND "isActive" = true`,
+						{
+							replacements: { clientId, bankUserId: user.bankUserId },
+							type: sequelize.QueryTypes.SELECT
+						}
+					)
 				]);
 
 				return {
 					...user.toJSON(),
 					accountCount,
-					transactionCount
+					transactionCount,
+					totalBalance: parseFloat(balanceInfo[0]?.total_balance || 0),
+					accountsWithDataFlags: parseInt(balanceInfo[0]?.accounts_with_flags || 0)
 				};
 			}));
 
@@ -231,7 +271,7 @@ class BankClientService {
 				throw new Error(`Bank user ${bankUserId} not found for client ${clientId}`);
 			}
 
-			// Get accounts
+			// Get accounts - ENHANCED: Include balance normalization info
 			const accounts = await Account.findAll({
 				where: {
 					clientId,
@@ -239,6 +279,11 @@ class BankClientService {
 				},
 				order: [['type', 'ASC'], ['name', 'ASC']]
 			});
+
+			// ADD: Check for data quality issues in user's accounts
+			const accountsWithIssues = accounts.filter(account =>
+				account.dataQualityFlags && account.dataQualityFlags.balanceNormalization
+			);
 
 			// Get transaction summary
 			const transactionSummary = await sequelize.query(
@@ -281,9 +326,19 @@ class BankClientService {
 				order: [['date', 'DESC']]
 			});
 
+			// ENHANCED RETURN: Include data quality information
 			return {
 				bankUser: bankUser.toJSON(),
 				accounts,
+				dataQuality: {
+					totalAccounts: accounts.length,
+					accountsWithNormalization: accountsWithIssues.length,
+					normalizationDetails: accountsWithIssues.map(account => ({
+						accountId: account.accountId,
+						flags: account.dataQualityFlags?.balanceNormalization || [],
+						normalizedAt: account.dataQualityFlags?.normalizedAt
+					}))
+				},
 				transactionSummary: transactionSummary[0] || {
 					total: 0,
 					pending: 0,
@@ -375,6 +430,67 @@ class BankClientService {
 			return activityData;
 		} catch (error) {
 			logger.error(`Error getting activity data: ${error.message}`, { clientId });
+			throw error;
+		}
+	}
+
+	/**
+	 * NEW METHOD: Get data quality summary for a client
+	 * @param {string} clientId - Client ID
+	 * @returns {Object} - Data quality information
+	 */
+	async getDataQualitySummary(clientId) {
+		try {
+			if (!clientId) {
+				throw new Error('Client ID is required');
+			}
+
+			logger.info(`Fetching data quality summary for client ${clientId}`);
+
+			// Get comprehensive data quality info using AccountDataService
+			const qualityReport = await AccountDataService.getDataQualityReport(clientId);
+
+			// Get additional client-specific metrics
+			const clientSpecificMetrics = await sequelize.query(
+				`SELECT 
+					COUNT(*) as total_accounts,
+					COUNT(CASE WHEN "dataQualityFlags" IS NOT NULL THEN 1 END) as accounts_with_flags,
+					COUNT(CASE WHEN balance = 0 AND "availableBalance" = 0 THEN 1 END) as zero_balance_accounts,
+					AVG(balance) as avg_balance,
+					MIN(balance) as min_balance,
+					MAX(balance) as max_balance
+				FROM "Accounts" 
+				WHERE "clientId" = :clientId AND "isActive" = true`,
+				{
+					replacements: { clientId },
+					type: sequelize.QueryTypes.SELECT
+				}
+			);
+
+			const metrics = clientSpecificMetrics[0];
+
+			return {
+				clientId,
+				summary: {
+					totalAccounts: parseInt(metrics.total_accounts),
+					accountsWithNormalization: parseInt(metrics.accounts_with_flags),
+					normalizationPercentage: metrics.total_accounts > 0 ?
+						(parseInt(metrics.accounts_with_flags) / parseInt(metrics.total_accounts) * 100).toFixed(1) : '0.0',
+					zeroBalanceAccounts: parseInt(metrics.zero_balance_accounts),
+					averageBalance: parseFloat(metrics.avg_balance || 0),
+					balanceRange: {
+						min: parseFloat(metrics.min_balance || 0),
+						max: parseFloat(metrics.max_balance || 0)
+					}
+				},
+				flagBreakdown: qualityReport.flagBreakdown,
+				recentNormalizations: qualityReport.accounts
+					.filter(account => account.clientId === clientId)
+					.sort((a, b) => new Date(b.normalizedAt) - new Date(a.normalizedAt))
+					.slice(0, 10)
+			};
+		} catch (error) {
+			logger.error(`Error getting data quality summary: ${error.message}`, { clientId });
 			throw error;
 		}
 	}

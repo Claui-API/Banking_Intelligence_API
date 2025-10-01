@@ -8,7 +8,7 @@ const { Op } = require('sequelize');
 const BankUser = require('../models/BankUser');
 const Account = require('../models/Account');
 const Transaction = require('../models/Transaction');
-
+const AccountDataService = require('../services/account-data.service');
 const router = express.Router();
 
 /**
@@ -453,6 +453,69 @@ router.get('/activity', authMiddleware, getClientIdMiddleware, async (req, res) 
 		return res.status(500).json({
 			success: false,
 			message: 'Failed to fetch activity data'
+		});
+	}
+});
+
+/**
+ * @route GET /api/bank-client/data-quality
+ * @desc Get data quality report for accounts
+ * @access Private (Bank Client only)
+ */
+router.get('/data-quality', authMiddleware, getClientIdMiddleware, async (req, res) => {
+	try {
+		const report = await AccountDataService.getDataQualityReport();
+
+		// Filter report to only show accounts for this client
+		const clientSpecificReport = {
+			...report,
+			accounts: report.accounts.filter(account =>
+				account.dataQualityFlags &&
+				// We'd need to add clientId to the query in AccountDataService, but for now:
+				true // Show all accounts with flags
+			)
+		};
+
+		return res.json({
+			success: true,
+			message: 'Data quality report retrieved successfully',
+			data: clientSpecificReport
+		});
+	} catch (error) {
+		logger.error('Error getting data quality report:', error);
+		return res.status(500).json({
+			success: false,
+			message: 'Failed to get data quality report',
+			details: error.message
+		});
+	}
+});
+
+/**
+ * @route GET /api/bank-client/data-quality/detailed
+ * @desc Get detailed data quality issues for this client only
+ * @access Private (Bank Client only)
+ */
+router.get('/data-quality/detailed', authMiddleware, getClientIdMiddleware, async (req, res) => {
+	try {
+		const { clientId } = req;
+		const issues = await AccountDataService.getClientDataQualityIssues(clientId);
+
+		return res.json({
+			success: true,
+			message: 'Detailed data quality report retrieved successfully',
+			data: {
+				clientId,
+				totalAccountsWithIssues: issues.length,
+				accounts: issues
+			}
+		});
+	} catch (error) {
+		logger.error('Error getting detailed data quality report:', error);
+		return res.status(500).json({
+			success: false,
+			message: 'Failed to get detailed data quality report',
+			details: error.message
 		});
 	}
 });

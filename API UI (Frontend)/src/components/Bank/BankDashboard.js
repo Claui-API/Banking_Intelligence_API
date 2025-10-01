@@ -280,25 +280,36 @@ const BankDashboard = () => {
 			const contentType = response.headers.get('content-type');
 
 			if (format === 'html' && contentType && contentType.includes('text/html')) {
-				// Handle HTML response - open in new window
+				// Handle HTML response - open in new window AND download
 				const htmlContent = await response.text();
+
+				// Open in new window
 				const newWindow = window.open('', '_blank');
 				if (newWindow) {
 					newWindow.document.write(htmlContent);
 					newWindow.document.close();
-					alert('HTML report opened in new window');
+				}
+
+				// Also create and trigger download
+				const blob = new Blob([htmlContent], { type: 'text/html' });
+				const url = window.URL.createObjectURL(blob);
+				const link = document.createElement('a');
+				link.href = url;
+				link.download = `banking-report-${selectedUser.bankUserId}-${reportOptions.timeframe}.html`;
+
+				// Append to body, click, and remove
+				document.body.appendChild(link);
+				link.click();
+				document.body.removeChild(link);
+
+				// Clean up the object URL
+				window.URL.revokeObjectURL(url);
+
+				// Update the alert message
+				if (newWindow) {
+					alert('HTML report opened in new window and downloaded to your device');
 				} else {
-					// Fallback: create blob and download
-					const blob = new Blob([htmlContent], { type: 'text/html' });
-					const url = window.URL.createObjectURL(blob);
-					const link = document.createElement('a');
-					link.href = url;
-					link.download = `banking-report-${selectedUser.bankUserId}-${reportOptions.timeframe}.html`;
-					document.body.appendChild(link);
-					link.click();
-					document.body.removeChild(link);
-					window.URL.revokeObjectURL(url);
-					alert('HTML report downloaded');
+					alert('HTML report downloaded (popup blocked - check downloads folder)');
 				}
 			} else if (format === 'pdf' && contentType && contentType.includes('text/html')) {
 				// Handle PDF-ready HTML response

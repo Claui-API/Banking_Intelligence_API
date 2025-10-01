@@ -1,6 +1,50 @@
-// src/models/Account.js - Modified version
-const { DataTypes } = require('sequelize');
+const { DataTypes, Op } = require('sequelize');
 const { sequelize } = require('../config/database');
+
+// Helper function for balance normalization
+function normalizeAndValidateBalance(account) {
+  const originalBalance = account.balance;
+  const originalAvailable = account.availableBalance;
+  let qualityFlags = [];
+
+  // Normalize null/undefined to actual numbers
+  if (account.balance === null || account.balance === undefined) {
+    if (account.availableBalance !== null && account.availableBalance !== undefined) {
+      account.balance = account.availableBalance;
+      qualityFlags.push('balance_inferred_from_available');
+    } else {
+      account.balance = 0;
+      qualityFlags.push('balance_defaulted_to_zero');
+    }
+  }
+
+  if (account.availableBalance === null || account.availableBalance === undefined) {
+    if (account.balance !== null && account.balance !== undefined) {
+      account.availableBalance = account.balance;
+      qualityFlags.push('available_inferred_from_balance');
+    } else {
+      account.availableBalance = 0;
+      qualityFlags.push('available_defaulted_to_zero');
+    }
+  }
+
+  // Store quality flags if any normalization occurred
+  if (qualityFlags.length > 0) {
+    account.dataQualityFlags = {
+      ...account.dataQualityFlags,
+      balanceNormalization: qualityFlags,
+      normalizedAt: new Date().toISOString(),
+      originalValues: {
+        balance: originalBalance,
+        availableBalance: originalAvailable
+      }
+    };
+  }
+
+  // Convert to proper decimal types
+  account.balance = Number(account.balance);
+  account.availableBalance = Number(account.availableBalance);
+}
 
 const Account = sequelize.define('Account', {
   id: {
@@ -38,11 +82,13 @@ const Account = sequelize.define('Account', {
   },
   balance: {
     type: DataTypes.DECIMAL(12, 2),
-    allowNull: false
+    allowNull: false,  // Changed from true to false after migration
+    defaultValue: 0
   },
   availableBalance: {
     type: DataTypes.DECIMAL(12, 2),
-    allowNull: true
+    allowNull: false,  // Changed from true to false after migration
+    defaultValue: 0
   },
   currency: {
     type: DataTypes.STRING(3),
@@ -60,12 +106,29 @@ const Account = sequelize.define('Account', {
     type: DataTypes.JSONB,
     allowNull: true
   },
+  dataQualityFlags: {  // NEW FIELD
+    type: DataTypes.JSONB,
+    allowNull: true,
+    comment: 'Tracks any data quality issues like inferred balances'
+  },
   lastUpdated: {
     type: DataTypes.DATE,
     defaultValue: DataTypes.NOW
   }
 }, {
   timestamps: true,
+  hooks: {
+    // Clean data on the way IN
+    beforeCreate: (account) => {
+      normalizeAndValidateBalance(account);
+    },
+    beforeUpdate: (account) => {
+      normalizeAndValidateBalance(account);
+    },
+    beforeBulkCreate: (accounts) => {
+      accounts.forEach(normalizeAndValidateBalance);
+    }
+  },
   indexes: [
     {
       fields: ['clientId']
@@ -80,7 +143,7 @@ const Account = sequelize.define('Account', {
   ]
 });
 
-// Set up associations
+// Set up associations (keep your existing code here)
 const setupAssociations = () => {
   const { Client } = require('./User');
 
@@ -88,9 +151,6 @@ const setupAssociations = () => {
     Client.hasMany(Account, { foreignKey: 'clientId', sourceKey: 'clientId' });
     Account.belongsTo(Client, { foreignKey: 'clientId', targetKey: 'clientId' });
   }
-
-  // Note: We're removing the direct foreign key constraint to BankUser model
-  // Instead, we'll rely on application-level validation
 };
 
 setupAssociations();

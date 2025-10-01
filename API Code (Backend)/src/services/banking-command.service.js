@@ -17,6 +17,185 @@ const BankUser = require('../models/BankUser');
 const { Op } = require('sequelize');
 
 /**
+ * Rate-limited queue system for Gemini API calls
+ */
+class GeminiRateLimitedQueue {
+	constructor() {
+		// Gemini free tier limits: 15 requests per minute, 1500 requests per day
+		this.maxRequestsPerMinute = 10; // Conservative limit
+		this.maxRequestsPerDay = 1000; // Conservative daily limit
+		this.requestQueue = [];
+		this.requestHistory = [];
+		this.isProcessing = false;
+	}
+
+	/**
+	 * Add a request to the queue
+	 * @param {Function} requestFn - Function that returns a Promise
+	 * @param {string} requestId - Unique identifier for logging
+	 * @returns {Promise} - Promise that resolves when the request completes
+	 */
+	async addRequest(requestFn, requestId) {
+		return new Promise((resolve, reject) => {
+			this.requestQueue.push({
+				requestFn,
+				requestId,
+				resolve,
+				reject,
+				timestamp: Date.now()
+			});
+
+			// Start processing if not already running
+			if (!this.isProcessing) {
+				this.processQueue();
+			}
+		});
+	}
+
+	/**
+	 * Process the request queue with rate limiting
+	 * @private
+	 */
+	async processQueue() {
+		if (this.isProcessing || this.requestQueue.length === 0) {
+			return;
+		}
+
+		this.isProcessing = true;
+
+		while (this.requestQueue.length > 0) {
+			// Check if we can make a request
+			if (!this.canMakeRequest()) {
+				const waitTime = this.getWaitTime();
+				logger.info(`Rate limit reached, waiting ${waitTime}ms`, {
+					queueLength: this.requestQueue.length
+				});
+				await this._delay(waitTime);
+				continue;
+			}
+
+			// Get the next request
+			const request = this.requestQueue.shift();
+
+			try {
+				logger.info(`Processing request ${request.requestId}`, {
+					queueLength: this.requestQueue.length
+				});
+
+				const result = await request.requestFn();
+				this.recordRequest(true);
+				request.resolve(result);
+
+			} catch (error) {
+				logger.error(`Request ${request.requestId} failed`, {
+					error: error.message
+				});
+				this.recordRequest(false);
+				request.reject(error);
+			}
+
+			// Add a small delay between requests to be extra safe
+			if (this.requestQueue.length > 0) {
+				await this._delay(500); // 500ms between requests
+			}
+		}
+
+		this.isProcessing = false;
+	}
+
+	/**
+	 * Check if we can make a request based on rate limits
+	 * @returns {boolean} - True if we can make a request
+	 * @private
+	 */
+	canMakeRequest() {
+		const now = Date.now();
+		const oneMinuteAgo = now - 60 * 1000;
+		const oneDayAgo = now - 24 * 60 * 60 * 1000;
+
+		// Clean up old history
+		this.requestHistory = this.requestHistory.filter(req => req.timestamp > oneDayAgo);
+
+		// Count requests in the last minute
+		const requestsLastMinute = this.requestHistory.filter(req => req.timestamp > oneMinuteAgo).length;
+
+		// Count requests in the last day
+		const requestsLastDay = this.requestHistory.length;
+
+		return requestsLastMinute < this.maxRequestsPerMinute && requestsLastDay < this.maxRequestsPerDay;
+	}
+
+	/**
+	 * Calculate how long to wait before making the next request
+	 * @returns {number} - Wait time in milliseconds
+	 * @private
+	 */
+	getWaitTime() {
+		const now = Date.now();
+		const oneMinuteAgo = now - 60 * 1000;
+
+		// Find the oldest request in the last minute
+		const recentRequests = this.requestHistory
+			.filter(req => req.timestamp > oneMinuteAgo)
+			.sort((a, b) => a.timestamp - b.timestamp);
+
+		if (recentRequests.length >= this.maxRequestsPerMinute) {
+			// Wait until the oldest request is more than a minute old
+			const oldestRequest = recentRequests[0];
+			return (oldestRequest.timestamp + 60 * 1000) - now + 1000; // Add 1 second buffer
+		}
+
+		// Default wait time
+		return 4000; // 4 seconds
+	}
+
+	/**
+	 * Record a completed request
+	 * @param {boolean} success - Whether the request was successful
+	 * @private
+	 */
+	recordRequest(success) {
+		this.requestHistory.push({
+			timestamp: Date.now(),
+			success
+		});
+	}
+
+	/**
+	 * Utility function to add delay
+	 * @param {number} ms - Milliseconds to delay
+	 * @returns {Promise} - Promise that resolves after delay
+	 * @private
+	 */
+	_delay(ms) {
+		return new Promise(resolve => setTimeout(resolve, ms));
+	}
+
+	/**
+	 * Get queue status for monitoring
+	 * @returns {Object} - Queue status
+	 */
+	getStatus() {
+		const now = Date.now();
+		const oneMinuteAgo = now - 60 * 1000;
+		const oneDayAgo = now - 24 * 60 * 60 * 1000;
+
+		const requestsLastMinute = this.requestHistory.filter(req => req.timestamp > oneMinuteAgo).length;
+		const requestsLastDay = this.requestHistory.filter(req => req.timestamp > oneDayAgo).length;
+
+		return {
+			queueLength: this.requestQueue.length,
+			isProcessing: this.isProcessing,
+			requestsLastMinute: requestsLastMinute,
+			maxRequestsPerMinute: this.maxRequestsPerMinute,
+			requestsLastDay: requestsLastDay,
+			maxRequestsPerDay: this.maxRequestsPerDay,
+			canMakeRequest: this.canMakeRequest()
+		};
+	}
+}
+
+/**
  * Banking Intelligence Command Service
  * Generates comprehensive banking intelligence reports using transaction and account data
  */
@@ -26,6 +205,7 @@ class BankingCommandService {
 		this.modelName = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 		this.client = null;
 		this.initialize();
+		this.geminiQueue = new GeminiRateLimitedQueue();
 	}
 
 	/**
@@ -130,11 +310,11 @@ class BankingCommandService {
 	}
 
 	/**
-	 * Normalize numeric fields in financial data
-	 * @param {Object} data - Financial data object
-	 * @returns {Object} - Data with normalized numeric fields
-	 * @private
-	 */
+ * Normalize numeric fields in financial data
+ * @param {Object} data - Financial data object
+ * @returns {Object} - Data with normalized numeric fields
+ * @private
+ */
 	_normalizeNumericFields(data) {
 		if (!data) return data;
 
@@ -151,19 +331,37 @@ class BankingCommandService {
 			data.accounts = data.accounts.map(account => {
 				if (!account) return account;
 
-				// Handle Sequelize model instances
 				const plainAccount = account.dataValues ? account.dataValues : account;
+
+				// Validate that required fields exist (they should after migration + model hooks)
+				if (plainAccount.balance === null || plainAccount.balance === undefined) {
+					logger.error('CRITICAL: Account has null balance despite migration/hooks', {
+						accountId: plainAccount.accountId,
+						bankUserId: plainAccount.bankUserId,
+						clientId: plainAccount.clientId
+					});
+				}
+
+				if (plainAccount.availableBalance === null || plainAccount.availableBalance === undefined) {
+					logger.error('CRITICAL: Account has null availableBalance despite migration/hooks', {
+						accountId: plainAccount.accountId,
+						bankUserId: plainAccount.bankUserId,
+						clientId: plainAccount.clientId
+					});
+				}
+
+				// Convert to numbers with proper validation
+				const balance = this._safeNumberConversion(plainAccount.balance, 'balance', plainAccount.accountId);
+				const availableBalance = this._safeNumberConversion(plainAccount.availableBalance, 'availableBalance', plainAccount.accountId);
+				const creditLimit = plainAccount.creditLimit !== null && plainAccount.creditLimit !== undefined
+					? this._safeNumberConversion(plainAccount.creditLimit, 'creditLimit', plainAccount.accountId)
+					: null;
 
 				return {
 					...plainAccount,
-					balance: typeof plainAccount.balance === 'number' ?
-						plainAccount.balance : Number(plainAccount.balance || 0),
-					availableBalance: typeof plainAccount.availableBalance === 'number' ?
-						plainAccount.availableBalance : Number(plainAccount.availableBalance || 0),
-					creditLimit: plainAccount.creditLimit !== undefined ?
-						(typeof plainAccount.creditLimit === 'number' ?
-							plainAccount.creditLimit : Number(plainAccount.creditLimit || 0)) :
-						undefined
+					balance,
+					availableBalance,
+					creditLimit
 				};
 			});
 		}
@@ -191,18 +389,17 @@ class BankingCommandService {
 				// Handle Sequelize model instances
 				const plainTx = tx.dataValues ? tx.dataValues : tx;
 
-				// Ensure date is a valid Date object
-				let txDate = plainTx.date;
-				if (!(txDate instanceof Date)) {
-					txDate = new Date(plainTx.date);
-				}
+				// Safely convert amount
+				const amount = this._safeNumberConversion(plainTx.amount, 'amount', `transaction-${index}`);
+
+				// Safely handle date conversion
+				const date = this._safeDateConversion(plainTx.date, `transaction-${index}`);
 
 				// Create a new object preserving ALL fields
 				const normalizedTx = {
 					...plainTx,
-					amount: typeof plainTx.amount === 'number' ?
-						plainTx.amount : Number(plainTx.amount || 0),
-					date: isNaN(txDate.getTime()) ? new Date() : txDate
+					amount,
+					date
 				};
 
 				// Log detailed info for first few transactions to verify fields are preserved
@@ -238,6 +435,105 @@ class BankingCommandService {
 		}
 
 		return data;
+	}
+
+	/**
+	 * Safely convert a value to a number with proper error handling
+	 * @param {*} value - Value to convert
+	 * @param {string} fieldName - Field name for logging
+	 * @param {string} recordId - Record identifier for logging
+	 * @returns {number} - Converted number
+	 * @private
+	 */
+	_safeNumberConversion(value, fieldName, recordId) {
+		// Handle null/undefined
+		if (value === null || value === undefined) {
+			logger.warn(`${fieldName} is null/undefined for ${recordId} - using 0`, {
+				fieldName,
+				recordId,
+				originalValue: value
+			});
+			return 0;
+		}
+
+		// Already a number
+		if (typeof value === 'number') {
+			if (isNaN(value) || !isFinite(value)) {
+				logger.warn(`${fieldName} is NaN or infinite for ${recordId} - using 0`, {
+					fieldName,
+					recordId,
+					originalValue: value
+				});
+				return 0;
+			}
+			return value;
+		}
+
+		// Try to convert string to number
+		if (typeof value === 'string') {
+			const numValue = Number(value);
+			if (isNaN(numValue) || !isFinite(numValue)) {
+				logger.warn(`Could not convert ${fieldName} to number for ${recordId} - using 0`, {
+					fieldName,
+					recordId,
+					originalValue: value
+				});
+				return 0;
+			}
+			return numValue;
+		}
+
+		// Other types
+		logger.warn(`Unexpected type for ${fieldName} in ${recordId} - using 0`, {
+			fieldName,
+			recordId,
+			originalValue: value,
+			type: typeof value
+		});
+		return 0;
+	}
+
+	/**
+	 * Safely convert a value to a Date with proper error handling
+	 * @param {*} value - Value to convert
+	 * @param {string} recordId - Record identifier for logging
+	 * @returns {Date} - Converted date
+	 * @private
+	 */
+	_safeDateConversion(value, recordId) {
+		// Already a valid Date
+		if (value instanceof Date) {
+			if (!isNaN(value.getTime())) {
+				return value;
+			}
+			logger.warn(`Invalid Date object for ${recordId} - using epoch`, {
+				recordId,
+				originalValue: value
+			});
+			return new Date(0); // Unix epoch instead of current time
+		}
+
+		// Try to parse string/number as date
+		try {
+			const date = new Date(value);
+			if (!isNaN(date.getTime())) {
+				return date;
+			}
+		} catch (error) {
+			logger.warn(`Could not parse date for ${recordId}`, {
+				recordId,
+				originalValue: value,
+				error: error.message
+			});
+		}
+
+		// Use Unix epoch as fallback instead of current time
+		// This makes it obvious that the date is wrong
+		logger.warn(`Using epoch date for ${recordId} due to invalid date value`, {
+			recordId,
+			originalValue: value
+		});
+		return new Date(0);
 	}
 
 	async _collectFinancialData(userId, timeframe) {
@@ -402,7 +698,66 @@ class BankingCommandService {
 	}
 
 	/**
-	 * Generate content using Google's Gemini API
+	 * Process sections in truly parallel batches with rate limiting
+	 */
+	async _processParallelBatch(tasks, sections, batchName, maxConcurrent = 3) {
+		logger.info(`Processing ${batchName} sections in parallel`, {
+			totalTasks: tasks.length,
+			maxConcurrent
+		});
+
+		for (let i = 0; i < tasks.length; i += maxConcurrent) {
+			const batch = tasks.slice(i, i + maxConcurrent);
+			const batchStartTime = Date.now();
+
+			// Execute batch in parallel
+			const batchPromises = batch.map(async (task) => {
+				try {
+					const startTime = Date.now();
+					const result = await task.generator();
+					const duration = Date.now() - startTime;
+
+					logger.info(`Section ${task.key} completed`, { duration });
+					return { key: task.key, result };
+				} catch (error) {
+					logger.error(`Section ${task.key} failed`, { error: error.message });
+					return {
+						key: task.key,
+						result: {
+							title: this._getSectionTitle(task.key),
+							content: `Unable to generate ${task.key} section due to API limitations.`,
+							error: true
+						}
+					};
+				}
+			});
+
+			const batchResults = await Promise.all(batchPromises);
+			const batchDuration = Date.now() - batchStartTime;
+
+			// Add results to sections
+			batchResults.forEach(({ key, result }) => {
+				sections[key] = result;
+			});
+
+			// OPTIMIZED DELAY: Only wait if we have more batches AND we're going too fast
+			if (i + maxConcurrent < tasks.length) {
+				// If this batch completed very quickly, we might need to slow down
+				const minBatchTime = 4000; // Minimum 4 seconds between batches for rate limiting
+				const waitTime = Math.max(0, minBatchTime - batchDuration);
+
+				if (waitTime > 0) {
+					logger.info(`Rate limiting: waiting ${waitTime}ms before next batch`);
+					await this._delay(waitTime);
+				} else {
+					logger.info('No delay needed - proceeding to next batch immediately');
+				}
+			}
+		}
+	}
+
+	/**
+	 * Generate content using the rate-limited queue
 	 * @param {string} prompt - The prompt to send to Gemini
 	 * @param {string} requestId - Request ID for logging
 	 * @param {string} queryType - Type of query for logging
@@ -410,6 +765,42 @@ class BankingCommandService {
 	 * @private
 	 */
 	async _generateContent(prompt, requestId, queryType) {
+		return await this._generateContentDirect(prompt, requestId, queryType);
+	}
+
+	/**
+	 * Utility function to add delay
+	 */
+	_delay(ms) {
+		return new Promise(resolve => setTimeout(resolve, ms));
+	}
+
+	/**
+	 * Get section title for fallback responses
+	 */
+	_getSectionTitle(sectionKey) {
+		const titles = {
+			accountSummary: 'Account Summary',
+			behaviorPreferences: 'Behavior & Preferences (Frequency Signals)',
+			merchantAnalysis: 'Merchant Concentration (Top Descriptors)',
+			riskCompliance: 'Risk, Churn & Compliance',
+			cadenceRoutines: 'Cadence & Routines',
+			recurringSubscriptions: 'Recurring & Subscriptions',
+			travelEvents: 'Travel & Events',
+			backendRules: 'Appendix — Backend Rules, Triggers & Scoring'
+		};
+		return titles[sectionKey] || 'Analysis Section';
+	}
+
+	/**
+	 * Generate content using Google's Gemini API
+	 * @param {string} prompt - The prompt to send to Gemini
+	 * @param {string} requestId - Request ID for logging
+	 * @param {string} queryType - Type of query for logging
+	 * @returns {Promise<string>} - Generated text
+	 * @private
+	 */
+	async _generateContentDirect(prompt, requestId, queryType) {
 		if (!this.client) {
 			this.initialize();
 			if (!this.client) {
@@ -524,37 +915,89 @@ class BankingCommandService {
 	 * @private
 	 */
 	async _generateReportSections(financialData, requestId, includeDetailed) {
-		// Prepare financial context for Gemini
 		const financialContext = this._createFinancialContext(financialData);
 
-		// We can now pass empty arrays since the functions will process data directly
-		const topCategories = [];
-		const topMerchants = [];
+		// Define all section tasks
+		const sectionTasks = [
+			{
+				key: 'accountSummary',
+				priority: 1,
+				generator: () => this._generateAccountSummary(financialData, financialContext, requestId)
+			},
+			{
+				key: 'behaviorPreferences',
+				priority: 1,
+				generator: () => this._generateBehaviorPreferences(financialData, [], requestId)
+			},
+			{
+				key: 'merchantAnalysis',
+				priority: 1,
+				generator: () => this._generateMerchantAnalysis(financialData, [], requestId)
+			},
+			{
+				key: 'riskCompliance',
+				priority: 1,
+				generator: () => this._generateRiskCompliance(financialData, financialContext, requestId)
+			}
+		];
 
-		// Generate each section of the report
-		const sections = {};
-
-		// Account Summary section
-		sections.accountSummary = await this._generateAccountSummary(financialData, financialContext, requestId);
-
-		// Behavior & Preferences section - now processes data directly
-		sections.behaviorPreferences = await this._generateBehaviorPreferences(financialData, topCategories, requestId);
-
-		// Merchant Analysis section - now processes data directly
-		sections.merchantAnalysis = await this._generateMerchantAnalysis(financialData, topMerchants, requestId);
-
-		// Risk & Compliance section
-		sections.riskCompliance = await this._generateRiskCompliance(financialData, financialContext, requestId);
-
-		// Generate detailed sections if requested
+		// Add detailed sections if requested
 		if (includeDetailed) {
-			sections.cadenceRoutines = await this._generateCadenceRoutines(financialData, financialContext, requestId);
-			sections.recurringSubscriptions = await this._generateRecurringSubscriptions(financialData, financialContext, requestId);
-			sections.travelEvents = await this._generateTravelEvents(financialData, financialContext, requestId);
-			sections.backendRules = await this._generateBackendRules(financialData, financialContext, requestId);
+			sectionTasks.push(
+				{
+					key: 'cadenceRoutines',
+					priority: 2,
+					generator: () => this._generateCadenceRoutines(financialData, financialContext, requestId)
+				},
+				{
+					key: 'recurringSubscriptions',
+					priority: 2,
+					generator: () => this._generateRecurringSubscriptions(financialData, financialContext, requestId)
+				},
+				{
+					key: 'travelEvents',
+					priority: 2,
+					generator: () => this._generateTravelEvents(financialData, financialContext, requestId)
+				},
+				{
+					key: 'backendRules',
+					priority: 2,
+					generator: () => this._generateBackendRules(financialData, financialContext, requestId)
+				}
+			);
 		}
 
-		return sections;
+		// Group by priority for smart batching
+		const priority1Tasks = sectionTasks.filter(task => task.priority === 1);
+		const priority2Tasks = sectionTasks.filter(task => task.priority === 2);
+
+		const sections = {};
+
+		try {
+			// Process Priority 1 sections in true parallel batches
+			await this._processParallelBatch(priority1Tasks, sections, 'Priority 1', 3); // Max 3 concurrent
+
+			// Small delay between priority groups
+			if (priority2Tasks.length > 0) {
+				await this._delay(2000);
+				await this._processParallelBatch(priority2Tasks, sections, 'Priority 2', 2); // Max 2 concurrent
+			}
+
+			logger.info('All report sections generated successfully', {
+				sectionsGenerated: Object.keys(sections).length,
+				requestId
+			});
+
+			return sections;
+
+		} catch (error) {
+			logger.error('Error in parallel section generation', {
+				error: error.message,
+				sectionsCompleted: Object.keys(sections),
+				requestId
+			});
+			throw error;
+		}
 	}
 
 	/**
@@ -842,14 +1285,6 @@ Tone should be analytical, data-driven, and geared toward financial professional
 		};
 	}
 
-	/**
- * Generate Merchant Analysis section with improved entity inclusion
- * @param {Object} data - Financial data
- * @param {Array} topMerchants - Top merchants
- * @param {string} requestId - Request ID
- * @returns {Promise<Object>} - Generated section
- * @private
- */
 	/**
  * Generate Merchant Analysis section with improved entity inclusion
  * @param {Object} data - Financial data
