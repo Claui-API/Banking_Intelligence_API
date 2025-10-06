@@ -1,4 +1,4 @@
-// src/controllers/admin.controller.js
+// src/controllers/admin.controller.js - Enhanced version with reject functionality
 const { User, Client } = require('../models');
 const { Token } = require('../models');
 const logger = require('../utils/logger');
@@ -193,15 +193,12 @@ class AdminController {
       // Send approval notification
       try {
         if (client.User) {
-          // We use require here to avoid circular dependencies
           let notificationService;
           try {
             notificationService = require('../services/notification.service.unified');
             logger.info('Notification service loaded successfully for approval notification');
           } catch (importError) {
             logger.error(`Failed to import notification service: ${importError.message}`);
-
-            // Try to load it from a different path
             try {
               notificationService = require('./notification.service.unified');
               logger.info('Notification service loaded from alternate path');
@@ -243,21 +240,222 @@ class AdminController {
   }
 
   /**
-   * Suspend a client
-   * @param {Object} req - Express request object
-   * @param {Object} res - Express response object
-   */
-  async suspendClient(req, res) {
+  * Reject a pending client and delete from database (HARD DELETE)
+  * @param {Object} req - Express request object
+  * @param {Object} res - Express response object
+  */
+  async rejectClient(req, res) {
+    const transaction = await sequelize.transaction();
+
     try {
       const { clientId } = req.params;
       const { reason } = req.body;
       const adminId = req.auth.userId;
 
       const client = await Client.findOne({
-        where: { clientId }
+        where: { clientId },
+        include: [{ model: User }],
+        paranoid: false, // Include soft-deleted records in search
+        transaction
       });
 
       if (!client) {
+        await transaction.rollback();
+        return res.status(404).json({
+          success: false,
+          message: 'Client not found'
+        });
+      }
+
+      if (client.status !== 'pending') {
+        await transaction.rollback();
+        return res.status(400).json({
+          success: false,
+          message: 'Only pending clients can be rejected'
+        });
+      }
+
+      // Store client and user info before deletion
+      const clientInfo = {
+        clientId: client.clientId,
+        userName: client.User.clientName,
+        userEmail: client.User.email,
+        description: client.description
+      };
+
+      // Delete associated tokens first (force hard delete)
+      await Token.destroy({
+        where: { clientId: client.clientId },
+        force: true, // Hard delete tokens
+        transaction
+      });
+
+      // HARD DELETE the client (not soft delete)
+      await client.destroy({
+        transaction,
+        force: true // This bypasses paranoid mode and actually deletes
+      });
+
+      // Delete the user if they have no other clients
+      const otherClients = await Client.count({
+        where: { userId: client.User.id },
+        paranoid: false, // Count both active and soft-deleted clients
+        transaction
+      });
+
+      if (otherClients === 0) {
+        // HARD DELETE the user
+        await client.User.destroy({
+          transaction,
+          force: true // Hard delete user too
+        });
+      }
+
+      await transaction.commit();
+
+      logger.info(`Client ${clientId} HARD DELETED by admin ${adminId}`, { reason, clientInfo });
+
+      // Send rejection notification email
+      try {
+        await this.sendRejectionNotification(clientInfo, reason);
+        logger.info(`Rejection notification sent to ${clientInfo.userEmail}`);
+      } catch (notificationError) {
+        logger.error(`Failed to send rejection notification: ${notificationError.message}`);
+        // Don't fail the rejection if email fails
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: 'Client rejected and permanently deleted',
+        data: {
+          clientId: clientInfo.clientId,
+          userEmail: clientInfo.userEmail,
+          deletedAt: new Date()
+        }
+      });
+    } catch (error) {
+      await transaction.rollback();
+      logger.error('Error rejecting client:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to reject client',
+        error: error.message
+      });
+    }
+  }
+
+  /**
+   * Send rejection notification email
+   * @param {Object} clientInfo - Client information
+   * @param {string} reason - Rejection reason
+   */
+  async sendRejectionNotification(clientInfo, reason) {
+    const subject = 'Your API Access Request Has Been Rejected';
+
+    const text = `
+      Hello ${clientInfo.userName || clientInfo.userEmail},
+      
+      We regret to inform you that your API access request has been rejected by our administrators.
+      
+      Application Details:
+      - Email: ${clientInfo.userEmail}
+      - Application Description: ${clientInfo.description || 'N/A'}
+      - Rejection Reason: ${reason || 'No specific reason provided'}
+      
+      If you believe this decision was made in error or if you have additional information to support your request, please contact our support team.
+      
+      You may reapply for API access in the future by creating a new account.
+      
+      Thank you for your interest in our API service.
+      
+      Best regards,
+      API Service Team
+    `;
+
+    const html = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #000000; color: #ffffff; padding: 20px;">
+        <div style="background-color: #1a1a1a; padding: 30px; border-radius: 8px; border: 1px solid #dc3545;">
+          <div style="text-align: center; margin-bottom: 30px;">
+            <h1 style="color: #dc3545; font-size: 24px;">Banking Intelligence API</h1>
+            <h2 style="color: #ffffff; font-size: 18px;">Application Rejected</h2>
+          </div>
+          
+          <p>Hello ${clientInfo.userName || clientInfo.userEmail},</p>
+          
+          <p>We regret to inform you that your API access request has been <strong style="color: #dc3545;">rejected</strong> by our administrators.</p>
+          
+          <div style="background-color: #2d1b1b; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #dc3545;">
+            <h3 style="margin-top: 0; color: #ffffff;">Application Details</h3>
+            <p><strong>Email:</strong> ${clientInfo.userEmail}</p>
+            <p><strong>Application Description:</strong> ${clientInfo.description || 'N/A'}</p>
+            <p><strong>Rejection Reason:</strong> ${reason || 'No specific reason provided'}</p>
+          </div>
+          
+          <p>If you believe this decision was made in error or if you have additional information to support your request, please contact our support team.</p>
+          
+          <p>You may reapply for API access in the future by creating a new account.</p>
+          
+          <p>Thank you for your interest in our API service.</p>
+          
+          <div style="text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #dc3545;">
+            <p style="color: #dc3545; font-size: 12px;">Banking Intelligence API</p>
+            <p style="color: #dc3545; font-size: 12px;">Vivy Tech USA, Inc.</p>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const emailParams = {
+      Source: process.env.VERIFIED_SENDER_EMAIL || 'shreyas.atneu@gmail.com',
+      Destination: {
+        ToAddresses: [clientInfo.userEmail]
+      },
+      Message: {
+        Subject: {
+          Data: subject,
+          Charset: 'UTF-8'
+        },
+        Body: {
+          Html: {
+            Data: html,
+            Charset: 'UTF-8'
+          },
+          Text: {
+            Data: text,
+            Charset: 'UTF-8'
+          }
+        }
+      },
+      Tags: [
+        { Name: 'Type', Value: 'RejectionNotification' },
+        { Name: 'Source', Value: 'AdminPanel' }
+      ]
+    };
+
+    return ses.sendEmail(emailParams).promise();
+  }
+
+  /**
+   * Suspend a client
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   */
+  async suspendClient(req, res) {
+    const transaction = await sequelize.transaction();
+
+    try {
+      const { clientId } = req.params;
+      const { reason } = req.body;
+      const adminId = req.auth.userId;
+
+      const client = await Client.findOne({
+        where: { clientId },
+        include: [{ model: User }],
+        transaction
+      });
+
+      if (!client) {
+        await transaction.rollback();
         return res.status(404).json({
           success: false,
           message: 'Client not found'
@@ -266,25 +464,38 @@ class AdminController {
 
       // Update client status
       client.status = 'suspended';
-      await client.save();
+      await client.save({ transaction });
+
+      // Mark user for deletion (suspension leads to eventual deletion)
+      const user = client.User;
+      if (user) {
+        user.status = 'inactive';
+        user.markedForDeletionAt = new Date();
+        await user.save({ transaction });
+      }
 
       // Revoke all active tokens for this client
       await Token.update(
         { isRevoked: true },
-        { where: { clientId, isRevoked: false } }
+        { where: { clientId, isRevoked: false }, transaction }
       );
+
+      await transaction.commit();
 
       logger.info(`Client ${clientId} suspended by admin ${adminId}`, { reason });
 
       return res.status(200).json({
         success: true,
-        message: 'Client suspended successfully',
+        message: 'Client suspended and marked for deletion',
         data: {
           clientId: client.clientId,
-          status: client.status
+          status: client.status,
+          userStatus: user?.status,
+          markedForDeletionAt: user?.markedForDeletionAt
         }
       });
     } catch (error) {
+      await transaction.rollback();
       logger.error('Error suspending client:', error);
       return res.status(500).json({
         success: false,
@@ -300,16 +511,21 @@ class AdminController {
    * @param {Object} res - Express response object
    */
   async revokeClient(req, res) {
+    const transaction = await sequelize.transaction();
+
     try {
       const { clientId } = req.params;
       const { reason } = req.body;
       const adminId = req.auth.userId;
 
       const client = await Client.findOne({
-        where: { clientId }
+        where: { clientId },
+        include: [{ model: User }],
+        transaction
       });
 
       if (!client) {
+        await transaction.rollback();
         return res.status(404).json({
           success: false,
           message: 'Client not found'
@@ -318,25 +534,38 @@ class AdminController {
 
       // Update client status
       client.status = 'revoked';
-      await client.save();
+      await client.save({ transaction });
+
+      // Mark user for deletion (revocation leads to eventual deletion)
+      const user = client.User;
+      if (user) {
+        user.status = 'inactive';
+        user.markedForDeletionAt = new Date();
+        await user.save({ transaction });
+      }
 
       // Revoke all tokens for this client
       await Token.update(
         { isRevoked: true },
-        { where: { clientId } }
+        { where: { clientId }, transaction }
       );
+
+      await transaction.commit();
 
       logger.info(`Client ${clientId} revoked by admin ${adminId}`, { reason });
 
       return res.status(200).json({
         success: true,
-        message: 'Client revoked successfully',
+        message: 'Client revoked and marked for deletion',
         data: {
           clientId: client.clientId,
-          status: client.status
+          status: client.status,
+          userStatus: user?.status,
+          markedForDeletionAt: user?.markedForDeletionAt
         }
       });
     } catch (error) {
+      await transaction.rollback();
       logger.error('Error revoking client:', error);
       return res.status(500).json({
         success: false,
@@ -587,17 +816,18 @@ class AdminController {
   }
 
   /**
-   * Delete a client from the database
-   * @param {Object} req - Express request object
-   * @param {Object} res - Express response object
-   */
+ * Delete a client from the database (HARD DELETE)
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ */
   async deleteClient(req, res) {
     try {
       const { clientId } = req.params;
       const adminId = req.auth.userId;
 
       const client = await Client.findOne({
-        where: { clientId }
+        where: { clientId },
+        paranoid: false // Include soft-deleted records
       });
 
       if (!client) {
@@ -625,22 +855,26 @@ class AdminController {
       const transaction = await sequelize.transaction();
 
       try {
-        // Delete any associated tokens first
+        // Delete any associated tokens first (force hard delete)
         await Token.destroy({
           where: { clientId: client.clientId },
+          force: true, // Hard delete tokens
           transaction
         });
 
-        // Delete the client
-        await client.destroy({ transaction });
+        // HARD DELETE the client (not soft delete)
+        await client.destroy({
+          transaction,
+          force: true // This bypasses paranoid mode
+        });
 
         await transaction.commit();
 
-        logger.info(`Client ${clientId} deleted by admin ${adminId}`, clientInfo);
+        logger.info(`Client ${clientId} HARD DELETED by admin ${adminId}`, clientInfo);
 
         return res.status(200).json({
           success: true,
-          message: 'Client deleted successfully'
+          message: 'Client permanently deleted'
         });
       } catch (error) {
         await transaction.rollback();

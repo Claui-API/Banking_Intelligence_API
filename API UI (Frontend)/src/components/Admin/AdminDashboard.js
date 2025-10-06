@@ -1,12 +1,11 @@
-// src/components/Admin/AdminDashboard.js
+// src/components/Admin/AdminDashboard.js - Enhanced with reject functionality
 import React, { useState, useEffect } from 'react';
-import { Container, Row, Col, Card, Table, Button, Badge, Spinner, Alert, Tabs, Tab } from 'react-bootstrap';
+import { Container, Row, Col, Card, Table, Button, Badge, Spinner, Alert, Tabs, Tab, Modal, Form } from 'react-bootstrap';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { adminService } from '../../services/admin';
 import ClientStatusBadge from './ClientStatusBadge';
 import InsightMetricsPanel from './InsightMetricsPanel';
-import UserInsightMetrics from './UserInsightMetrics';
 import AiInsightsTab from './AiInsightsTab';
 import DataRetentionTab from './DataRetentionTab';
 import EmailMonitoringTab from './EmailMonitoringTab';
@@ -24,6 +23,10 @@ const AdminDashboard = () => {
   const [loadingClients, setLoadingClients] = useState(true);
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState('overview');
+  const [showRejectModal, setShowRejectModal] = useState(false);
+  const [selectedClient, setSelectedClient] = useState(null);
+  const [rejectReason, setRejectReason] = useState('');
+  const [actionLoading, setActionLoading] = useState(false);
 
   // Fetch system stats
   useEffect(() => {
@@ -94,6 +97,38 @@ const AdminDashboard = () => {
     } catch (err) {
       setError(`Error approving client: ${err.message}`);
       logger.error(`Failed to approve client ${clientId}:`, err);
+    }
+  };
+
+  // Handle client rejection
+  const handleRejectClient = async () => {
+    if (!selectedClient || !rejectReason.trim()) {
+      setError('Please provide a reason for rejection');
+      return;
+    }
+
+    try {
+      setActionLoading(true);
+      await adminService.rejectClient(selectedClient.clientId, rejectReason);
+
+      // Remove from pending clients list
+      setPendingClients(prev => prev.filter(client => client.clientId !== selectedClient.clientId));
+
+      // Remove from all clients list if the client is in there
+      setClients(prev => prev.filter(client => client.clientId !== selectedClient.clientId));
+
+      logger.info(`Rejected client ${selectedClient.clientId}`, { reason: rejectReason });
+
+      // Close modal and reset state
+      setShowRejectModal(false);
+      setSelectedClient(null);
+      setRejectReason('');
+      setError('');
+    } catch (err) {
+      setError(`Error rejecting client: ${err.message}`);
+      logger.error(`Failed to reject client ${selectedClient.clientId}:`, err);
+    } finally {
+      setActionLoading(false);
     }
   };
 
@@ -227,13 +262,25 @@ const AdminDashboard = () => {
                           </div>
                         </td>
                         <td className="text-end">
-                          <Button
-                            size="sm"
-                            variant="success"
-                            onClick={() => handleApproveClient(client.clientId)}
-                          >
-                            Approve
-                          </Button>
+                          <div className="d-flex flex-column gap-1">
+                            <Button
+                              size="sm"
+                              variant="success"
+                              onClick={() => handleApproveClient(client.clientId)}
+                            >
+                              Approve
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="danger"
+                              onClick={() => {
+                                setSelectedClient(client);
+                                setShowRejectModal(true);
+                              }}
+                            >
+                              Reject
+                            </Button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -333,13 +380,25 @@ const AdminDashboard = () => {
                       <td>
                         <div className="d-flex gap-2">
                           {client.status === 'pending' && (
-                            <Button
-                              size="sm"
-                              variant="success"
-                              onClick={() => handleApproveClient(client.clientId)}
-                            >
-                              Approve
-                            </Button>
+                            <>
+                              <Button
+                                size="sm"
+                                variant="success"
+                                onClick={() => handleApproveClient(client.clientId)}
+                              >
+                                Approve
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="danger"
+                                onClick={() => {
+                                  setSelectedClient(client);
+                                  setShowRejectModal(true);
+                                }}
+                              >
+                                Reject
+                              </Button>
+                            </>
                           )}
 
                           {client.status === 'active' && (
@@ -423,6 +482,76 @@ const AdminDashboard = () => {
           {renderDataRetention()}
         </Tab>
       </Tabs>
+
+      {/* Reject Client Modal */}
+      <Modal show={showRejectModal} onHide={() => setShowRejectModal(false)}>
+        <Modal.Header closeButton>
+          <Modal.Title className="text-danger">Reject Client Application</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          {selectedClient && (
+            <>
+              <Alert variant="warning">
+                <i className="bi bi-exclamation-triangle-fill me-2"></i>
+                <strong>Warning:</strong> This action will permanently delete the client and user account.
+              </Alert>
+
+              <p>
+                You are about to reject the application for:
+              </p>
+              <div className="bg-light text-black p-3 rounded mb-3">
+                <p className="mb-1"><strong>Name:</strong> {selectedClient.user.name}</p>
+                <p className="mb-1"><strong>Email:</strong> {selectedClient.user.email}</p>
+                <p className="mb-0"><strong>Client ID:</strong> {selectedClient.clientId}</p>
+              </div>
+
+              <p>
+                The applicant will be notified via email about the rejection. Please provide a reason:
+              </p>
+
+              <Form.Group>
+                <Form.Label><strong>Rejection Reason (required):</strong></Form.Label>
+                <Form.Control
+                  as="textarea"
+                  rows={4}
+                  value={rejectReason}
+                  onChange={(e) => setRejectReason(e.target.value)}
+                  placeholder="Please provide a clear reason for rejecting this application..."
+                  required
+                />
+                <Form.Text className="text-muted">
+                  This reason will be included in the rejection email sent to the applicant.
+                </Form.Text>
+              </Form.Group>
+            </>
+          )}
+        </Modal.Body>
+        <Modal.Footer>
+          <Button
+            variant="secondary"
+            onClick={() => {
+              setShowRejectModal(false);
+              setSelectedClient(null);
+              setRejectReason('');
+            }}
+            disabled={actionLoading}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="danger"
+            onClick={handleRejectClient}
+            disabled={actionLoading || !rejectReason.trim()}
+          >
+            {actionLoading ? (
+              <>
+                <Spinner animation="border" size="sm" className="me-1" />
+                Rejecting...
+              </>
+            ) : 'Reject & Delete Application'}
+          </Button>
+        </Modal.Footer>
+      </Modal>
     </Container>
   );
 };

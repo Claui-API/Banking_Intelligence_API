@@ -233,69 +233,614 @@ class DataRetentionService {
 	}
 
 	/**
-	 * Delete user data completely
-	 * @param {string} userId - User ID
-	 * @param {Transaction} transaction - Sequelize transaction
-	 */
+ * Delete user data completely - CORRECTED version based on actual database schema
+ * @param {string} userId - User ID
+ * @param {Transaction} transaction - Sequelize transaction
+ */
 	async deleteUserData(userId, transaction) {
+		const t = transaction || await sequelize.transaction();
+		const isExternalTransaction = !!transaction;
+
 		try {
+			logger.info(`Starting comprehensive data deletion for user ${userId}`);
+
+			const deletionResults = {
+				userId,
+				deletedCounts: {},
+				errors: [],
+				startTime: new Date()
+			};
+
 			// Log this deletion for compliance purposes
 			await this.createRetentionLog('account_deleted', {
 				userId,
-				reason: 'retention_policy'
-			}, transaction);
+				reason: 'admin_rejection_or_retention_policy',
+				deletionMethod: 'comprehensive'
+			}, t);
 
-			// Delete related data first (foreign key constraints)
-			// 1. Delete tokens
-			await Token.destroy({
+			// STEP 1: Get all clients associated with this user
+			const clientRecords = await Client.findAll({
 				where: { userId },
-				transaction
+				attributes: ['clientId'],
+				transaction: t
 			});
 
-			// 2. Delete Plaid connections
-			await PlaidItem.destroy({
+			const clientIds = clientRecords.map(c => c.clientId);
+			logger.info(`Found ${clientIds.length} clients for user ${userId}`, { clientIds });
+
+			// STEP 2: Get all bankUserIds associated with these clients
+			let bankUserIds = [];
+			if (clientIds.length > 0) {
+				const bankUserRecords = await sequelize.query(
+					'SELECT DISTINCT "bankUserId" FROM "BankUsers" WHERE "clientId" IN (:clientIds)',
+					{
+						replacements: { clientIds },
+						type: sequelize.QueryTypes.SELECT,
+						transaction: t
+					}
+				);
+				bankUserIds = bankUserRecords.map(bu => bu.bankUserId);
+				logger.info(`Found ${bankUserIds.length} bankUsers for clients`, { bankUserIds });
+			}
+
+			// STEP 3: Delete in correct order respecting foreign key constraints
+
+			// 3a. Delete Transactions (linked via clientId, NOT userId)
+			if (clientIds.length > 0) {
+				if (sequelize.models.Transaction) {
+					// Use raw query since Transactions table doesn't have userId column
+					const [, transactionDeleteCount] = await sequelize.query(
+						'DELETE FROM "Transactions" WHERE "clientId" IN (:clientIds)',
+						{
+							replacements: { clientIds },
+							type: sequelize.QueryTypes.DELETE,
+							transaction: t
+						}
+					);
+					deletionResults.deletedCounts.transactions = transactionDeleteCount || 0;
+					logger.info(`Deleted ${deletionResults.deletedCounts.transactions} transactions`);
+				}
+			}
+
+			// 3b. Delete Accounts (linked via clientId, NOT userId)
+			if (clientIds.length > 0) {
+				if (sequelize.models.Account) {
+					// Use raw query since Accounts table doesn't have userId column
+					const [, accountDeleteCount] = await sequelize.query(
+						'DELETE FROM "Accounts" WHERE "clientId" IN (:clientIds)',
+						{
+							replacements: { clientIds },
+							type: sequelize.QueryTypes.DELETE,
+							transaction: t
+						}
+					);
+					deletionResults.deletedCounts.accounts = accountDeleteCount || 0;
+					logger.info(`Deleted ${deletionResults.deletedCounts.accounts} accounts`);
+				}
+			}
+
+			// 3c. Delete BankUsers (linked via clientId)
+			if (clientIds.length > 0) {
+				if (sequelize.models.BankUser) {
+					const bankUserDeleteCount = await sequelize.query(
+						'DELETE FROM "BankUsers" WHERE "clientId" IN (:clientIds)',
+						{
+							replacements: { clientIds },
+							type: sequelize.QueryTypes.DELETE,
+							transaction: t
+						}
+					);
+					deletionResults.deletedCounts.bankUsers = bankUserDeleteCount[1] || 0;
+					logger.info(`Deleted ${deletionResults.deletedCounts.bankUsers} bank users`);
+				}
+			}
+
+			// 3d. Delete Tokens (directly linked to userId - this one is correct)
+			const tokensDeleted = await Token.destroy({
 				where: { userId },
-				transaction
+				force: true,
+				transaction: t
 			});
+			deletionResults.deletedCounts.tokens = tokensDeleted;
+			logger.info(`Deleted ${tokensDeleted} tokens for user ${userId}`);
 
-			// 3. Delete clients (we assume Client model has userId FK to User)
-			await Client.destroy({
+			// 3e. Delete Plaid Items (directly linked to userId)
+			const plaidItemsDeleted = await PlaidItem.destroy({
 				where: { userId },
-				transaction
+				force: true,
+				transaction: t
 			});
+			deletionResults.deletedCounts.plaidItems = plaidItemsDeleted;
+			logger.info(`Deleted ${plaidItemsDeleted} Plaid items for user ${userId}`);
 
-			// 4. Delete any insights metrics
-			await this.deleteInsightsMetrics(userId, transaction);
+			// 3f. Delete user-specific data that DOES have userId column
+			const userSpecificTables = [
+				{ table: 'NotificationPreferences', column: 'userId' },
+				{ table: 'InsightMetrics', column: 'userId' }
+			];
 
-			// 5. Delete user profile
-			await User.destroy({
+			for (const { table, column } of userSpecificTables) {
+				try {
+					if (sequelize.models[table]) {
+						const deleted = await sequelize.models[table].destroy({
+							where: { [column]: userId },
+							force: true,
+							transaction: t
+						});
+						deletionResults.deletedCounts[table] = deleted;
+						logger.info(`Deleted ${deleted} records from ${table}`);
+					}
+				} catch (error) {
+					logger.warn(`Failed to delete from ${table}`, { error: error.message });
+					deletionResults.errors.push({
+						table,
+						error: error.message
+					});
+				}
+			}
+
+			// 3g. Handle AdminLogs - Use system user instead of null to avoid constraint violation
+			if (sequelize.models.AdminLog) {
+				try {
+					// Use the system user UUID created by migration
+					const SYSTEM_USER_ID = '00000000-0000-0000-0000-000000000001';
+
+					// Verify system user exists (inactive admin user for deleted admin references)
+					const systemUser = await sequelize.models.User.findByPk(SYSTEM_USER_ID, { transaction: t });
+
+					if (!systemUser) {
+						logger.error('System user for deleted admin references not found. Please run migration first.');
+						throw new Error('System user not found - run migration: 20251006190000-add-system-user-for-deleted-admin-references');
+					}
+
+					// Update AdminLogs to reference system user instead of deleted admin
+					const [adminLogsUpdated] = await sequelize.models.AdminLog.update(
+						{
+							adminId: SYSTEM_USER_ID, // Reference system user instead of null
+							details: sequelize.fn('jsonb_set',
+								sequelize.col('details'),
+								'{originalAdminDeleted}',
+								JSON.stringify({
+									deletedAt: new Date().toISOString(),
+									originalAdminId: userId,
+									reason: 'Admin user deleted - reference preserved for audit trail'
+								})
+							)
+						},
+						{
+							where: { adminId: userId },
+							transaction: t
+						}
+					);
+
+					deletionResults.deletedCounts.adminLogsAnonymized = adminLogsUpdated;
+					logger.info(`Anonymized ${adminLogsUpdated} admin log entries to reference system user`);
+
+				} catch (error) {
+					logger.warn('Failed to handle admin logs', {
+						error: error.message,
+						suggestion: 'Consider running migration: 20251006190000-add-system-user-for-deleted-admin-references'
+					});
+					deletionResults.errors.push({
+						table: 'AdminLogs',
+						error: error.message,
+						fix: 'Run migration to create system user for deleted admin references'
+					});
+				}
+			}
+
+			// 3h. Delete Clients (directly linked to userId)
+			const clientsDeleted = await Client.destroy({
+				where: { userId },
+				force: true,
+				transaction: t
+			});
+			deletionResults.deletedCounts.clients = clientsDeleted;
+			logger.info(`Deleted ${clientsDeleted} clients for user ${userId}`);
+
+			// 3i. Handle email suppressions (preserve but anonymize if linked to user email)
+			if (sequelize.models.EmailSuppression) {
+				try {
+					// Get user email first
+					const user = await User.findByPk(userId, {
+						attributes: ['email'],
+						transaction: t
+					});
+
+					if (user && user.email) {
+						const [emailSuppressionsUpdated] = await sequelize.models.EmailSuppression.update(
+							{
+								metadata: sequelize.fn('jsonb_set',
+									sequelize.col('metadata'),
+									'{userDeleted}',
+									JSON.stringify(true)
+								)
+							},
+							{
+								where: { email: user.email },
+								transaction: t
+							}
+						);
+						deletionResults.deletedCounts.emailSuppressionsUpdated = emailSuppressionsUpdated;
+						logger.info(`Updated ${emailSuppressionsUpdated} email suppression records`);
+					}
+				} catch (error) {
+					logger.warn('Failed to update email suppressions', { error: error.message });
+					deletionResults.errors.push({
+						table: 'EmailSuppression',
+						error: error.message
+					});
+				}
+			}
+
+			// 3j. Delete any additional user-related data
+			await this.deleteAdditionalUserData(userId, t, deletionResults);
+
+			// 3k. Finally, delete the user record itself
+			const userDeleted = await User.destroy({
 				where: { id: userId },
-				transaction
+				force: true,
+				transaction: t
 			});
 
-			logger.info(`User ${userId} completely deleted due to retention policy`);
+			if (!userDeleted) {
+				throw new Error(`Failed to delete user ${userId} - user not found or already deleted`);
+			}
+
+			deletionResults.deletedCounts.users = userDeleted;
+			deletionResults.endTime = new Date();
+			deletionResults.totalDuration = deletionResults.endTime - deletionResults.startTime;
+
+			// Commit transaction if we created it
+			if (!isExternalTransaction) {
+				await t.commit();
+			}
+
+			logger.info(`User ${userId} completely deleted - comprehensive cleanup completed`, {
+				duration: deletionResults.totalDuration,
+				deletedCounts: deletionResults.deletedCounts,
+				errorCount: deletionResults.errors.length
+			});
+
+			return {
+				success: true,
+				userId,
+				deletionResults
+			};
+
 		} catch (error) {
-			logger.error(`Error deleting user ${userId} data:`, error);
+			logger.error(`Error during comprehensive deletion for user ${userId}:`, {
+				error: error.message,
+				stack: error.stack
+			});
+
+			// Rollback transaction if we created it
+			if (!isExternalTransaction) {
+				try {
+					await t.rollback();
+					logger.info('Transaction rolled back successfully');
+				} catch (rollbackError) {
+					logger.error('Error rolling back transaction:', {
+						error: rollbackError.message
+					});
+				}
+			}
+
+			throw new Error(`Data deletion failed: ${error.message}`);
+		}
+	}
+
+	/**
+	 * Delete additional user-related data from optional models - CORRECTED version
+	 * @param {string} userId - User ID
+	 * @param {Transaction} transaction - Sequelize transaction
+	 * @param {Object} deletionResults - Results object to update
+	 */
+	async deleteAdditionalUserData(userId, transaction, deletionResults) {
+		try {
+			// List of additional models that might reference users
+			// Only include models that actually have userId columns
+			const additionalModels = [
+				'UserSession',
+				'UserPreference',
+				'ApiUsageLog',
+				'AuditLog',
+				'UserActivity',
+				'LoginHistory',
+				'SecurityEvent'
+			];
+
+			for (const modelName of additionalModels) {
+				if (sequelize.models[modelName]) {
+					try {
+						const deleted = await sequelize.models[modelName].destroy({
+							where: { userId },
+							force: true,
+							transaction
+						});
+						if (deleted > 0) {
+							deletionResults.deletedCounts[modelName] = deleted;
+							logger.info(`Deleted ${deleted} ${modelName} records for user ${userId}`);
+						}
+					} catch (modelError) {
+						logger.warn(`Could not delete ${modelName} for user ${userId}:`, modelError.message);
+						deletionResults.errors.push({
+							table: modelName,
+							error: modelError.message
+						});
+					}
+				}
+			}
+
+			// Handle ContactSubmission separately since it might not have userId
+			if (sequelize.models.ContactSubmission) {
+				try {
+					// ContactSubmission might be linked by email rather than userId
+					// Check your schema to see if it has userId column
+					const userEmail = await User.findByPk(userId, {
+						attributes: ['email'],
+						transaction
+					});
+
+					if (userEmail) {
+						const deleted = await sequelize.models.ContactSubmission.destroy({
+							where: { email: userEmail.email }, // Assuming it's linked by email
+							force: true,
+							transaction
+						});
+						if (deleted > 0) {
+							deletionResults.deletedCounts.ContactSubmission = deleted;
+							logger.info(`Deleted ${deleted} contact submissions for user ${userId}`);
+						}
+					}
+				} catch (modelError) {
+					logger.warn(`Could not delete ContactSubmission for user ${userId}:`, modelError.message);
+					deletionResults.errors.push({
+						table: 'ContactSubmission',
+						error: modelError.message
+					});
+				}
+			}
+
+		} catch (error) {
+			logger.error(`Error deleting additional user data for ${userId}:`, error);
+			deletionResults.errors.push({
+				operation: 'deleteAdditionalUserData',
+				error: error.message
+			});
+		}
+	}
+
+	/**
+ * Verify user data deletion based on actual database schema
+ * @param {string} userId - The user ID to verify
+ * @returns {Object} - Verification results
+ */
+	async verifyUserDataDeletion(userId) {
+		try {
+			logger.info(`Verifying data deletion for user ${userId}`);
+
+			const verificationResults = {
+				userId,
+				remainingData: {},
+				relatedData: {},
+				isCompletelyDeleted: false,
+				verificationTime: new Date()
+			};
+
+			// Check tables that SHOULD be empty after user deletion
+
+			// 1. Direct userId references (these should be 0)
+			const directUserTables = [
+				{ table: 'Users', column: 'id', description: 'User record' },
+				{ table: 'Clients', column: 'userId', description: 'Client records' },
+				{ table: 'Tokens', column: 'userId', description: 'Token records' },
+				{ table: 'PlaidItems', column: 'userId', description: 'Plaid items' },
+				{ table: 'NotificationPreferences', column: 'userId', description: 'Notification preferences' },
+				{ table: 'InsightMetrics', column: 'userId', description: 'Insight metrics' }
+			];
+
+			for (const { table, column, description } of directUserTables) {
+				try {
+					if (sequelize.models[table]) {
+						const count = await sequelize.models[table].count({
+							where: { [column]: userId }
+						});
+
+						if (count > 0) {
+							verificationResults.remainingData[table] = {
+								count,
+								description,
+								columnChecked: column
+							};
+							logger.warn(`Found ${count} remaining records in ${table}`, { userId });
+						} else {
+							logger.info(`✓ No remaining data in ${table}`, { userId });
+						}
+					} else {
+						logger.info(`ℹ Model ${table} not found, skipping check`);
+					}
+				} catch (error) {
+					logger.error(`Error checking ${table}`, { error: error.message });
+					verificationResults.remainingData[table] = {
+						error: error.message,
+						description,
+						columnChecked: column
+					};
+				}
+			}
+
+			// 2. Check for related data through clientId relationships
+			try {
+				// This query checks if any data remains that should have been deleted
+				// through the client relationship cascade
+				const relatedDataQuery = `
+				WITH user_clients AS (
+					SELECT "clientId" FROM "Clients" WHERE "userId" = :userId
+				)
+				SELECT 
+					(SELECT COUNT(*) FROM "Transactions" t 
+					 WHERE t."clientId" IN (SELECT "clientId" FROM user_clients)) as transactions,
+					(SELECT COUNT(*) FROM "Accounts" a 
+					 WHERE a."clientId" IN (SELECT "clientId" FROM user_clients)) as accounts,
+					(SELECT COUNT(*) FROM "BankUsers" bu 
+					 WHERE bu."clientId" IN (SELECT "clientId" FROM user_clients)) as bankUsers
+			`;
+
+				const [relatedDataCheck] = await sequelize.query(relatedDataQuery, {
+					replacements: { userId },
+					type: sequelize.QueryTypes.SELECT
+				});
+
+				const relatedData = {
+					transactions: parseInt(relatedDataCheck.transactions),
+					accounts: parseInt(relatedDataCheck.accounts),
+					bankUsers: parseInt(relatedDataCheck.bankUsers)
+				};
+
+				// Check if any related data remains
+				const hasRelatedData = Object.values(relatedData).some(count => count > 0);
+
+				if (hasRelatedData) {
+					verificationResults.relatedData = relatedData;
+					logger.warn('Found remaining related data', { userId, relatedData });
+				} else {
+					logger.info('✓ No remaining related data found', { userId });
+				}
+			} catch (error) {
+				logger.error('Error checking related data', { error: error.message });
+				verificationResults.relatedData = {
+					error: error.message,
+					description: 'Could not verify related data deletion'
+				};
+			}
+
+			// 3. Check AdminLogs (should be anonymized, not deleted)
+			try {
+				const adminLogCount = await sequelize.query(
+					'SELECT COUNT(*) as count FROM "AdminLogs" WHERE "adminId" = :userId',
+					{
+						replacements: { userId },
+						type: sequelize.QueryTypes.SELECT
+					}
+				);
+
+				const count = parseInt(adminLogCount[0].count);
+				if (count > 0) {
+					verificationResults.remainingData.AdminLogs = {
+						count,
+						description: 'Admin logs (should be anonymized, not deleted)',
+						note: 'These should have adminId set to null but preserve the log entries'
+					};
+					logger.warn(`Found ${count} admin logs still referencing userId ${userId} - should be anonymized`);
+				} else {
+					logger.info('✓ No admin logs referencing user ID (properly anonymized or no logs)');
+				}
+			} catch (error) {
+				logger.error('Error checking admin logs', { error: error.message });
+				verificationResults.remainingData.AdminLogs = {
+					error: error.message,
+					description: 'Could not verify admin log anonymization'
+				};
+			}
+
+			// 4. Check contact submissions (if linked by email)
+			try {
+				// This is more complex since contact_submissions might be linked by email
+				// We'll check if there are any submissions with emails that matched the deleted user
+				const contactQuery = `
+				SELECT COUNT(*) as count 
+				FROM "contact_submissions" cs
+				WHERE cs."email" IN (
+					-- This subquery will be empty if user is deleted, which is what we want
+					SELECT "email" FROM "Users" WHERE "id" = :userId
+				)
+			`;
+
+				const [contactCheck] = await sequelize.query(contactQuery, {
+					replacements: { userId },
+					type: sequelize.QueryTypes.SELECT
+				});
+
+				const contactCount = parseInt(contactCheck.count);
+				if (contactCount > 0) {
+					verificationResults.remainingData.contact_submissions = {
+						count: contactCount,
+						description: 'Contact submissions linked by email',
+						note: 'These may be preserved for business purposes'
+					};
+					logger.info(`Found ${contactCount} contact submissions - may be intentionally preserved`);
+				}
+			} catch (error) {
+				logger.debug('Could not check contact submissions (may not exist or not linked to users)');
+			}
+
+			// 5. Summary
+			const hasRemainingDirectData = Object.keys(verificationResults.remainingData).length > 0;
+			const hasRemainingRelatedData = Object.keys(verificationResults.relatedData).length > 0
+				&& !verificationResults.relatedData.error;
+
+			verificationResults.isCompletelyDeleted = !hasRemainingDirectData && !hasRemainingRelatedData;
+
+			// Generate summary
+			const summary = {
+				directDataTables: Object.keys(verificationResults.remainingData).length,
+				relatedDataIssues: hasRemainingRelatedData ? Object.keys(verificationResults.relatedData).length : 0,
+				overallStatus: verificationResults.isCompletelyDeleted ? 'COMPLETE' : 'INCOMPLETE'
+			};
+
+			logger.info(`Data deletion verification completed for user ${userId}`, {
+				...summary,
+				isCompletelyDeleted: verificationResults.isCompletelyDeleted
+			});
+
+			return {
+				...verificationResults,
+				summary
+			};
+
+		} catch (error) {
+			logger.error(`Error verifying user data deletion for ${userId}`, {
+				error: error.message,
+				stack: error.stack
+			});
 			throw error;
 		}
 	}
 
 	/**
-	 * Delete insights metrics for a user
+	 * Delete insights metrics for a user - Enhanced version
 	 * @param {string} userId - User ID
 	 * @param {Transaction} transaction - Sequelize transaction
 	 */
 	async deleteInsightsMetrics(userId, transaction) {
 		try {
-			// Check if InsightMetrics model exists in the Sequelize models
-			if (sequelize.models.InsightMetrics) {
-				await sequelize.models.InsightMetrics.destroy({
-					where: { userId },
-					transaction
-				});
-			} else {
-				logger.info('InsightMetrics model not found, skipping metrics deletion');
+			let totalDeleted = 0;
+
+			// Delete from multiple possible insights-related models
+			const insightModels = ['InsightMetrics', 'InsightQuery', 'InsightResult', 'UserInsight'];
+
+			for (const modelName of insightModels) {
+				if (sequelize.models[modelName]) {
+					const deleted = await sequelize.models[modelName].destroy({
+						where: { userId },
+						force: true, // Hard delete
+						transaction
+					});
+					totalDeleted += deleted;
+					if (deleted > 0) {
+						logger.info(`Deleted ${deleted} ${modelName} records for user ${userId}`);
+					}
+				}
 			}
+
+			if (totalDeleted > 0) {
+				logger.info(`Total insights-related records deleted for user ${userId}: ${totalDeleted}`);
+			} else {
+				logger.info('No insights metrics found or models not available for user cleanup');
+			}
+
+			return totalDeleted;
 		} catch (error) {
 			logger.error(`Error deleting insights metrics for user ${userId}:`, error);
 			throw error;

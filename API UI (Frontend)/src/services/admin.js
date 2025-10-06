@@ -1,4 +1,4 @@
-// src/services/admin.js
+// src/services/admin.js - Enhanced with reject functionality
 import api from './api';
 import logger from '../utils/logger';
 
@@ -6,7 +6,7 @@ export const adminService = {
   // List all clients with pagination and filtering
   listClients: async (page = 1, limit = 10, status = null) => {
     try {
-      let url = `/admin/clients?page=${page}&limit=${limit}`;
+      let url = `/admin/clients?page=${page}&limit=${limit}&includeDeleted=false`;
       if (status) {
         url += `&status=${status}`;
       }
@@ -106,6 +106,40 @@ export const adminService = {
         throw new Error('No response from server. Please check your network connection.');
       } else {
         throw new Error('Error setting up client approval request');
+      }
+    }
+  },
+
+  // Reject a pending client
+  rejectClient: async (clientId, reason) => {
+    try {
+      const response = await api.post(`/admin/clients/${clientId}/reject`, { reason });
+
+      if (!response.data.success) {
+        throw new Error(response.data.message || 'Failed to reject client');
+      }
+
+      logger.info('Client rejected successfully', { clientId, reason });
+
+      return response.data.data;
+    } catch (error) {
+      logger.logError('Reject Client Error', error);
+
+      if (error.response) {
+        if (error.response.status === 404) {
+          throw new Error('Client not found');
+        } else if (error.response.status === 403) {
+          throw new Error('You do not have permission to reject clients');
+        } else if (error.response.status === 400) {
+          throw new Error(error.response.data?.message || 'Only pending clients can be rejected');
+        }
+
+        const errorMessage = error.response.data?.message || 'Failed to reject client';
+        throw new Error(errorMessage);
+      } else if (error.request) {
+        throw new Error('No response from server. Please check your network connection.');
+      } else {
+        throw new Error('Error setting up client rejection request');
       }
     }
   },

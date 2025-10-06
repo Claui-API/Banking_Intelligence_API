@@ -17,38 +17,38 @@ const UserInsightMetrics = () => {
   const [sortDirection, setSortDirection] = useState('desc');
   const [activeTab, setActiveTab] = useState('overview');
   const [selectedUser, setSelectedUser] = useState(null);
-  
+
   // Fetch user metrics
   useEffect(() => {
     fetchData();
   }, []);
-  
+
   // Function to fetch data from API using the service
   const fetchData = async () => {
     try {
       setLoading(true);
-      
+
       // Fetch user metrics using the service
       const userData = await insightsMetricsService.getUserMetrics();
-      
+
       setUserMetrics(userData);
       setLoading(false);
-      
+
       if (userData.length > 0) {
         setSelectedUser(userData[0]);
       }
-      
+
       logger.info(`Loaded user insight metrics for ${userData.length} users`);
     } catch (error) {
       logger.error('Error fetching user insight metrics:', error);
-      
+
       // Check for authentication issues
       if (error.message && error.message.includes('permission')) {
         setError('Authentication error: Please ensure you are logged in as an admin user');
       } else {
         setError(error.message || 'Failed to load user metrics');
       }
-      
+
       // Use mock data for development/preview only if we have no data
       if (process.env.NODE_ENV !== 'production' && userMetrics.length === 0) {
         const mockData = generateMockUserData();
@@ -58,7 +58,7 @@ const UserInsightMetrics = () => {
         }
         logger.info('Using mock user metrics data for preview');
       }
-      
+
       setLoading(false);
     }
   };
@@ -76,7 +76,7 @@ const UserInsightMetrics = () => {
       successRate: `${(Math.random() * 10 + 90).toFixed(1)}`,
       lastActive: new Date(Date.now() - Math.floor(Math.random() * 7 * 24 * 60 * 60 * 1000)).toISOString(),
       mostCommonQueryType: ['financial', 'budgeting', 'saving', 'spending'][Math.floor(Math.random() * 4)],
-      queryTypes: { 
+      queryTypes: {
         financial: Math.floor(Math.random() * 50) + 10,
         budgeting: Math.floor(Math.random() * 40) + 5,
         saving: Math.floor(Math.random() * 30) + 5,
@@ -93,13 +93,13 @@ const UserInsightMetrics = () => {
       activityByDay: Array(7).fill(0).map(() => Math.floor(Math.random() * 8))
     }));
   };
-  
+
   // Handle user selection for detailed view
   const handleSelectUser = (user) => {
     setSelectedUser(user);
     setActiveTab('details');
   };
-  
+
   // Get sorted and filtered user list
   const getSortedAndFilteredUsers = () => {
     return userMetrics
@@ -113,8 +113,8 @@ const UserInsightMetrics = () => {
       })
       .sort((a, b) => {
         let comparison = 0;
-        
-        switch(sortBy) {
+
+        switch (sortBy) {
           case 'name':
             comparison = (a.name || '').localeCompare(b.name || '');
             break;
@@ -132,49 +132,49 @@ const UserInsightMetrics = () => {
           default:
             comparison = 0;
         }
-        
+
         return sortDirection === 'asc' ? comparison : -comparison;
       });
   };
-  
+
   // Format date helper
   const formatDate = (dateString) => {
     if (!dateString) return 'N/A';
     return new Date(dateString).toLocaleString();
   };
-  
+
   // Prepare query type chart data for a user
   const prepareQueryTypeChartData = (user) => {
     if (!user || !user.queryTypes) return [];
-    
+
     return Object.entries(user.queryTypes).map(([type, count]) => ({
       name: type.charAt(0).toUpperCase() + type.slice(1),
       value: count
     }));
   };
-  
+
   // Prepare activity data for charts
   const prepareActivityData = (user) => {
     if (!user) return { hourly: [], daily: [] };
-    
+
     const hourlyData = user.activityByHour ? user.activityByHour.map((count, hour) => ({
       hour: `${hour}:00`,
       queries: count
     })) : [];
-    
+
     const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     const dailyData = user.activityByDay ? user.activityByDay.map((count, day) => ({
       day: days[day],
       queries: count
     })) : [];
-    
+
     return { hourly: hourlyData, daily: dailyData };
   };
-  
+
   // Render the overview tab with user list
   const renderOverviewTab = () => {
     const sortedUsers = getSortedAndFilteredUsers();
-    
+
     return (
       <>
         <div className="d-flex justify-content-between align-items-center mb-3">
@@ -186,7 +186,7 @@ const UserInsightMetrics = () => {
             className="w-auto"
           />
         </div>
-        
+
         {sortedUsers.length > 0 ? (
           <Table responsive striped hover className='table-light'>
             <thead>
@@ -207,8 +207,8 @@ const UserInsightMetrics = () => {
                   </td>
                   <td>{user.queryCount}</td>
                   <td>
-                    <Badge 
-                      bg={parseFloat(user.avgResponseTime) < 500 ? 'success' : 
+                    <Badge
+                      bg={parseFloat(user.avgResponseTime) < 500 ? 'success' :
                         parseFloat(user.avgResponseTime) < 1000 ? 'warning' : 'danger'}
                     >
                       {user.avgResponseTime}ms
@@ -216,8 +216,8 @@ const UserInsightMetrics = () => {
                   </td>
                   <td>{user.lastActive ? formatDate(user.lastActive) : 'N/A'}</td>
                   <td>
-                    <Button 
-                      variant="primary" 
+                    <Button
+                      variant="primary"
                       size="sm"
                       onClick={() => handleSelectUser(user)}
                     >
@@ -234,23 +234,23 @@ const UserInsightMetrics = () => {
       </>
     );
   };
-  
+
   // Render the user detail tab
   const renderUserDetailTab = () => {
     if (!selectedUser) {
       return <Alert variant="info">Select a user to view details</Alert>;
     }
-    
+
     const queryTypeData = prepareQueryTypeChartData(selectedUser);
     const activityData = prepareActivityData(selectedUser);
-    
+
     return (
       <>
         <div className="d-flex justify-content-between align-items-center mb-4">
           <h4>{selectedUser.name || 'User Details'}</h4>
           <Badge bg="info">{selectedUser.email || selectedUser.userId}</Badge>
         </div>
-        
+
         <Row className="mb-4">
           <Col md={3}>
             <Card className="h-100">
@@ -285,7 +285,7 @@ const UserInsightMetrics = () => {
             </Card>
           </Col>
         </Row>
-        
+
         <Row className="mb-4">
           <Col md={6}>
             <Card>
@@ -330,7 +330,7 @@ const UserInsightMetrics = () => {
             </Card>
           </Col>
         </Row>
-        
+
         <Card>
           <Card.Header>Recent Queries</Card.Header>
           <Card.Body>
@@ -363,7 +363,7 @@ const UserInsightMetrics = () => {
       </>
     );
   };
-  
+
   return (
     <div className="user-insight-metrics">
       {loading ? (

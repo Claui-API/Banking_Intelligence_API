@@ -2,8 +2,12 @@
 const express = require('express');
 const adminController = require('../controllers/admin.controller');
 const { authMiddleware, authorize } = require('../middleware/auth');
+const bodyParser = require('body-parser');
 
 const router = express.Router();
+
+// Add body parser middleware for JSON requests
+router.use(bodyParser.json());
 
 // All admin routes require authentication and admin role
 router.use(authMiddleware, authorize('admin'));
@@ -30,18 +34,32 @@ router.get('/clients/:clientId', adminController.getClient);
 router.post('/clients/:clientId/approve', adminController.approveClient);
 
 /**
+ * @route POST /api/admin/clients/:clientId/reject
+ * @desc Reject a pending client and delete from database
+ * @access Private (Admin only)
+ */
+router.post('/clients/:clientId/reject', adminController.rejectClient);
+
+/**
  * @route POST /api/admin/clients/:clientId/suspend
- * @desc Suspend a client
+ * @desc Suspend a client (marks user for deletion)
  * @access Private (Admin only)
  */
 router.post('/clients/:clientId/suspend', adminController.suspendClient);
 
 /**
  * @route POST /api/admin/clients/:clientId/revoke
- * @desc Revoke a client
+ * @desc Revoke a client (marks user for deletion)
  * @access Private (Admin only)
  */
 router.post('/clients/:clientId/revoke', adminController.revokeClient);
+
+/**
+ * @route POST /api/admin/clients/:clientId/reinstate
+ * @desc Reinstate a suspended or revoked client
+ * @access Private (Admin only)
+ */
+router.post('/clients/:clientId/reinstate', adminController.reinstateClient);
 
 /**
  * @route PUT /api/admin/clients/:clientId/quota
@@ -58,25 +76,18 @@ router.put('/clients/:clientId/quota', adminController.updateClientQuota);
 router.post('/clients/:clientId/reset-usage', adminController.resetClientUsage);
 
 /**
- * @route GET /api/admin/stats
- * @desc Get system statistics for admin dashboard
- * @access Private (Admin only)
- */
-router.get('/stats', adminController.getSystemStats);
-
-/**
- * @route POST /api/admin/clients/:clientId/reinstate
- * @desc Reinstate a suspended or revoked client
- * @access Private (Admin only)
- */
-router.post('/clients/:clientId/reinstate', adminController.reinstateClient);
-
-/**
  * @route DELETE /api/admin/clients/:clientId
  * @desc Delete a revoked client
  * @access Private (Admin only)
  */
 router.delete('/clients/:clientId', adminController.deleteClient);
+
+/**
+ * @route GET /api/admin/stats
+ * @desc Get system statistics for admin dashboard
+ * @access Private (Admin only)
+ */
+router.get('/stats', adminController.getSystemStats);
 
 // ====== EMAIL MONITORING ROUTES ======
 

@@ -1,11 +1,11 @@
-// src/routes/admin.retention.routes.js - Fixed for DELETE requests
+// src/routes/admin.retention.routes.js - Enhanced with proper DELETE handling and logging
 
 const express = require('express');
 const router = express.Router();
 const { authMiddleware, authorize } = require('../middleware/auth');
 const adminRetentionController = require('../controllers/admin.retention.controller');
 const logger = require('../utils/logger');
-const bodyParser = require('body-parser'); // Make sure this is available
+const bodyParser = require('body-parser');
 
 // Check if all required controller methods exist
 const controllerMethodCheck = () => {
@@ -28,24 +28,31 @@ const controllerMethodCheck = () => {
 	}
 
 	if (missingMethods.length > 0) {
-		logger.error(`The following admin controller methods are missing: ${missingMethods.join(', ')}`);
+		logger.error(`The following admin retention controller methods are missing: ${missingMethods.join(', ')}`);
+	} else {
+		logger.info('All required admin retention controller methods are available');
 	}
 };
 
-// Run the check
+// Run the controller method check
 controllerMethodCheck();
 
-// Add body parser middleware specifically for JSON
-router.use(bodyParser.json());
+// Add body parser middleware specifically for JSON - must be before auth middleware
+router.use(bodyParser.json({ limit: '10mb' }));
+router.use(bodyParser.urlencoded({ extended: true, limit: '10mb' }));
 
-// Log middleware to debug request body issues
+// Enhanced logging middleware for debugging request body issues
 router.use((req, res, next) => {
 	if (req.method === 'DELETE') {
-		logger.debug('DELETE request received:', {
+		logger.debug('DELETE request received on retention routes:', {
 			path: req.path,
+			originalUrl: req.originalUrl,
 			contentType: req.get('Content-Type'),
+			contentLength: req.get('Content-Length'),
 			hasBody: !!req.body,
-			bodySize: req.body ? Object.keys(req.body).length : 0
+			bodyKeys: req.body ? Object.keys(req.body) : [],
+			bodySize: req.body ? Object.keys(req.body).length : 0,
+			rawBody: JSON.stringify(req.body).substring(0, 500) // First 500 chars for debugging
 		});
 	}
 	next();
@@ -62,7 +69,13 @@ router.use(authMiddleware, authorize('admin'));
 router.get('/stats',
 	typeof adminRetentionController.getPolicyStats === 'function'
 		? adminRetentionController.getPolicyStats
-		: (req, res) => res.status(501).json({ success: false, message: "Method not implemented" })
+		: (req, res) => {
+			logger.warn('getPolicyStats not implemented in adminRetentionController');
+			res.status(501).json({
+				success: false,
+				message: "Data retention policy stats method not implemented"
+			});
+		}
 );
 
 /**
@@ -73,7 +86,13 @@ router.get('/stats',
 router.put('/users/:userId',
 	typeof adminRetentionController.updateUserRetentionSettings === 'function'
 		? adminRetentionController.updateUserRetentionSettings
-		: (req, res) => res.status(501).json({ success: false, message: "Method not implemented" })
+		: (req, res) => {
+			logger.warn('updateUserRetentionSettings not implemented in adminRetentionController');
+			res.status(501).json({
+				success: false,
+				message: "Update user retention settings method not implemented"
+			});
+		}
 );
 
 /**
@@ -83,8 +102,24 @@ router.put('/users/:userId',
  */
 router.delete('/users/:userId/force',
 	typeof adminRetentionController.forceDeleteUser === 'function'
-		? adminRetentionController.forceDeleteUser
-		: (req, res) => res.status(501).json({ success: false, message: "Method not implemented" })
+		? (req, res, next) => {
+			// Additional logging for force delete requests
+			logger.info('Force delete user request initiated:', {
+				userId: req.params.userId,
+				adminId: req.auth?.userId,
+				adminEmail: req.auth?.userEmail,
+				requestBody: req.body,
+				timestamp: new Date().toISOString()
+			});
+			adminRetentionController.forceDeleteUser(req, res, next);
+		}
+		: (req, res) => {
+			logger.error('forceDeleteUser not implemented in adminRetentionController');
+			res.status(501).json({
+				success: false,
+				message: "Force delete user method not implemented"
+			});
+		}
 );
 
 /**
@@ -95,7 +130,13 @@ router.delete('/users/:userId/force',
 router.get('/marked-for-deletion',
 	typeof adminRetentionController.getAccountsMarkedForDeletion === 'function'
 		? adminRetentionController.getAccountsMarkedForDeletion
-		: (req, res) => res.status(501).json({ success: false, message: "Method not implemented" })
+		: (req, res) => {
+			logger.warn('getAccountsMarkedForDeletion not implemented in adminRetentionController');
+			res.status(501).json({
+				success: false,
+				message: "Get accounts marked for deletion method not implemented"
+			});
+		}
 );
 
 /**
@@ -105,13 +146,26 @@ router.get('/marked-for-deletion',
  */
 router.post('/audit',
 	typeof adminRetentionController.runRetentionAudit === 'function'
-		? adminRetentionController.runRetentionAudit
-		: (req, res) => res.status(501).json({ success: false, message: "Method not implemented" })
+		? (req, res, next) => {
+			logger.info('Manual retention audit initiated by admin:', {
+				adminId: req.auth?.userId,
+				adminEmail: req.auth?.userEmail,
+				timestamp: new Date().toISOString()
+			});
+			adminRetentionController.runRetentionAudit(req, res, next);
+		}
+		: (req, res) => {
+			logger.warn('runRetentionAudit not implemented in adminRetentionController');
+			res.status(501).json({
+				success: false,
+				message: "Run retention audit method not implemented"
+			});
+		}
 );
 
 /**
  * @route GET /api/admin/retention/logs
- * @desc Get retention logs
+ * @desc Get retention logs with pagination and filtering
  * @access Private (Admin only)
  */
 router.get('/logs',
@@ -125,13 +179,52 @@ router.get('/logs',
 					logs: [],
 					pagination: {
 						total: 0,
-						page: 1,
-						limit: 20,
+						page: parseInt(req.query.page) || 1,
+						limit: parseInt(req.query.limit) || 20,
 						totalPages: 0
 					}
-				}
+				},
+				message: 'Retention logs feature not yet implemented'
 			});
 		}
 );
+
+/**
+ * @route GET /api/admin/retention/users/:userId/data
+ * @desc Get user's data retention information
+ * @access Private (Admin only)
+ */
+router.get('/users/:userId/data', (req, res) => {
+	// This could be implemented to show what data exists for a user
+	logger.info('User data inspection request:', {
+		userId: req.params.userId,
+		adminId: req.auth?.userId
+	});
+
+	res.status(501).json({
+		success: false,
+		message: 'User data inspection not yet implemented'
+	});
+});
+
+/**
+ * Error handling middleware for retention routes
+ */
+router.use((error, req, res, next) => {
+	logger.error('Error in admin retention routes:', {
+		error: error.message,
+		stack: error.stack,
+		path: req.path,
+		method: req.method,
+		userId: req.params?.userId,
+		adminId: req.auth?.userId
+	});
+
+	res.status(error.status || 500).json({
+		success: false,
+		message: error.message || 'An error occurred processing the retention request',
+		...(process.env.NODE_ENV === 'development' && { stack: error.stack })
+	});
+});
 
 module.exports = router;
