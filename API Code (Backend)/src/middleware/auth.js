@@ -1,6 +1,6 @@
 // src/middleware/auth.js - Improved with better security and session handling
 const authService = require('../services/auth');
-const { Client, User } = require('../models/User');
+const { Client, User } = require('../models');
 const logger = require('../utils/logger');
 
 /**

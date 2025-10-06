@@ -1,5 +1,5 @@
 // src/controllers/notification-preferences.controller.js
-const NotificationPreference = require('../models/NotificationPreference');
+const { NotificationPreference } = require('../models');
 const logger = require('../utils/logger');
 
 /**
@@ -151,7 +151,7 @@ class NotificationPreferencesController {
 			}
 
 			// Get user and client
-			const { User, Client } = require('../models/User');
+			const { User, Client } = require('../models');
 			const user = await User.findByPk(userId);
 
 			if (!user) {

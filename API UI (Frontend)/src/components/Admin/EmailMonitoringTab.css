@@ -1,0 +1,17 @@
+/* src/components/Admin/EmailMonitoringTab.css */
+
+.recharts-pie-label-text {
+	fill: #000000 !important;
+	font-size: 12px !important;
+	font-weight: bold !important;
+}
+
+/* LineChart and BarChart axis labels */
+.recharts-cartesian-axis-tick-value {
+	fill: #000000 !important;
+}
+
+/* Legend text */
+.recharts-legend-item-text {
+	color: #000000 !important;
+}

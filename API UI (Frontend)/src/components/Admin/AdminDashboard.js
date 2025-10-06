@@ -9,6 +9,7 @@ import InsightMetricsPanel from './InsightMetricsPanel';
 import UserInsightMetrics from './UserInsightMetrics';
 import AiInsightsTab from './AiInsightsTab';
 import DataRetentionTab from './DataRetentionTab';
+import EmailMonitoringTab from './EmailMonitoringTab';
 import logger from '../../utils/logger';
 import './AdminDashboard.css';
 
@@ -385,6 +386,11 @@ const AdminDashboard = () => {
     <AiInsightsTab />
   );
 
+  // New tab for Email Monitoring
+  const renderEmailMonitoring = () => (
+    <EmailMonitoringTab />
+  );
+
   return (
     <Container fluid className="py-4 px-md-4 admin-dashboard-container">
       <h1 className="mb-4 text-white">Admin Dashboard</h1>
@@ -409,6 +415,9 @@ const AdminDashboard = () => {
         </Tab>
         <Tab eventKey="ai-analytics" title="AI Insights Analytics">
           {renderAiAnalytics()}
+        </Tab>
+        <Tab eventKey="email-monitoring" title="Email Monitoring">
+          {renderEmailMonitoring()}
         </Tab>
         <Tab eventKey="data-retention" title="Data Retention">
           {renderDataRetention()}

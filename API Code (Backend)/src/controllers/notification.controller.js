@@ -2,7 +2,7 @@
 // Updated to use the unified notification service and NotificationPreference model
 
 const unifiedNotificationService = require('../services/notification.service.unified');
-const NotificationPreference = require('../models/NotificationPreference');
+const { NotificationPreference } = require('../models');
 const logger = require('../utils/logger');
 
 class NotificationController {
@@ -204,7 +204,7 @@ class NotificationController {
       }
 
       // Get user and client data
-      const { User, Client } = require('../models/User');
+      const { User, Client } = require('../models');
       const user = await User.findByPk(userId);
 
       if (!user) {

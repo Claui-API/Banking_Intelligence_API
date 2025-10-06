@@ -2,7 +2,7 @@
 require('dotenv').config();                 // <-- loads your .env
 const { sequelize } = require('../src/config/database');
 const { User, Client } = require('../src/models/User');
-const Token = require('../src/models/Token');
+const { Token } = require('../src/models/Token');
 const logger = require('../src/utils/logger');
 
 async function initDB() {

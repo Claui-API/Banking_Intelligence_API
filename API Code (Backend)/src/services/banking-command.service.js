@@ -11,9 +11,9 @@ global.Response = Response;
 
 const { GoogleGenAI } = require('@google/genai');
 const logger = require('../utils/logger');
-const Transaction = require('../models/Transaction');
-const Account = require('../models/Account');
-const BankUser = require('../models/BankUser');
+const { Transaction } = require('../models');
+const { Account } = require('../models');
+const { BankUser } = require('../models');
 const { Op } = require('sequelize');
 
 /**

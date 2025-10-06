@@ -1,13 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Container, Row, Col, Button, Card, Image } from 'react-bootstrap';
+import { Container, Row, Col, Button, Card, Image, Form } from 'react-bootstrap';
 import { motion, useAnimation, AnimatePresence } from 'framer-motion';
 import { useInView } from 'react-intersection-observer';
 import CountUp from 'react-countup';
-// Remove these imports:
-// import Particles from 'react-tsparticles';
-// import { loadFull } from 'tsparticles';
 import useDelayedAnimation, { getStaggeredDelay } from '../hooks/useDelayedAnimation';
 import './HomePage.css';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -85,16 +82,24 @@ const HomePage = () => {
   const [scrollY, setScrollY] = useState(0);
   const [videoFade, setVideoFade] = useState("hidden");
   const videoRef = useRef(null);
-  // Reduce loading time by showing content sooner
   const [videoLoaded, setVideoLoaded] = useState(false);
   const [contentVisible, setContentVisible] = useState(false);
-  // Add a timeout ref to clear it if component unmounts
   const timeoutRef = useRef(null);
 
-  // Use our custom hook to delay animations until page is loaded
+  // Contact form state
+  const [contactForm, setContactForm] = useState({
+    name: '',
+    email: '',
+    company: '',
+    message: ''
+  });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitStatus, setSubmitStatus] = useState('');
+  const [errorMessage, setErrorMessage] = useState('');
+
   const animationsActive = useDelayedAnimation({
-    initialDelay: 200, // Increased delay before starting animations
-    disableOnMobile: false // Set to true to disable animations on mobile
+    initialDelay: 200,
+    disableOnMobile: false
   });
 
   // References for animations
@@ -104,27 +109,98 @@ const HomePage = () => {
   const [videoSectionRef, videoSectionInView] = useInView({
     threshold: 0.1,
     triggerOnce: false,
-    rootMargin: "-100px 0px" // Slightly earlier detection
+    rootMargin: "-100px 0px"
   });
+  const [aiSectionRef, aiSectionInView] = useInView({ threshold: 0.2, triggerOnce: true });
+  const [commandSectionRef, commandSectionInView] = useInView({ threshold: 0.2, triggerOnce: true });
+  const [targetAudienceRef, targetAudienceInView] = useInView({ threshold: 0.2, triggerOnce: true });
+  const [resultsRef, resultsInView] = useInView({ threshold: 0.2, triggerOnce: true });
 
-  // REMOVED: particles initialization functions
+  // Handle contact form submission
+  const handleContactSubmit = async (e) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+    setSubmitStatus('');
+    setErrorMessage(''); // Clear previous error message
+
+    try {
+      // Get the API base URL from environment or use default
+      const API_URL = process.env.REACT_APP_API_URL || 'https://bankingintelligenceapi.com';
+
+      // Fixed URL - remove the duplicate /api/
+      const response = await fetch(`${API_URL}/contact`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          // Add any required authentication headers if needed
+          // 'Authorization': `Bearer ${apiKey}`, // If you need auth
+        },
+        body: JSON.stringify({
+          name: contactForm.name,
+          email: contactForm.email,
+          company: contactForm.company,
+          message: contactForm.message
+        }),
+      });
+
+      // Handle different response scenarios
+      if (response.ok) {
+        const responseData = await response.json();
+        setSubmitStatus('success');
+        setContactForm({ name: '', email: '', company: '', message: '' });
+        setErrorMessage('');
+      } else {
+        // Try to get error message from response
+        let responseData;
+        try {
+          responseData = await response.json();
+        } catch (jsonError) {
+          // If response isn't JSON, use status text
+          responseData = { error: response.statusText || 'Unknown error occurred' };
+        }
+
+        // Set specific error message based on status code
+        if (response.status === 401) {
+          setErrorMessage('Authentication required. Please check your API configuration.');
+        } else if (response.status === 404) {
+          setErrorMessage('Contact endpoint not found. Please check the API URL.');
+        } else if (response.status === 500) {
+          setErrorMessage('Server error. Please try again later.');
+        } else {
+          setErrorMessage(responseData.error || `Error: ${response.status} ${response.statusText}`);
+        }
+
+        setSubmitStatus('error');
+      }
+    } catch (error) {
+      console.error('Error sending contact form:', error);
+
+      // Set user-friendly error message based on error type
+      if (error.name === 'TypeError' && error.message.includes('fetch')) {
+        setErrorMessage('Unable to connect to server. Please check your internet connection.');
+      } else if (error.name === 'AbortError') {
+        setErrorMessage('Request timed out. Please try again.');
+      } else {
+        setErrorMessage('An unexpected error occurred. Please try again or contact us directly.');
+      }
+
+      setSubmitStatus('error');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   useEffect(() => {
     const handleResize = () => {
-      // Check if we're in the problematic range
       const width = window.innerWidth;
       if (width >= 350 && width <= 470) {
-        // Add a class to the body for targeted styling
         document.body.classList.add('narrow-screen-fix');
       } else {
         document.body.classList.remove('narrow-screen-fix');
       }
     };
 
-    // Initial check
     handleResize();
-
-    // Add event listeners
     window.addEventListener('resize', handleResize);
     window.addEventListener('orientationchange', handleResize);
 
@@ -136,24 +212,7 @@ const HomePage = () => {
   }, []);
 
   useEffect(() => {
-    const handleResize = () => {
-      // Force re-render on orientation change for better mobile layout
-      setScrollY(window.scrollY);
-    };
-
-    window.addEventListener('resize', handleResize);
-    window.addEventListener('orientationchange', handleResize);
-
-    return () => {
-      window.removeEventListener('resize', handleResize);
-      window.removeEventListener('orientationchange', handleResize);
-    };
-  }, []);
-
-  // Force content to show after a max timeout (to avoid infinite loading)
-  useEffect(() => {
     if (animationsActive) {
-      // Set a maximum time to wait for video (3 seconds)
       timeoutRef.current = setTimeout(() => {
         if (!contentVisible) {
           setVideoLoaded(true);
@@ -169,27 +228,18 @@ const HomePage = () => {
     };
   }, [animationsActive, contentVisible]);
 
-  // Video fade in/out effect when the video plays
   useEffect(() => {
     if (videoRef.current && animationsActive) {
-      // Add event listeners for video fade effects
       const videoElement = videoRef.current;
 
-      // Add event listener for the loadeddata event to know when video is ready
       const handleVideoLoaded = () => {
         setVideoLoaded(true);
-        // Show content immediately
         setContentVisible(true);
-
-        // Ensure proper looping
         videoElement.loop = true;
       };
 
-      // Check if metadata is loaded
       const handleMetadataLoaded = () => {
-        // If video metadata loads quickly, we can start showing things
         if (videoElement.readyState >= 1) {
-          // Set a shorter timeout to show content even if full data isn't loaded yet
           setTimeout(() => {
             setVideoLoaded(true);
             setContentVisible(true);
@@ -197,28 +247,22 @@ const HomePage = () => {
         }
       };
 
-      // Listen for video loaded events - try to detect loading as early as possible
-      videoElement.addEventListener('loadedmetadata', handleMetadataLoaded);
-      videoElement.addEventListener('loadeddata', handleVideoLoaded);
-
-      // Handle video play event for fade in
       const handlePlay = () => {
         videoElement.classList.remove('video-fade-out');
         videoElement.classList.add('video-fade-in');
       };
 
-      // Handle looping behavior explicitly
       const handleEnded = () => {
-        // Explicitly restart the video if it ends
         videoElement.currentTime = 0;
         videoElement.play().catch(e => console.log('Video autoplay prevented by browser'));
       };
 
+      videoElement.addEventListener('loadedmetadata', handleMetadataLoaded);
+      videoElement.addEventListener('loadeddata', handleVideoLoaded);
       videoElement.addEventListener('play', handlePlay);
       videoElement.addEventListener('ended', handleEnded);
 
       return () => {
-        // Clean up event listeners
         videoElement.removeEventListener('loadedmetadata', handleMetadataLoaded);
         videoElement.removeEventListener('loadeddata', handleVideoLoaded);
         videoElement.removeEventListener('play', handlePlay);
@@ -227,46 +271,32 @@ const HomePage = () => {
     }
   }, [videoRef, animationsActive]);
 
-  // Trigger animations when sections come into view
   useEffect(() => {
     if (featuresInView && animationsActive) {
       controls.start('visible');
     }
   }, [controls, featuresInView, animationsActive]);
 
-  // Video fade in/out effect
   useEffect(() => {
     if (videoSectionInView) {
-      // Fade in when in view
       setVideoFade("visible");
     } else {
-      // Fade out when out of view
       setVideoFade("hidden");
     }
   }, [videoSectionInView]);
 
-  // Preload video when animations are active and modify loading sequence
   useEffect(() => {
     if (animationsActive && videoRef.current) {
-      // Set preload attribute to auto to prioritize video loading
       videoRef.current.preload = "auto";
-
-      // Set lower quality for faster loading
       videoRef.current.playsInline = true;
       videoRef.current.muted = true;
-      videoRef.current.loop = true; // Explicitly set loop to true
-
-      // Load the video
+      videoRef.current.loop = true;
       videoRef.current.load();
-
-      // Try to play as soon as possible
       videoRef.current.play().catch(e => {
         console.log('Video autoplay prevented by browser, will try again when user interacts');
       });
 
-      // If video has already loaded the metadata, check if it's fully loaded
       if (videoRef.current.readyState >= 1) {
-        // Show content faster
         setTimeout(() => {
           setVideoLoaded(true);
           setContentVisible(true);
@@ -277,7 +307,7 @@ const HomePage = () => {
 
   return (
     <div className="home-page-container">
-      {/* Full-width background video section - Now wraps the entire content */}
+      {/* Hero Section with Video */}
       <div
         ref={videoSectionRef}
         style={{
@@ -287,7 +317,6 @@ const HomePage = () => {
           marginBottom: '2rem'
         }}
       >
-        {/* Background Video - Full width */}
         <motion.div
           style={{
             position: 'absolute',
@@ -319,7 +348,6 @@ const HomePage = () => {
           </video>
         </motion.div>
 
-        {/* Loading overlay - shows until video is loaded */}
         <motion.div
           style={{
             position: 'absolute',
@@ -335,7 +363,6 @@ const HomePage = () => {
           transition={{ duration: 0.5, ease: "easeOut" }}
         />
 
-        {/* Header section with motion - now inside the video section */}
         <AnimatePresence>
           {animationsActive && contentVisible && (
             <motion.div
@@ -349,7 +376,7 @@ const HomePage = () => {
                 <motion.h1
                   className="text-white mb-0 mobile-responsive-title"
                   style={{
-                    fontSize: '3.5rem', // This will be overridden by media queries in CSS
+                    fontSize: '3.5rem',
                     fontWeight: '900',
                     letterSpacing: '-0.03em',
                     fontFamily: "'Inter Display', 'Inter', sans-serif",
@@ -376,7 +403,6 @@ const HomePage = () => {
           )}
         </AnimatePresence>
 
-        {/* Content overlay with YouTube video */}
         <Container className="py-5 text-center" style={{ position: 'relative', zIndex: 1 }}>
           <AnimatePresence>
             {animationsActive && contentVisible && (
@@ -384,7 +410,7 @@ const HomePage = () => {
                 className="mb-4"
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
-                transition={{ duration: 0.6, delay: 0.3 }} // Reduced delay
+                transition={{ duration: 0.6, delay: 0.3 }}
               >
                 <motion.div
                   className="mx-auto mb-5 mobile-video-container"
@@ -405,7 +431,6 @@ const HomePage = () => {
                     padding: '15px',
                     borderRadius: '2px'
                   }}>
-                    {/* YouTube video embed with responsive container */}
                     <div className="narrow-screen-container">
                       <div className="ratio ratio-16x9 mobile-responsive-video">
                         <iframe
@@ -425,16 +450,16 @@ const HomePage = () => {
                   style={{ maxWidth: '700px', fontSize: '1.5rem', textShadow: '0 2px 10px rgba(0, 0, 0, 0.5)' }}
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
-                  transition={{ duration: 0.6, delay: 0.5 }} // Reduced delay
+                  transition={{ duration: 0.6, delay: 0.5 }}
                 >
-                  Add AI-powered financial insights to your banking application with the CLAU Banking Intelligence API
+                  The easiest way to modernize your bank with AI-powered financial insights
                 </motion.p>
 
                 <motion.div
                   className="d-flex justify-content-center gap-3 mt-4 mobile-button-container"
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.5, delay: 0.7 }} // Reduced delay
+                  transition={{ duration: 0.5, delay: 0.7 }}
                 >
                   {isAuthenticated ? (
                     <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} className="w-100 mobile-btn-wrapper">
@@ -461,15 +486,15 @@ const HomePage = () => {
             )}
           </AnimatePresence>
         </Container>
-      </div> {/* End of full-width background video section */}
+      </div>
 
-      {/* Stats Counter Section - only display counters after animations are active and content is visible */}
+      {/* Stats Counter Section */}
       <Container className="py-4">
         <motion.div
           className="text-center stats-container"
           initial={{ opacity: 0 }}
           animate={animationsActive && contentVisible ? { opacity: 1 } : { opacity: 0 }}
-          transition={{ duration: 0.8, delay: 0.9 }} // Reduced delay
+          transition={{ duration: 0.8, delay: 0.9 }}
         >
           <Row className="mobile-stats-row">
             <Col md={4} sm={6} className="mobile-stat-col">
@@ -509,90 +534,98 @@ const HomePage = () => {
         </motion.div>
       </Container>
 
-      {/* Features section */}
-      <Container className="py-4">
+      {/* Banking Intelligence AI Section */}
+      <Container className="py-5">
         <motion.div
-          ref={featuresRef}
+          ref={aiSectionRef}
           initial="hidden"
-          animate={featuresInView && animationsActive ? "visible" : "hidden"}
+          animate={aiSectionInView && animationsActive ? "visible" : "hidden"}
           variants={staggerContainer}
-          className="features-container"
+          className="ai-section"
         >
-          <Row className="g-4 mobile-features-row">
-            <Col md={4} sm={12} className="mobile-feature-col">
-              <motion.div variants={scaleIn}>
-                <Card className="h-100 text-white border-secondary feature-card mobile-feature-card">
-                  <Card.Body>
-                    <div className="text-success mb-3 feature-icon">
-                      <i className="bi bi-graph-up-arrow" style={{ fontSize: '2rem' }}></i>
-                    </div>
-                    <Card.Title>Contextualized Insights</Card.Title>
-                    <Card.Text>
-                      Transform raw financial data into personalized insights that help your users make better financial decisions.
-                    </Card.Text>
-                  </Card.Body>
-                </Card>
-              </motion.div>
-            </Col>
+          <motion.div
+            className="text-center mb-5"
+            variants={fadeIn}
+          >
+            <h2 className="text-success mb-4">Banking Intelligence AI</h2>
+            <p className="text-white mx-auto" style={{ maxWidth: '800px' }}>
+              Banking Intelligence is an API service that provides any financial institution with
+              access to personalized AI chatbots trained with real financial data. No more generic
+              chatbots or time-wasting processes.
+            </p>
+          </motion.div>
 
-            <Col md={4} sm={12} className="mobile-feature-col">
-              <motion.div variants={scaleIn}>
-                <Card className="h-100 text-white border-secondary feature-card mobile-feature-card">
-                  <Card.Body>
-                    <div className="text-success mb-3 feature-icon">
-                      <i className="bi bi-robot" style={{ fontSize: '2rem' }}></i>
-                    </div>
-                    <Card.Title>AI-Powered Analysis</Card.Title>
-                    <Card.Text>
-                      CLAU's advanced AI analyzes spending patterns, identifies savings opportunities, and provides smart recommendations.
-                    </Card.Text>
-                  </Card.Body>
-                </Card>
-              </motion.div>
-            </Col>
+          <motion.div variants={fadeIn}>
+            <Row className="g-4 mobile-features-row">
+              <Col md={4} sm={12} className="mobile-feature-col">
+                <motion.div variants={scaleIn}>
+                  <Card className="h-100 text-white border-secondary feature-card mobile-feature-card">
+                    <Card.Body>
+                      <div className="text-success mb-3 feature-icon">
+                        <i className="bi bi-shield-check" style={{ fontSize: '2rem' }}></i>
+                      </div>
+                      <Card.Title>Trained on Real Financial Data</Card.Title>
+                      <Card.Text>
+                        Our AI is trained specifically on financial data patterns, providing accurate
+                        and relevant insights for banking and financial services.
+                      </Card.Text>
+                    </Card.Body>
+                  </Card>
+                </motion.div>
+              </Col>
 
-            <Col md={4} sm={12} className="mobile-feature-col">
-              <motion.div variants={scaleIn}>
-                <Card className="h-100 text-white border-secondary feature-card mobile-feature-card">
-                  <Card.Body>
-                    <div className="text-success mb-3 feature-icon">
-                      <i className="bi bi-code-square" style={{ fontSize: '2rem' }}></i>
-                    </div>
-                    <Card.Title>Simple Integration</Card.Title>
-                    <Card.Text>
-                      Easy-to-use REST API with comprehensive documentation. Integrate with your app in minutes, not days.
-                    </Card.Text>
-                  </Card.Body>
-                </Card>
-              </motion.div>
-            </Col>
-          </Row>
+              <Col md={4} sm={12} className="mobile-feature-col">
+                <motion.div variants={scaleIn}>
+                  <Card className="h-100 text-white border-secondary feature-card mobile-feature-card">
+                    <Card.Body>
+                      <div className="text-success mb-3 feature-icon">
+                        <i className="bi bi-chat-dots-fill" style={{ fontSize: '2rem' }}></i>
+                      </div>
+                      <Card.Title>Personal Financial Assistant</Card.Title>
+                      <Card.Text>
+                        Users get a personal assistant who understands their finances, income, and
+                        expenses, answering questions with personalized insights.
+                      </Card.Text>
+                    </Card.Body>
+                  </Card>
+                </motion.div>
+              </Col>
+
+              <Col md={4} sm={12} className="mobile-feature-col">
+                <motion.div variants={scaleIn}>
+                  <Card className="h-100 text-white border-secondary feature-card mobile-feature-card">
+                    <Card.Body>
+                      <div className="text-success mb-3 feature-icon">
+                        <i className="bi bi-lightning-charge" style={{ fontSize: '2rem' }}></i>
+                      </div>
+                      <Card.Title>Instant Integration</Card.Title>
+                      <Card.Text>
+                        Easy API integration with comprehensive documentation. Get up and running
+                        in under 2 weeks with our simple REST endpoints.
+                      </Card.Text>
+                    </Card.Body>
+                  </Card>
+                </motion.div>
+              </Col>
+            </Row>
+          </motion.div>
         </motion.div>
       </Container>
 
       {/* Banking Intelligence Command Section */}
-      <Container className="py-4">
+      <Container className="py-5">
         <motion.div
-          ref={useRef(null)}
+          ref={commandSectionRef}
           initial="hidden"
-          animate={animationsActive && contentVisible ? "visible" : "hidden"}
-          variants={{
-            hidden: { opacity: 0 },
-            visible: {
-              opacity: 1,
-              transition: {
-                delayChildren: 0.3,
-                staggerChildren: 0.2
-              }
-            }
-          }}
+          animate={commandSectionInView && animationsActive ? "visible" : "hidden"}
+          variants={staggerContainer}
           className="banking-command-section"
           style={{
             position: 'relative',
             overflow: 'hidden',
             background: 'linear-gradient(180deg, rgba(0,0,0,0.8) 0%, rgba(15,26,15,0.9) 100%)',
             borderRadius: '8px',
-            padding: '30px 0',
+            padding: '50px 0',
             marginTop: '20px',
             marginBottom: '40px'
           }}
@@ -661,14 +694,7 @@ const HomePage = () => {
           {/* Header Section */}
           <motion.div
             className="text-center mb-5"
-            variants={{
-              hidden: { y: 20, opacity: 0 },
-              visible: {
-                y: 0,
-                opacity: 1,
-                transition: { duration: 0.5, ease: "easeOut" }
-              }
-            }}
+            variants={fadeIn}
             style={{ position: 'relative', zIndex: 1 }}
           >
             <motion.h2
@@ -691,16 +717,12 @@ const HomePage = () => {
             <motion.p
               className="text-white mx-auto"
               style={{ maxWidth: '800px' }}
-              variants={{
-                hidden: { y: 20, opacity: 0 },
-                visible: {
-                  y: 0,
-                  opacity: 1,
-                  transition: { duration: 0.5, ease: "easeOut" }
-                }
-              }}
+              variants={fadeIn}
             >
-              Banking Intelligence provides its users with a holistic picture of their financial institution. Key insights designed for you to capitalize on more opportunities. The Banking Intelligence Command is the data service of our platform, designed to capture, order and interpret analytics from each user into personalized reporting that will help in anything from profiling to risk management.
+              Banking Intelligence Command provides your institution with a holistic picture
+              of your financial operations. This data service captures, processes, and interprets
+              analytics from each user into personalized reporting for everything from customer
+              profiling to advanced risk management.
             </motion.p>
           </motion.div>
 
@@ -710,22 +732,22 @@ const HomePage = () => {
               {
                 icon: "bi-database-fill",
                 title: "Capture",
-                description: "Capture every single transaction with all data"
+                description: "Capture every single transaction with all relevant data points and metadata for comprehensive analysis."
               },
               {
                 icon: "bi-cpu-fill",
                 title: "Process",
-                description: "Run all that data through logic, mathematic and AI models"
+                description: "Run collected data through advanced logic, mathematical models, and AI algorithms for deep insights."
               },
               {
                 icon: "bi-bar-chart-fill",
                 title: "Analyze",
-                description: "Receive spending patterns, income elasticities, categories preferences and others"
+                description: "Generate spending patterns, income elasticities, category preferences, and behavioral insights."
               },
               {
                 icon: "bi-gear-fill",
                 title: "Action",
-                description: "Design risk protocols, campaigns, time marketing, introduction of products + much more"
+                description: "Design risk protocols, targeted campaigns, marketing timing, product introductions, and much more."
               }
             ].map((card, index) => (
               <Col md={3} sm={6} xs={12} key={index} className="mb-4 mobile-command-col">
@@ -772,46 +794,6 @@ const HomePage = () => {
                       <Card.Text>
                         {card.description}
                       </Card.Text>
-
-                      {/* Data flow animation on hover */}
-                      <motion.div
-                        className="data-flow-animation"
-                        initial={{ opacity: 0 }}
-                        whileHover={{ opacity: 1 }}
-                        style={{
-                          position: 'absolute',
-                          bottom: 0,
-                          left: 0,
-                          right: 0,
-                          height: '30px',
-                          overflow: 'hidden'
-                        }}
-                      >
-                        {[...Array(5)].map((_, i) => (
-                          <motion.div
-                            key={i}
-                            initial={{ x: -20, opacity: 0.3 }}
-                            animate={{
-                              x: 120,
-                              opacity: [0.3, 0.8, 0.3]
-                            }}
-                            transition={{
-                              duration: 2 + Math.random(),
-                              repeat: Infinity,
-                              delay: Math.random() * 2
-                            }}
-                            style={{
-                              position: 'absolute',
-                              width: 3 + Math.random() * 3,
-                              height: 3 + Math.random() * 3,
-                              backgroundColor: '#28a745',
-                              borderRadius: '50%',
-                              top: Math.random() * 30,
-                              left: 0
-                            }}
-                          />
-                        ))}
-                      </motion.div>
                     </Card.Body>
                   </Card>
                 </motion.div>
@@ -935,6 +917,190 @@ const HomePage = () => {
                 </div>
               </Col>
             </Row>
+
+          </motion.div>
+        </motion.div>
+      </Container>
+
+      {/* Target Audience Section */}
+      <Container className="py-5">
+        <motion.div
+          ref={targetAudienceRef}
+          initial="hidden"
+          animate={targetAudienceInView && animationsActive ? "visible" : "hidden"}
+          variants={staggerContainer}
+          className="target-audience-section"
+        >
+          <motion.div
+            className="text-center mb-5"
+            variants={fadeIn}
+          >
+            <h2 className="text-success mb-4">You Need Banking Intelligence If You Are...</h2>
+            <p className="text-white mx-auto" style={{ maxWidth: '800px' }}>
+              Banking Intelligence is designed for any organization that manages money and wants to
+              provide better financial experiences to their customers.
+            </p>
+          </motion.div>
+
+          <motion.div variants={fadeIn}>
+            <Row className="g-4 mobile-features-row">
+              {[
+                {
+                  icon: "bi-bank",
+                  title: "Traditional Banks",
+                  description: "Modernize your banking services with AI-powered insights and personalized customer experiences."
+                },
+                {
+                  icon: "bi-phone",
+                  title: "Neobanks & Fintechs",
+                  description: "Differentiate your digital banking platform with advanced AI capabilities and smart financial guidance."
+                },
+                {
+                  icon: "bi-shield-check",
+                  title: "Insurance Companies",
+                  description: "Leverage financial data insights for better risk assessment and personalized insurance products."
+                },
+                {
+                  icon: "bi-building",
+                  title: "Credit Unions",
+                  description: "Enhance member services with personalized financial advice and improved engagement tools."
+                },
+                {
+                  icon: "bi-graph-up",
+                  title: "Investment Platforms",
+                  description: "Provide smarter investment recommendations based on comprehensive financial analysis."
+                },
+                {
+                  icon: "bi-wallet2",
+                  title: "Financial Service Providers",
+                  description: "Any business handling money transactions can benefit from our intelligent financial insights."
+                }
+              ].map((item, index) => (
+                <Col md={4} sm={12} key={index} className="mobile-feature-col">
+                  <motion.div variants={scaleIn}>
+                    <Card className="h-100 text-white border-secondary feature-card mobile-feature-card">
+                      <Card.Body>
+                        <div className="text-success mb-3 feature-icon">
+                          <i className={`bi ${item.icon}`} style={{ fontSize: '2rem' }}></i>
+                        </div>
+                        <Card.Title>{item.title}</Card.Title>
+                        <Card.Text>
+                          {item.description}
+                        </Card.Text>
+                      </Card.Body>
+                    </Card>
+                  </motion.div>
+                </Col>
+              ))}
+            </Row>
+          </motion.div>
+        </motion.div>
+      </Container>
+
+      {/* Expected Results Section */}
+      <Container className="py-5">
+        <motion.div
+          ref={resultsRef}
+          initial="hidden"
+          animate={resultsInView && animationsActive ? "visible" : "hidden"}
+          variants={staggerContainer}
+          className="results-section"
+        >
+          <motion.div
+            className="text-center mb-5"
+            variants={fadeIn}
+          >
+            <h2 className="text-success mb-4">Your Expected Results</h2>
+            <p className="text-white mx-auto" style={{ maxWidth: '800px' }}>
+              Based on our testing and implementation with financial institutions,
+              here's what you can expect from Banking Intelligence:
+            </p>
+          </motion.div>
+
+          <motion.div variants={fadeIn}>
+            <Row className="g-4 mobile-stats-row mb-5">
+              <Col md={3} sm={6} className="mobile-stat-col">
+                <div className="stat-card">
+                  <div className="stat-icon text-success">
+                    <i className="bi bi-clock-history"></i>
+                  </div>
+                  <h2 className="text-white mobile-stat-number">
+                    {animationsActive && <CountUp end={300} suffix="%" duration={2.5} delay={0.2} />}
+                  </h2>
+                  <p className="text-light mobile-stat-label">Increase in Interaction Time</p>
+                </div>
+              </Col>
+              <Col md={3} sm={6} className="mobile-stat-col">
+                <div className="stat-card">
+                  <div className="stat-icon text-success">
+                    <i className="bi bi-piggy-bank"></i>
+                  </div>
+                  <h2 className="text-white mobile-stat-number">
+                    {animationsActive && <CountUp end={78} suffix="%" duration={2.5} delay={0.3} />}
+                  </h2>
+                  <p className="text-light mobile-stat-label">Users Show Savings Effect</p>
+                </div>
+              </Col>
+              <Col md={3} sm={6} className="mobile-stat-col">
+                <div className="stat-card">
+                  <div className="stat-icon text-success">
+                    <i className="bi bi-graph-up"></i>
+                  </div>
+                  <h2 className="text-white mobile-stat-number">
+                    {animationsActive && <CountUp end={5} suffix="%" duration={2.5} delay={0.4} />}
+                  </h2>
+                  <p className="text-light mobile-stat-label">Est. Savings for Institution</p>
+                </div>
+              </Col>
+              <Col md={3} sm={6} className="mobile-stat-col">
+                <div className="stat-card">
+                  <div className="stat-icon text-success">
+                    <i className="bi bi-calendar-week"></i>
+                  </div>
+                  <h2 className="text-white mobile-stat-number">
+                    {animationsActive && <CountUp end={2} duration={2.5} delay={0.5} />}
+                  </h2>
+                  <p className="text-light mobile-stat-label">Weeks to Integration</p>
+                </div>
+              </Col>
+            </Row>
+
+            {/* Additional metrics from PDF */}
+            <Row className="g-4 mobile-stats-row">
+              <Col md={4} sm={6} className="mobile-stat-col">
+                <div className="stat-card">
+                  <div className="stat-icon text-success">
+                    <i className="bi bi-translate"></i>
+                  </div>
+                  <h2 className="text-white mobile-stat-number">
+                    {animationsActive && <CountUp end={24} duration={2.5} delay={0.6} />}
+                  </h2>
+                  <p className="text-light mobile-stat-label">Languages Supported</p>
+                </div>
+              </Col>
+              <Col md={4} sm={6} className="mobile-stat-col">
+                <div className="stat-card">
+                  <div className="stat-icon text-success">
+                    <i className="bi bi-shield-check"></i>
+                  </div>
+                  <h2 className="text-white mobile-stat-number">
+                    {animationsActive && <CountUp end={100} suffix="%" duration={2.5} delay={0.7} />}
+                  </h2>
+                  <p className="text-light mobile-stat-label">Security Attack Defense</p>
+                </div>
+              </Col>
+              <Col md={4} sm={12} className="mobile-stat-col">
+                <div className="stat-card">
+                  <div className="stat-icon text-success">
+                    <i className="bi bi-currency-dollar"></i>
+                  </div>
+                  <h2 className="text-white mobile-stat-number">
+                    $0.25
+                  </h2>
+                  <p className="text-light mobile-stat-label">Per Customer Per Month</p>
+                </div>
+              </Col>
+            </Row>
           </motion.div>
         </motion.div>
       </Container>
@@ -1032,43 +1198,193 @@ const HomePage = () => {
         </Container>
       </motion.div>
 
-      {/* Call to action */}
+      {/* Contact and Next Steps Section */}
+      {/* Contact and Next Steps Section */}
       <motion.div
         ref={ctaRef}
         initial={{ opacity: 0, y: 50 }}
         animate={ctaInView && animationsActive && contentVisible ? { opacity: 1, y: 0 } : { opacity: 0, y: 50 }}
         transition={{ duration: 0.8 }}
         className="py-5 cta-section mobile-cta-section"
+        style={{
+          background: 'linear-gradient(180deg, #000000 0%, #0f1a0f 100%)',
+          borderRadius: '8px',
+          margin: '2rem 0'
+        }}
       >
-        <Container className="text-center">
-          <motion.h2
-            className="text-success mb-4 mobile-cta-title"
-            animate={ctaInView && animationsActive ?
-              { scale: [1, 1.05, 1], textShadow: "0 0 8px rgba(40, 167, 69, 0.5)" } : {}
-            }
-            transition={{ duration: 1.5, repeat: Infinity, repeatType: "reverse" }}
-          >
-            Ready to enhance your banking app?
-          </motion.h2>
-          <motion.p
-            className="text-light mb-4 mobile-cta-text"
-            animate={ctaInView && animationsActive ? { opacity: [0.7, 1, 0.7] } : {}}
-            transition={{ duration: 2, repeat: Infinity }}
-          >
-            Join fintech companies already using our API to provide personalized financial guidance
-          </motion.p>
-          <motion.div
-            className="d-inline-block p-2 rounded mobile-cta-button-wrapper"
-            whileHover={{ scale: 1.05, boxShadow: "0 0 15px rgba(40, 167, 69, 0.5)" }}
-            whileTap={{ scale: 0.95 }}
-          >
-            <Link to={isAuthenticated ? "/dashboard" : "/register"} className="btn btn-success btn-lg mobile-cta-button">
-              {isAuthenticated ? "Go to Dashboard" : "Get Started Today"}
-            </Link>
-          </motion.div>
+        <Container>
+          <Row className="justify-content-center">
+            <Col md={8}>
+              <div className="text-center mb-5">
+                <motion.h2
+                  className="text-success mb-4 mobile-cta-title"
+                  animate={ctaInView && animationsActive ?
+                    { scale: [1, 1.05, 1], textShadow: "0 0 8px rgba(40, 167, 69, 0.5)" } : {}
+                  }
+                  transition={{ duration: 1.5, repeat: Infinity, repeatType: "reverse" }}
+                >
+                  Ready to Move Forward?
+                </motion.h2>
+                <motion.p
+                  className="text-light mb-4 mobile-cta-text"
+                  animate={ctaInView && animationsActive ? { opacity: [0.7, 1, 0.7] } : {}}
+                  transition={{ duration: 2, repeat: Infinity }}
+                >
+                  Contact us directly or fill out the form below. A member of our team will be with you shortly!
+                  Alternatively, you can schedule a beta test by registering (all members need approval and
+                  prior communication).
+                </motion.p>
+              </div>
+
+              {/* Contact Options */}
+              <Row className="mb-5">
+                <Col md={6} className="mb-3">
+                  <motion.div
+                    className="text-center p-4 border border-success rounded"
+                    whileHover={{ scale: 1.02, backgroundColor: "rgba(40, 167, 69, 0.1)" }}
+                    transition={{ duration: 0.3 }}
+                  >
+                    <i className="bi bi-envelope-fill text-success mb-3" style={{ fontSize: '2rem' }}></i>
+                    <h5 className="text-white">Direct Contact</h5>
+                    <a href="mailto:business@vivytech.com" className="text-success">
+                      business@vivytech.com
+                    </a>
+                    <p className="text-light mt-2 small">
+                      For immediate business inquiries
+                    </p>
+                  </motion.div>
+                </Col>
+                <Col md={6} className="mb-3">
+                  <motion.div
+                    className="text-center p-4 border border-success rounded"
+                    whileHover={{ scale: 1.02, backgroundColor: "rgba(40, 167, 69, 0.1)" }}
+                    transition={{ duration: 0.3 }}
+                  >
+                    <i className="bi bi-calendar-check-fill text-success mb-3" style={{ fontSize: '2rem' }}></i>
+                    <h5 className="text-white">Beta Testing</h5>
+                    <Link to="/register" className="text-success">
+                      Register for Beta Access
+                    </Link>
+                    <p className="text-light mt-2 small">
+                      Requires approval and prior communication
+                    </p>
+                  </motion.div>
+                </Col>
+              </Row>
+
+              {/* Contact Form */}
+              <motion.div
+                className="contact-form-container p-4"
+                style={{
+                  background: 'rgba(0,0,0,0.3)',
+                  borderRadius: '8px',
+                  border: '1px solid rgba(40, 167, 69, 0.3)'
+                }}
+                whileHover={{ borderColor: "rgba(40, 167, 69, 0.6)" }}
+                transition={{ duration: 0.3 }}
+              >
+                <h4 className="text-success text-center mb-4">Contact Our Team</h4>
+
+                {submitStatus === 'success' && (
+                  <motion.div
+                    className="alert alert-success"
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                  >
+                    Thank you! We'll be in touch shortly.
+                  </motion.div>
+                )}
+
+                {submitStatus === 'error' && (
+                  <motion.div
+                    className="alert alert-danger"
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                  >
+                    {errorMessage || 'There was an error sending your message. Please try again or email us directly.'}
+                  </motion.div>
+                )}
+
+                <Form onSubmit={handleContactSubmit}>
+                  <Row>
+                    <Col md={6}>
+                      <Form.Group className="mb-3">
+                        <Form.Label className="text-white">Name *</Form.Label>
+                        <Form.Control
+                          type="text"
+                          required
+                          value={contactForm.name}
+                          onChange={(e) => setContactForm({ ...contactForm, name: e.target.value })}
+                          className="bg-black text-white border-secondary"
+                          style={{ borderColor: '#6c757d' }}
+                        />
+                      </Form.Group>
+                    </Col>
+                    <Col md={6}>
+                      <Form.Group className="mb-3">
+                        <Form.Label className="text-white">Email *</Form.Label>
+                        <Form.Control
+                          type="email"
+                          required
+                          value={contactForm.email}
+                          onChange={(e) => setContactForm({ ...contactForm, email: e.target.value })}
+                          className="bg-black text-white border-secondary"
+                          style={{ borderColor: '#6c757d' }}
+                        />
+                      </Form.Group>
+                    </Col>
+                  </Row>
+
+                  <Form.Group className="mb-3">
+                    <Form.Label className="text-white">Company</Form.Label>
+                    <Form.Control
+                      type="text"
+                      value={contactForm.company}
+                      onChange={(e) => setContactForm({ ...contactForm, company: e.target.value })}
+                      className="bg-black text-white border-secondary"
+                      style={{ borderColor: '#6c757d' }}
+                    />
+                  </Form.Group>
+
+                  <Form.Group className="mb-4">
+                    <Form.Label className="text-white">Message *</Form.Label>
+                    <Form.Control
+                      as="textarea"
+                      rows={4}
+                      required
+                      value={contactForm.message}
+                      onChange={(e) => setContactForm({ ...contactForm, message: e.target.value })}
+                      className="bg-black text-white border-secondary"
+                      style={{ borderColor: '#6c757d' }}
+                      placeholder="Tell us about your institution and how you'd like to use Banking Intelligence..."
+                    />
+                  </Form.Group>
+
+                  <div className="text-center">
+                    <motion.button
+                      type="submit"
+                      className="btn btn-success btn-lg px-5"
+                      disabled={isSubmitting}
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                    >
+                      {isSubmitting ? (
+                        <>
+                          <span className="spinner-border spinner-border-sm me-2" />
+                          Sending...
+                        </>
+                      ) : (
+                        'Send Message'
+                      )}
+                    </motion.button>
+                  </div>
+                </Form>
+              </motion.div>
+            </Col>
+          </Row>
         </Container>
       </motion.div>
-    </div>
+    </div >
   );
 };
 

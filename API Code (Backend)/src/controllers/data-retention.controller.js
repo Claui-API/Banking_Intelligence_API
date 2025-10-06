@@ -2,7 +2,7 @@
 const { Op } = require('sequelize'); // Import Op explicitly
 const dataRetentionService = require('../services/data-retention.service');
 const logger = require('../utils/logger');
-const { User } = require('../models/User');
+const { User } = require('../models');
 const { sequelize } = require('../config/database');
 
 /**
@@ -324,6 +324,435 @@ class DataRetentionController {
 				message: 'Failed to retrieve retention logs',
 				error: error.message
 			});
+		}
+	}
+
+	/**
+	 * Request account closure (initiate account deletion process)
+	 * @param {Object} req - Express request object
+	 * @param {Object} res - Express response object
+	 */
+	async requestAccountClosure(req, res) {
+		try {
+			const { userId } = req.auth;
+
+			if (!userId) {
+				return res.status(401).json({
+					success: false,
+					message: 'Authentication required'
+				});
+			}
+
+			// Get confirmation from request body
+			const { confirmation, reason } = req.body;
+
+			if (!confirmation || confirmation !== 'DELETE_MY_ACCOUNT') {
+				return res.status(400).json({
+					success: false,
+					message: 'Please type "DELETE_MY_ACCOUNT" to confirm account closure'
+				});
+			}
+
+			// Fetch user
+			const user = await User.findByPk(userId);
+			if (!user) {
+				return res.status(404).json({
+					success: false,
+					message: 'User not found'
+				});
+			}
+
+			// Check if account is already marked for deletion
+			if (user.markedForDeletionAt) {
+				return res.status(400).json({
+					success: false,
+					message: 'Account is already marked for deletion',
+					data: {
+						markedForDeletionAt: user.markedForDeletionAt,
+						scheduledDeletionDate: new Date(user.markedForDeletionAt.getTime() + (30 * 24 * 60 * 60 * 1000))
+					}
+				});
+			}
+
+			// Use the data retention service
+			const result = await dataRetentionService.handleAccountClosure(userId, reason);
+
+			// Mark user as inactive
+			user.status = 'marked_for_deletion';
+			user.markedForDeletionAt = new Date();
+			await user.save();
+
+			logger.info(`Account closure requested for user ${userId}`, {
+				reason,
+				scheduledDeletionDate: result.scheduledDeletionDate
+			});
+
+			return res.status(200).json({
+				success: true,
+				message: 'Account closure has been initiated. You have 30 days to cancel this request.',
+				data: {
+					scheduledDeletionDate: result.scheduledDeletionDate,
+					gracePeriodDays: 30
+				}
+			});
+
+		} catch (error) {
+			logger.error('Error requesting account closure:', error);
+			return res.status(500).json({
+				success: false,
+				message: 'Failed to process account closure request',
+				error: error.message
+			});
+		}
+	}
+
+	/**
+	 * Cancel account closure (if within grace period)
+	 * @param {Object} req - Express request object
+	 * @param {Object} res - Express response object
+	 */
+	async cancelAccountClosure(req, res) {
+		try {
+			const { userId } = req.auth;
+
+			if (!userId) {
+				return res.status(401).json({
+					success: false,
+					message: 'Authentication required'
+				});
+			}
+
+			// Fetch user
+			const user = await User.findByPk(userId);
+			if (!user) {
+				return res.status(404).json({
+					success: false,
+					message: 'User not found'
+				});
+			}
+
+			// Check if account is marked for deletion
+			if (!user.markedForDeletionAt) {
+				return res.status(400).json({
+					success: false,
+					message: 'Account is not marked for deletion'
+				});
+			}
+
+			// Check if still within grace period (30 days)
+			const gracePeriodMs = 30 * 24 * 60 * 60 * 1000; // 30 days
+			const now = new Date();
+			const markedTime = new Date(user.markedForDeletionAt);
+			const gracePeriodEnd = new Date(markedTime.getTime() + gracePeriodMs);
+
+			if (now > gracePeriodEnd) {
+				return res.status(400).json({
+					success: false,
+					message: 'Grace period has expired. Account closure cannot be cancelled.',
+					data: {
+						markedForDeletionAt: user.markedForDeletionAt,
+						gracePeriodEndedAt: gracePeriodEnd
+					}
+				});
+			}
+
+			// Cancel the deletion
+			user.status = 'active';
+			user.markedForDeletionAt = null;
+			await user.save();
+
+			// Log the cancellation
+			await dataRetentionService.createRetentionLog('account_closure_cancelled', {
+				userId,
+				cancelledAt: new Date()
+			});
+
+			logger.info(`Account closure cancelled for user ${userId}`);
+
+			return res.status(200).json({
+				success: true,
+				message: 'Account closure has been successfully cancelled',
+				data: {
+					status: user.status,
+					cancelledAt: new Date()
+				}
+			});
+
+		} catch (error) {
+			logger.error('Error cancelling account closure:', error);
+			return res.status(500).json({
+				success: false,
+				message: 'Failed to cancel account closure',
+				error: error.message
+			});
+		}
+	}
+
+	/**
+	 * Disconnect a bank account (via Plaid itemId)
+	 * @param {Object} req - Express request object
+	 * @param {Object} res - Express response object
+	 */
+	async disconnectBankAccount(req, res) {
+		try {
+			const { userId } = req.auth;
+			const { itemId } = req.params;
+
+			if (!userId) {
+				return res.status(401).json({
+					success: false,
+					message: 'Authentication required'
+				});
+			}
+
+			if (!itemId) {
+				return res.status(400).json({
+					success: false,
+					message: 'Item ID is required'
+				});
+			}
+
+			// Check if PlaidItem model exists
+			const PlaidItem = sequelize.models.PlaidItem;
+			if (!PlaidItem) {
+				return res.status(404).json({
+					success: false,
+					message: 'Plaid integration is not available in this environment'
+				});
+			}
+
+			// Verify user owns this Plaid item
+			const plaidItem = await PlaidItem.findOne({
+				where: {
+					itemId,
+					userId
+				}
+			});
+
+			if (!plaidItem) {
+				return res.status(404).json({
+					success: false,
+					message: 'Bank account not found or does not belong to your account'
+				});
+			}
+
+			// Use the data retention service to handle disconnection
+			const result = await dataRetentionService.handlePlaidDisconnection(userId, itemId);
+
+			logger.info(`Bank account disconnected for user ${userId}`, {
+				itemId,
+				institutionName: plaidItem.institutionName,
+				scheduledDeletionDate: result.scheduledDeletionDate
+			});
+
+			return res.status(200).json({
+				success: true,
+				message: 'Bank account has been disconnected. Associated data will be deleted after 30 days.',
+				data: {
+					itemId,
+					institutionName: plaidItem.institutionName,
+					disconnectedAt: new Date(),
+					scheduledDeletionDate: result.scheduledDeletionDate
+				}
+			});
+
+		} catch (error) {
+			logger.error('Error disconnecting bank account:', error);
+			return res.status(500).json({
+				success: false,
+				message: 'Failed to disconnect bank account',
+				error: error.message
+			});
+		}
+	}
+
+	/**
+	 * Run manual data retention cleanup (admin only)
+	 * @param {Object} req - Express request object
+	 * @param {Object} res - Express response object
+	 */
+	async runManualCleanup(req, res) {
+		try {
+			// Verify admin authorization
+			if (!req.auth || req.auth.role !== 'admin') {
+				return res.status(403).json({
+					success: false,
+					message: 'Forbidden: Admin access required'
+				});
+			}
+
+			const { dryRun = false } = req.body;
+
+			logger.info(`Manual data retention cleanup initiated by admin ${req.auth.userId}`, { dryRun });
+
+			const results = {
+				expiredTokens: 0,
+				inactiveAccounts: 0,
+				oldTransactions: 0,
+				oldInsights: 0,
+				disconnectedPlaidItems: 0,
+				errors: []
+			};
+
+			try {
+				// Run each cleanup operation
+				if (dryRun) {
+					// For dry run, just count what would be deleted
+					results.expiredTokens = await this.countExpiredTokens();
+					results.inactiveAccounts = await this.countInactiveAccounts();
+					results.oldTransactions = await this.countOldTransactions();
+					results.oldInsights = await this.countOldInsights();
+					results.disconnectedPlaidItems = await this.countDisconnectedPlaidItems();
+				} else {
+					// Actually perform cleanup
+					results.expiredTokens = await dataRetentionService.cleanupExpiredTokens();
+					results.inactiveAccounts = await dataRetentionService.cleanupInactiveAccounts();
+					results.oldTransactions = await dataRetentionService.cleanupOldTransactions();
+					results.oldInsights = await dataRetentionService.cleanupOldInsights();
+					results.disconnectedPlaidItems = await dataRetentionService.cleanupDisconnectedPlaidItems();
+				}
+
+			} catch (cleanupError) {
+				results.errors.push(cleanupError.message);
+				logger.error('Error during manual cleanup:', cleanupError);
+			}
+
+			// Log the cleanup results
+			await dataRetentionService.createRetentionLog('manual_cleanup_executed', {
+				adminId: req.auth.userId,
+				dryRun,
+				results
+			});
+
+			return res.status(200).json({
+				success: true,
+				message: dryRun ? 'Dry run completed successfully' : 'Manual cleanup completed successfully',
+				data: {
+					dryRun,
+					results,
+					executedAt: new Date()
+				}
+			});
+
+		} catch (error) {
+			logger.error('Error running manual cleanup:', error);
+			return res.status(500).json({
+				success: false,
+				message: 'Failed to run manual cleanup',
+				error: error.message
+			});
+		}
+	}
+
+	// Helper methods for counting (used in dry run)
+	async countExpiredTokens() {
+		try {
+			const Token = sequelize.models.Token;
+			if (!Token) return 0;
+
+			const count = await Token.count({
+				where: {
+					[Op.or]: [
+						{
+							expiresAt: { [Op.lt]: new Date() },
+							createdAt: { [Op.lt]: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) }
+						},
+						{
+							isRevoked: true,
+							createdAt: { [Op.lt]: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000) }
+						}
+					]
+				}
+			});
+
+			return count;
+		} catch (error) {
+			logger.error('Error counting expired tokens:', error);
+			return 0;
+		}
+	}
+
+	async countInactiveAccounts() {
+		try {
+			const warningDate = new Date(Date.now() - this.retentionRules.inactivity.warningPeriod * 24 * 60 * 60 * 1000);
+			const deletionDate = new Date(Date.now() - (this.retentionRules.inactivity.gracePeriod + this.retentionRules.inactivity.deletionPeriod) * 24 * 60 * 60 * 1000);
+
+			const count = await User.count({
+				where: {
+					[Op.or]: [
+						{
+							lastLoginAt: { [Op.lt]: deletionDate }
+						},
+						{
+							lastLoginAt: null,
+							createdAt: { [Op.lt]: deletionDate }
+						}
+					]
+				}
+			});
+
+			return count;
+		} catch (error) {
+			logger.error('Error counting inactive accounts:', error);
+			return 0;
+		}
+	}
+
+	async countOldTransactions() {
+		try {
+			const Transaction = sequelize.models.Transaction;
+			if (!Transaction) return 0;
+
+			const cutoffDate = new Date(Date.now() - this.retentionRules.transactions * 24 * 60 * 60 * 1000);
+			const count = await Transaction.count({
+				where: {
+					date: { [Op.lt]: cutoffDate }
+				}
+			});
+
+			return count;
+		} catch (error) {
+			logger.error('Error counting old transactions:', error);
+			return 0;
+		}
+	}
+
+	async countOldInsights() {
+		try {
+			const Insight = sequelize.models.Insight;
+			if (!Insight) return 0;
+
+			const cutoffDate = new Date(Date.now() - this.retentionRules.insights * 24 * 60 * 60 * 1000);
+			const count = await Insight.count({
+				where: {
+					createdAt: { [Op.lt]: cutoffDate }
+				}
+			});
+
+			return count;
+		} catch (error) {
+			logger.error('Error counting old insights:', error);
+			return 0;
+		}
+	}
+
+	async countDisconnectedPlaidItems() {
+		try {
+			const PlaidItem = sequelize.models.PlaidItem;
+			if (!PlaidItem) return 0;
+
+			const cutoffDate = new Date(Date.now() - this.retentionRules.plaidDisconnect * 24 * 60 * 60 * 1000);
+			const count = await PlaidItem.count({
+				where: {
+					status: 'disconnected',
+					disconnectedAt: { [Op.lt]: cutoffDate }
+				}
+			});
+
+			return count;
+		} catch (error) {
+			logger.error('Error counting disconnected Plaid items:', error);
+			return 0;
 		}
 	}
 }

@@ -78,4 +78,41 @@ router.post('/clients/:clientId/reinstate', adminController.reinstateClient);
  */
 router.delete('/clients/:clientId', adminController.deleteClient);
 
+// ====== EMAIL MONITORING ROUTES ======
+
+/**
+ * @route GET /api/admin/email-stats
+ * @desc Get email system statistics
+ * @access Private (Admin only)
+ */
+router.get('/email-stats', adminController.getEmailStats);
+
+/**
+ * @route GET /api/admin/suppressed-emails
+ * @desc Get list of suppressed email addresses
+ * @access Private (Admin only)
+ */
+router.get('/suppressed-emails', adminController.getSuppressedEmails);
+
+/**
+ * @route POST /api/admin/reactivate-email
+ * @desc Reactivate a suppressed email address
+ * @access Private (Admin only)
+ */
+router.post('/reactivate-email', adminController.reactivateEmail);
+
+/**
+ * @route POST /api/admin/send-test-email
+ * @desc Send a test email
+ * @access Private (Admin only)
+ */
+router.post('/send-test-email', adminController.sendTestEmail);
+
+/**
+ * @route GET /api/admin/contact-form-stats
+ * @desc Get contact form statistics
+ * @access Private (Admin only)
+ */
+router.get('/contact-form-stats', adminController.getContactFormStats);
+
 module.exports = router;

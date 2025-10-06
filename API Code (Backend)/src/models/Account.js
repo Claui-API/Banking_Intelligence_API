@@ -1,5 +1,5 @@
+// src/models/Account.js - Fixed to use factory function pattern
 const { DataTypes, Op } = require('sequelize');
-const { sequelize } = require('../config/database');
 
 // Helper function for balance normalization
 function normalizeAndValidateBalance(account) {
@@ -46,113 +46,107 @@ function normalizeAndValidateBalance(account) {
   account.availableBalance = Number(account.availableBalance);
 }
 
-const Account = sequelize.define('Account', {
-  id: {
-    type: DataTypes.UUID,
-    defaultValue: DataTypes.UUIDV4,
-    primaryKey: true
-  },
-  clientId: {
-    type: DataTypes.STRING,
-    allowNull: false,
-    references: {
-      model: 'Clients',
-      key: 'clientId'
+// FIXED: Export as factory function
+module.exports = (sequelize) => {
+  const Account = sequelize.define('Account', {
+    id: {
+      type: DataTypes.UUID,
+      defaultValue: DataTypes.UUIDV4,
+      primaryKey: true
+    },
+    clientId: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      references: {
+        model: 'Clients',
+        key: 'clientId'
+      }
+    },
+    bankUserId: {
+      type: DataTypes.STRING,
+      allowNull: false
+    },
+    accountId: {
+      type: DataTypes.STRING,
+      allowNull: false
+    },
+    name: {
+      type: DataTypes.STRING,
+      allowNull: false
+    },
+    type: {
+      type: DataTypes.STRING,
+      allowNull: false
+    },
+    subtype: {
+      type: DataTypes.STRING,
+      allowNull: true
+    },
+    balance: {
+      type: DataTypes.DECIMAL(12, 2),
+      allowNull: false,  // Changed from true to false after migration
+      defaultValue: 0
+    },
+    availableBalance: {
+      type: DataTypes.DECIMAL(12, 2),
+      allowNull: false,  // Changed from true to false after migration
+      defaultValue: 0
+    },
+    currency: {
+      type: DataTypes.STRING(3),
+      defaultValue: 'USD'
+    },
+    creditLimit: {
+      type: DataTypes.DECIMAL(12, 2),
+      allowNull: true
+    },
+    isActive: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: true
+    },
+    metadata: {
+      type: DataTypes.JSONB,
+      allowNull: true
+    },
+    dataQualityFlags: {  // NEW FIELD
+      type: DataTypes.JSONB,
+      allowNull: true,
+      comment: 'Tracks any data quality issues like inferred balances'
+    },
+    lastUpdated: {
+      type: DataTypes.DATE,
+      defaultValue: DataTypes.NOW
     }
-  },
-  bankUserId: {
-    type: DataTypes.STRING,
-    allowNull: false
-  },
-  accountId: {
-    type: DataTypes.STRING,
-    allowNull: false
-  },
-  name: {
-    type: DataTypes.STRING,
-    allowNull: false
-  },
-  type: {
-    type: DataTypes.STRING,
-    allowNull: false
-  },
-  subtype: {
-    type: DataTypes.STRING,
-    allowNull: true
-  },
-  balance: {
-    type: DataTypes.DECIMAL(12, 2),
-    allowNull: false,  // Changed from true to false after migration
-    defaultValue: 0
-  },
-  availableBalance: {
-    type: DataTypes.DECIMAL(12, 2),
-    allowNull: false,  // Changed from true to false after migration
-    defaultValue: 0
-  },
-  currency: {
-    type: DataTypes.STRING(3),
-    defaultValue: 'USD'
-  },
-  creditLimit: {
-    type: DataTypes.DECIMAL(12, 2),
-    allowNull: true
-  },
-  isActive: {
-    type: DataTypes.BOOLEAN,
-    defaultValue: true
-  },
-  metadata: {
-    type: DataTypes.JSONB,
-    allowNull: true
-  },
-  dataQualityFlags: {  // NEW FIELD
-    type: DataTypes.JSONB,
-    allowNull: true,
-    comment: 'Tracks any data quality issues like inferred balances'
-  },
-  lastUpdated: {
-    type: DataTypes.DATE,
-    defaultValue: DataTypes.NOW
-  }
-}, {
-  timestamps: true,
-  hooks: {
-    // Clean data on the way IN
-    beforeCreate: (account) => {
-      normalizeAndValidateBalance(account);
+  }, {
+    timestamps: true,
+    hooks: {
+      // Clean data on the way IN
+      beforeCreate: (account) => {
+        normalizeAndValidateBalance(account);
+      },
+      beforeUpdate: (account) => {
+        normalizeAndValidateBalance(account);
+      },
+      beforeBulkCreate: (accounts) => {
+        accounts.forEach(normalizeAndValidateBalance);
+      }
     },
-    beforeUpdate: (account) => {
-      normalizeAndValidateBalance(account);
-    },
-    beforeBulkCreate: (accounts) => {
-      accounts.forEach(normalizeAndValidateBalance);
-    }
-  },
-  indexes: [
-    {
-      fields: ['clientId']
-    },
-    {
-      fields: ['bankUserId']
-    },
-    {
-      unique: true,
-      fields: ['clientId', 'bankUserId', 'accountId']
-    }
-  ]
-});
+    indexes: [
+      {
+        fields: ['clientId']
+      },
+      {
+        fields: ['bankUserId']
+      },
+      {
+        unique: true,
+        fields: ['clientId', 'bankUserId', 'accountId']
+      }
+    ]
+  });
 
-// Set up associations (keep your existing code here)
-const setupAssociations = () => {
-  const { Client } = require('./User');
+  // Note: Don't set up associations here - they should be handled in models/index.js
+  // to avoid circular dependency issues
 
-  if (Client) {
-    Client.hasMany(Account, { foreignKey: 'clientId', sourceKey: 'clientId' });
-    Account.belongsTo(Client, { foreignKey: 'clientId', targetKey: 'clientId' });
-  }
+  return Account;
 };
-
-setupAssociations();
-
-module.exports = Account;

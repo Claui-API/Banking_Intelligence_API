@@ -1,8 +1,8 @@
 // src/services/auth.js
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
-const { User, Client } = require('../models/User');
-const Token = require('../models/Token');
+const { User, Client } = require('../models');
+const { Token } = require('../models');
 const twoFactorService = require('./twoFactor.service');
 const logger = require('../utils/logger');
 

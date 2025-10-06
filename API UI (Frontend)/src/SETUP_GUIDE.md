@@ -74,10 +74,10 @@ Make sure your backend is properly connected to MongoDB by updating the database
 // database.service.js
 const mongoose = require('mongoose');
 const dbConnection = require('../utils/db-connection');
-const Account = require('../models/Account');
-const Transaction = require('../models/Transaction');
-const UserProfile = require('../models/UserProfile');
-const SpendingPattern = require('../models/SpendingPattern');
+const Account = require('../models'/Account');
+const Transaction = require('../models'/Transaction');
+const UserProfile = require('../models'/UserProfile');
+const SpendingPattern = require('../models'/SpendingPattern');
 const logger = require('../utils/logger');
 
 class DatabaseService {

@@ -1,6 +1,6 @@
 // src/controllers/auth.controller.js
 const authService = require('../services/auth');
-const { User, Client } = require('../models/User');
+const { User, Client } = require('../models');
 const logger = require('../utils/logger');
 
 /**
@@ -31,7 +31,7 @@ class AuthController {
       const twoFactorService = require('../services/twoFactor.service');
 
       // Get user information
-      const { User } = require('../models/User');
+      const { User } = require('../models');
       const user = await User.findByPk(userId);
 
       if (!user) {
@@ -102,7 +102,7 @@ class AuthController {
       }
 
       // Get backup codes to return
-      const { User } = require('../models/User');
+      const { User } = require('../models');
       const user = await User.findByPk(userId);
 
       return res.status(200).json({
@@ -143,7 +143,7 @@ class AuthController {
       const twoFactorService = require('../services/twoFactor.service');
 
       // Get user information
-      const { User } = require('../models/User');
+      const { User } = require('../models');
       const user = await User.findByPk(userId);
 
       if (!user) {

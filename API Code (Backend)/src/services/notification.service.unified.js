@@ -2,7 +2,7 @@
 const pushNotificationService = require('./notification.service'); // Your existing push notification service
 const emailNotificationService = require('./email.notification.service');
 const logger = require('../utils/logger');
-const { User, Client } = require('../models/User');
+const { User, Client } = require('../models');
 
 /**
  * Unified notification service that handles both push and email notifications
@@ -25,7 +25,7 @@ class UnifiedNotificationService {
 	async getUserPreferences(userId) {
 		try {
 			// Get the NotificationPreference model
-			const NotificationPreference = require('../models/NotificationPreference');
+			const { NotificationPreference } = require('../models');
 
 			// Get or create preferences for this user
 			const preferences = await NotificationPreference.getOrCreateForUser(userId);

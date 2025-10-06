@@ -3,7 +3,7 @@ const authService = require('../services/auth');
 const twoFactorService = require('../services/twoFactor.service');
 const sessionManager = require('../services/session.service'); // Add this import
 const geminiService = require('../services/gemini.service'); // Add if you want to clear gemini data
-const { User, Client } = require('../models/User');
+const { User, Client } = require('../models');
 const logger = require('../utils/logger');
 
 class AuthController {
@@ -516,7 +516,7 @@ class AuthController {
       const expiresAt = new Date(Date.now() + (expiresIn * 1000));
 
       // Store token in database with explicit tokenType
-      const Token = require('../models/Token');
+      const { Token } = require('../models');
       await Token.create({
         userId: user.id,
         clientId: client.clientId,

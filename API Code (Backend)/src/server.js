@@ -1,4 +1,4 @@
-// server.js - Updated with user routes and improved security
+// server.js - Updated with trust proxy fix
 
 const express = require('express');
 const path = require('path');
@@ -9,8 +9,11 @@ const rateLimit = require('express-rate-limit');
 const jwt = require('jsonwebtoken');
 const { sequelize } = require('./config/database');
 const dataRetentionService = require('./services/data-retention.service');
+const contactRoutes = require('./routes/contact.routes');
 const { usageNotificationMiddleware } = require('./middleware/usage-notification.middleware');
 const notificationPreferencesRoutes = require('./routes/notification-preferences.routes');
+const webhookRoutes = require('./routes/webhooks.routes');
+const unsubscribeRoutes = require('./routes/unsubscribe.routes');
 const { initializeJobs } = require('./jobs/job-scheduler');
 
 // Load .env variables
@@ -22,6 +25,9 @@ const logger = require('./utils/logger');
 // Create Express app
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// CRITICAL: Set trust proxy FIRST - before any other middleware that uses req.ip
+app.set('trust proxy', true);
 
 // CRITICAL: Body parsing middleware must come FIRST - MOVED FROM BELOW
 app.use(express.json({
@@ -77,7 +83,7 @@ function safeMount(path, routeModule, name) {
   }
 }
 
-// General API rate limiter
+// General API rate limiter - Updated to remove deprecated handler
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 2000,
@@ -92,7 +98,17 @@ const apiLimiter = rateLimit({
     }
     return req.ip;
   },
-  message: { success: false, message: 'Too many requests, please try again later.' }
+  message: { success: false, message: 'Too many requests, please try again later.' },
+  // Updated handler instead of deprecated onLimitReached
+  handler: (req, res) => {
+    logger.warn('API rate limit exceeded', {
+      ip: req.ip,
+      userAgent: req.get('User-Agent'),
+      path: req.path,
+      method: req.method
+    });
+    res.status(429).json({ success: false, message: 'Too many requests, please try again later.' });
+  }
 });
 
 // Initialize email notification service
@@ -113,13 +129,20 @@ const emailNotificationService = require('./services/email.notification.service'
   }
 })();
 
-// Define twoFactorLimiter here, BEFORE trying to use it
+// Define twoFactorLimiter here, BEFORE trying to use it - Updated handler
 const twoFactorLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 5, // Stricter limit for 2FA attempts
   standardHeaders: true,
   legacyHeaders: false,
-  message: { success: false, message: 'Too many 2FA verification attempts, please try again later.' }
+  message: { success: false, message: 'Too many 2FA verification attempts, please try again later.' },
+  handler: (req, res) => {
+    logger.warn('2FA rate limit exceeded', {
+      ip: req.ip,
+      userAgent: req.get('User-Agent')
+    });
+    res.status(429).json({ success: false, message: 'Too many 2FA verification attempts, please try again later.' });
+  }
 });
 
 // Initialize data retention service
@@ -179,6 +202,11 @@ safeMount('/api/v1/notifications/preferences', notificationPreferencesRoutes, 'N
 // Apply 2FA rate limiter to specific endpoint
 app.use('/api/auth/verify-2fa', twoFactorLimiter);
 app.use('/api/bank', bankApiRoutes);
+
+app.use('/api/contact', contactRoutes);
+
+app.use('/webhooks', webhookRoutes);
+app.use('/unsubscribe', unsubscribeRoutes);
 
 // Add debug endpoint for direct testing
 app.use('/api/bank-debug/users', (req, res) => {
@@ -329,7 +357,7 @@ app.use((req, res, next) => {
   next();
 });
 
-// Battery-aware mobile rate limiter
+// Battery-aware mobile rate limiter - Updated handler
 const mobileRateLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, // 1 hour
   max: 500,
@@ -338,7 +366,14 @@ const mobileRateLimiter = rateLimit({
   keyGenerator: req =>
     req.auth?.userId ? `${req.ip}-${req.auth.userId}` : req.ip,
   skip: req =>
-    req.path.includes('/sync/') && req.headers['x-battery-status'] === 'low'
+    req.path.includes('/sync/') && req.headers['x-battery-status'] === 'low',
+  handler: (req, res) => {
+    logger.warn('Mobile rate limit exceeded', {
+      ip: req.ip,
+      userAgent: req.get('User-Agent')
+    });
+    res.status(429).json({ success: false, message: 'Rate limit exceeded for mobile API' });
+  }
 });
 app.use('/api/v1', mobileRateLimiter);
 

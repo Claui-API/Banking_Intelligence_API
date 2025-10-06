@@ -2,7 +2,7 @@
 
 require('dotenv').config();
 const { Op } = require('sequelize');
-const Token = require('../models/Token');
+const { Token } = require('../models');
 const { sequelize } = require('../config/database');
 
 async function cleanupExpiredTokens() {

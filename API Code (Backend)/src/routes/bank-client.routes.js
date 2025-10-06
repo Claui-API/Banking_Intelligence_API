@@ -5,9 +5,9 @@ const bankUserService = require('../services/bank-user.service');
 const logger = require('../utils/logger');
 const { sequelize } = require('../config/database');
 const { Op } = require('sequelize');
-const BankUser = require('../models/BankUser');
-const Account = require('../models/Account');
-const Transaction = require('../models/Transaction');
+const { BankUser } = require('../models');
+const { Account } = require('../models');
+const { Transaction } = require('../models');
 const AccountDataService = require('../services/account-data.service');
 const router = express.Router();
 
@@ -27,7 +27,7 @@ const getClientIdMiddleware = async (req, res, next) => {
 		// If client credentials were used, we already have the clientId
 		if (req.auth.clientId) {
 			// Verify the client exists and is active
-			const { Client } = require('../models/User');
+			const { Client } = require('../models');
 			const client = await Client.findOne({
 				where: {
 					clientId: req.auth.clientId,
@@ -47,7 +47,7 @@ const getClientIdMiddleware = async (req, res, next) => {
 		}
 
 		// Otherwise, look up the client ID for this user
-		const { Client, User } = require('../models/User');
+		const { Client, User } = require('../models');
 		const user = await User.findByPk(req.auth.userId);
 
 		// Make sure user is not an admin

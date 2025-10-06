@@ -1,9 +1,18 @@
 // src/controllers/admin.controller.js
-const { User, Client } = require('../models/User');
-const Token = require('../models/Token');
+const { User, Client } = require('../models');
+const { Token } = require('../models');
 const logger = require('../utils/logger');
 const { DataTypes } = require('sequelize');
 const { sequelize } = require('../config/database');
+const { EmailSuppression } = require('../models');
+const { ContactSubmission } = require('../models');
+const { removeFromSuppressionList } = require('../services/suppression.service');
+const AWS = require('aws-sdk');
+
+// Configure SES for sending test emails
+const ses = new AWS.SES({
+  region: process.env.AWS_REGION || 'us-east-2'
+});
 
 /**
  * Controller for admin operations
@@ -642,6 +651,551 @@ class AdminController {
       return res.status(500).json({
         success: false,
         message: 'Failed to delete client',
+        error: error.message
+      });
+    }
+  }
+
+  /**
+   * Get email system statistics
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   */
+  async getEmailStats(req, res) {
+    try {
+      // Get suppression statistics
+      const suppressionStats = await EmailSuppression.findAll({
+        attributes: [
+          'reason',
+          [sequelize.fn('COUNT', sequelize.col('id')), 'count']
+        ],
+        where: { isActive: true },
+        group: ['reason'],
+        raw: true
+      });
+
+      // Calculate totals
+      let totalSuppressed = 0;
+      const byReason = {};
+      suppressionStats.forEach(stat => {
+        const count = parseInt(stat.count);
+        byReason[stat.reason] = count;
+        totalSuppressed += count;
+      });
+
+      // Get AWS SES sending statistics
+      let sesStats = {};
+      try {
+        const sendingQuota = await ses.getSendQuota().promise();
+        const sendingStats = await ses.getSendStatistics().promise();
+
+        // Calculate rates from recent data
+        const recentStats = sendingStats.SendDataPoints.slice(-7); // Last 7 data points
+        const totalSent = recentStats.reduce((sum, point) => sum + point.DeliveryAttempts, 0);
+        const totalBounces = recentStats.reduce((sum, point) => sum + point.Bounces, 0);
+        const totalComplaints = recentStats.reduce((sum, point) => sum + point.Complaints, 0);
+
+        sesStats = {
+          quota: sendingQuota.Max24HourSend,
+          sent_last_24h: sendingQuota.SentLast24Hours,
+          max_send_rate: sendingQuota.MaxSendRate,
+          total_sent: totalSent,
+          total_bounces: totalBounces,
+          total_complaints: totalComplaints,
+          bounce_rate: totalSent > 0 ? (totalBounces / totalSent) * 100 : 0,
+          complaint_rate: totalSent > 0 ? (totalComplaints / totalSent) * 100 : 0
+        };
+      } catch (sesError) {
+        logger.warn('Could not fetch SES statistics', { error: sesError.message });
+        sesStats = {
+          quota: 0,
+          sent_last_24h: 0,
+          max_send_rate: 0,
+          total_sent: 0,
+          total_bounces: 0,
+          total_complaints: 0,
+          bounce_rate: 0,
+          complaint_rate: 0
+        };
+      }
+
+      return res.json({
+        success: true,
+        data: {
+          ...sesStats,
+          total_suppressed: totalSuppressed,
+          suppressed_by_reason: byReason,
+          last_updated: new Date().toISOString()
+        }
+      });
+
+    } catch (error) {
+      logger.error('Error fetching email statistics', { error: error.message });
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to fetch email statistics',
+        error: error.message
+      });
+    }
+  }
+
+  /**
+   * Get list of suppressed email addresses
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   */
+  async getSuppressedEmails(req, res) {
+    try {
+      const page = parseInt(req.query.page) || 1;
+      const limit = Math.min(parseInt(req.query.limit) || 50, 100);
+      const offset = (page - 1) * limit;
+
+      const { count, rows } = await EmailSuppression.findAndCountAll({
+        where: { isActive: true },
+        order: [['createdAt', 'DESC']],
+        limit,
+        offset,
+        attributes: ['id', 'email', 'reason', 'source', 'createdAt', 'metadata']
+      });
+
+      return res.json({
+        success: true,
+        data: {
+          emails: rows,
+          pagination: {
+            page,
+            limit,
+            total: count,
+            pages: Math.ceil(count / limit)
+          }
+        }
+      });
+
+    } catch (error) {
+      logger.error('Error fetching suppressed emails', { error: error.message });
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to fetch suppressed emails',
+        error: error.message
+      });
+    }
+  }
+
+  /**
+   * Reactivate a suppressed email address
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   */
+  async reactivateEmail(req, res) {
+    try {
+      const { email } = req.body;
+
+      if (!email) {
+        return res.status(400).json({
+          success: false,
+          message: 'Email address is required'
+        });
+      }
+
+      // Validate email format
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid email format'
+        });
+      }
+
+      const success = await removeFromSuppressionList(email, 'admin_reactivation');
+
+      if (success) {
+        logger.info('Email reactivated by admin', {
+          email,
+          adminId: req.auth.userId,
+          adminEmail: req.auth.userEmail || 'admin'
+        });
+
+        return res.json({
+          success: true,
+          message: `Email ${email} has been reactivated`,
+          data: {
+            email,
+            reactivated_at: new Date().toISOString()
+          }
+        });
+      } else {
+        return res.status(404).json({
+          success: false,
+          message: 'Email address not found in suppression list or already active'
+        });
+      }
+
+    } catch (error) {
+      logger.error('Error reactivating email', {
+        error: error.message,
+        email: req.body.email
+      });
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to reactivate email address',
+        error: error.message
+      });
+    }
+  }
+
+  /**
+   * Send a test email
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   */
+  async sendTestEmail(req, res) {
+    try {
+      const { email } = req.body;
+
+      if (!email) {
+        return res.status(400).json({
+          success: false,
+          message: 'Email address is required'
+        });
+      }
+
+      // Validate email format
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid email format'
+        });
+      }
+
+      const adminEmail = req.auth.userEmail || req.auth.email || 'admin';
+
+      const testEmailParams = {
+        Source: process.env.VERIFIED_SENDER_EMAIL || 'shreyas.atneu@gmail.com',
+        Destination: {
+          ToAddresses: [email]
+        },
+        Message: {
+          Subject: {
+            Data: 'Banking Intelligence API - Test Email',
+            Charset: 'UTF-8'
+          },
+          Body: {
+            Html: {
+              Data: `
+                <!DOCTYPE html>
+                <html>
+                <head>
+                  <meta charset="UTF-8">
+                  <title>Test Email</title>
+                </head>
+                <body style="font-family: Arial, sans-serif; background-color: #000000; color: #ffffff; padding: 20px;">
+                  <div style="max-width: 600px; margin: 0 auto; background-color: #1a1a1a; padding: 30px; border-radius: 8px; border: 1px solid #28a745;">
+                    <div style="text-align: center; margin-bottom: 30px;">
+                      <h1 style="color: #28a745; font-size: 24px;">Banking Intelligence API</h1>
+                      <h2 style="color: #ffffff; font-size: 18px;">Email System Test</h2>
+                    </div>
+                    
+                    <div style="background-color: #0f1a0f; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+                      <p>This is a test email sent from the Banking Intelligence API email monitoring system.</p>
+                      
+                      <p><strong>Test Details:</strong></p>
+                      <ul>
+                        <li>Sent at: ${new Date().toISOString()}</li>
+                        <li>Sent by: Admin (${adminEmail})</li>
+                        <li>Recipient: ${email}</li>
+                        <li>System: ${process.env.NODE_ENV || 'development'}</li>
+                      </ul>
+                      
+                      <p>If you received this email, the Banking Intelligence email system is working correctly!</p>
+                    </div>
+                    
+                    <div style="text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #28a745;">
+                      <p style="color: #28a745; font-size: 12px;">Banking Intelligence API</p>
+                      <p style="color: #28a745; font-size: 12px;">Vivy Tech USA, Inc.</p>
+                    </div>
+                  </div>
+                </body>
+                </html>
+              `,
+              Charset: 'UTF-8'
+            },
+            Text: {
+              Data: `Banking Intelligence API - Test Email
+
+This is a test email sent from the Banking Intelligence API email monitoring system.
+
+Test Details:
+- Sent at: ${new Date().toISOString()}
+- Sent by: Admin (${adminEmail})
+- Recipient: ${email}
+- System: ${process.env.NODE_ENV || 'development'}
+
+If you received this email, the Banking Intelligence email system is working correctly!
+
+---
+Banking Intelligence API
+Vivy Tech USA, Inc.`,
+              Charset: 'UTF-8'
+            }
+          }
+        },
+        Tags: [
+          { Name: 'Type', Value: 'TestEmail' },
+          { Name: 'Source', Value: 'AdminPanel' }
+        ]
+      };
+
+      const result = await ses.sendEmail(testEmailParams).promise();
+
+      logger.info('Admin test email sent', {
+        messageId: result.MessageId,
+        recipient: email,
+        adminId: req.auth.userId,
+        adminEmail: adminEmail
+      });
+
+      return res.json({
+        success: true,
+        message: `Test email sent successfully to ${email}`,
+        data: {
+          message_id: result.MessageId,
+          sent_at: new Date().toISOString(),
+          recipient: email
+        }
+      });
+
+    } catch (error) {
+      logger.error('Error sending test email', {
+        error: error.message,
+        code: error.code,
+        email: req.body.email,
+        adminId: req.auth?.userId
+      });
+
+      let errorMessage = 'Failed to send test email';
+      if (error.code === 'MessageRejected') {
+        if (error.message.includes('not verified')) {
+          errorMessage = 'Test email could not be sent - recipient or sender email not verified in SES';
+        } else {
+          errorMessage = 'Test email was rejected by AWS SES';
+        }
+      }
+
+      return res.status(500).json({
+        success: false,
+        message: errorMessage,
+        error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+      });
+    }
+  }
+
+  /**
+   * Get contact form statistics using the ContactSubmission model
+   * @param {Object} req - Express request object  
+   * @param {Object} res - Express response object
+   */
+  async getContactFormStats(req, res) {
+    try {
+      const days = parseInt(req.query.days) || 30;
+      const { Op } = require('sequelize');
+
+      // Calculate date ranges
+      const endDate = new Date();
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - days);
+      startDate.setHours(0, 0, 0, 0);
+
+      const todayStart = new Date();
+      todayStart.setHours(0, 0, 0, 0);
+
+      // Get period statistics
+      const periodStats = await ContactSubmission.findAll({
+        attributes: [
+          [sequelize.fn('COUNT', sequelize.col('id')), 'total_submissions'],
+          [sequelize.fn('COUNT', sequelize.literal("CASE WHEN status = 'success' THEN 1 END")), 'successful_sends'],
+          [sequelize.fn('COUNT', sequelize.literal("CASE WHEN status = 'partial_success' THEN 1 END")), 'partial_success'],
+          [sequelize.fn('COUNT', sequelize.literal("CASE WHEN status = 'spam_blocked' THEN 1 END")), 'spam_blocked'],
+          [sequelize.fn('COUNT', sequelize.literal("CASE WHEN status = 'rate_limited' THEN 1 END")), 'rate_limited'],
+          [sequelize.fn('COUNT', sequelize.literal("CASE WHEN status = 'failed' THEN 1 END")), 'failed_sends'],
+          [sequelize.fn('COUNT', sequelize.literal("CASE WHEN status = 'validation_failed' THEN 1 END")), 'validation_failed'],
+          [sequelize.fn('AVG', sequelize.col('processingTimeMs')), 'avg_processing_time'],
+          [sequelize.fn('AVG', sequelize.col('suspicionScore')), 'avg_suspicion_score']
+        ],
+        where: {
+          createdAt: {
+            [Op.between]: [startDate, endDate]
+          }
+        },
+        raw: true
+      });
+
+      const stats = periodStats[0] || {};
+
+      // Convert strings to numbers and calculate rates
+      const totalSubmissions = parseInt(stats.total_submissions) || 0;
+      const successfulSends = parseInt(stats.successful_sends) || 0;
+      const partialSuccess = parseInt(stats.partial_success) || 0;
+      const spamBlocked = parseInt(stats.spam_blocked) || 0;
+      const rateLimited = parseInt(stats.rate_limited) || 0;
+      const failedSends = parseInt(stats.failed_sends) || 0;
+      const validationFailed = parseInt(stats.validation_failed) || 0;
+
+      // Calculate success rate (including partial successes as they still send business email)
+      const totalSuccessful = successfulSends + partialSuccess;
+      const successRate = totalSubmissions > 0 ? ((totalSuccessful / totalSubmissions) * 100).toFixed(1) : 0;
+      const spamRate = totalSubmissions > 0 ? ((spamBlocked / totalSubmissions) * 100).toFixed(1) : 0;
+
+      // Get today's statistics
+      const todayStats = await ContactSubmission.findAll({
+        attributes: [
+          [sequelize.fn('COUNT', sequelize.col('id')), 'total_submissions'],
+          [sequelize.fn('COUNT', sequelize.literal("CASE WHEN status IN ('success', 'partial_success') THEN 1 END")), 'successful_sends']
+        ],
+        where: {
+          createdAt: { [Op.gte]: todayStart }
+        },
+        raw: true
+      });
+
+      const todayData = todayStats[0] || {};
+      const todayTotal = parseInt(todayData.total_submissions) || 0;
+      const todaySuccessful = parseInt(todayData.successful_sends) || 0;
+
+      // Get recent submissions for activity feed
+      const recentSubmissions = await ContactSubmission.findAll({
+        limit: 5,
+        order: [['createdAt', 'DESC']],
+        attributes: ['id', 'requestId', 'name', 'email', 'company', 'status', 'createdAt', 'suspicionScore'],
+        where: {
+          createdAt: { [Op.gte]: startDate }
+        }
+      });
+
+      // Get hourly distribution for the last 24 hours
+      const last24Hours = new Date();
+      last24Hours.setHours(last24Hours.getHours() - 24);
+
+      const hourlyStats = await ContactSubmission.findAll({
+        attributes: [
+          [sequelize.fn('DATE_TRUNC', 'hour', sequelize.col('createdAt')), 'hour'],
+          [sequelize.fn('COUNT', sequelize.col('id')), 'submissions']
+        ],
+        where: {
+          createdAt: { [Op.gte]: last24Hours }
+        },
+        group: [sequelize.fn('DATE_TRUNC', 'hour', sequelize.col('createdAt'))],
+        order: [[sequelize.fn('DATE_TRUNC', 'hour', sequelize.col('createdAt')), 'ASC']],
+        raw: true
+      });
+
+      // Get top suspicious IPs
+      const suspiciousIPs = await ContactSubmission.findAll({
+        attributes: [
+          'ipAddress',
+          [sequelize.fn('COUNT', sequelize.col('id')), 'submission_count'],
+          [sequelize.fn('AVG', sequelize.col('suspicionScore')), 'avg_suspicion'],
+          [sequelize.fn('COUNT', sequelize.literal("CASE WHEN status = 'spam_blocked' THEN 1 END")), 'spam_count']
+        ],
+        where: {
+          createdAt: { [Op.gte]: startDate },
+          ipAddress: { [Op.ne]: null },
+          [Op.or]: [
+            { suspicionScore: { [Op.gte]: 2 } },
+            { status: 'spam_blocked' }
+          ]
+        },
+        group: ['ipAddress'],
+        having: sequelize.literal('COUNT(id) > 1'),
+        order: [[sequelize.fn('AVG', sequelize.col('suspicionScore')), 'DESC']],
+        limit: 10,
+        raw: true
+      });
+
+      // Get status breakdown over time (last 7 days)
+      const weekAgo = new Date();
+      weekAgo.setDate(weekAgo.getDate() - 7);
+
+      const statusTrends = await ContactSubmission.findAll({
+        attributes: [
+          [sequelize.fn('DATE_TRUNC', 'day', sequelize.col('createdAt')), 'date'],
+          'status',
+          [sequelize.fn('COUNT', sequelize.col('id')), 'count']
+        ],
+        where: {
+          createdAt: { [Op.gte]: weekAgo }
+        },
+        group: [
+          sequelize.fn('DATE_TRUNC', 'day', sequelize.col('createdAt')),
+          'status'
+        ],
+        order: [[sequelize.fn('DATE_TRUNC', 'day', sequelize.col('createdAt')), 'ASC']],
+        raw: true
+      });
+
+      return res.json({
+        success: true,
+        data: {
+          period_stats: {
+            total_submissions: totalSubmissions,
+            successful_sends: successfulSends,
+            partial_success: partialSuccess,
+            spam_blocked: spamBlocked,
+            rate_limited: rateLimited,
+            failed_sends: failedSends,
+            validation_failed: validationFailed,
+            success_rate: parseFloat(successRate),
+            spam_rate: parseFloat(spamRate),
+            avg_processing_time: stats.avg_processing_time ? Math.round(parseFloat(stats.avg_processing_time)) : null,
+            avg_suspicion_score: stats.avg_suspicion_score ? parseFloat(stats.avg_suspicion_score).toFixed(1) : null,
+            period_days: days
+          },
+          today_stats: {
+            total_submissions: todayTotal,
+            successful_sends: todaySuccessful,
+            success_rate: todayTotal > 0 ? ((todaySuccessful / todayTotal) * 100).toFixed(1) : 0
+          },
+          recent_submissions: recentSubmissions.map(sub => ({
+            id: sub.id,
+            requestId: sub.requestId,
+            name: sub.name,
+            email: sub.email,
+            company: sub.company,
+            status: sub.status,
+            suspicionScore: sub.suspicionScore,
+            createdAt: sub.createdAt
+          })),
+          hourly_distribution: hourlyStats.map(stat => ({
+            hour: stat.hour,
+            submissions: parseInt(stat.submissions)
+          })),
+          suspicious_ips: suspiciousIPs.map(ip => ({
+            ipAddress: ip.ipAddress,
+            submissionCount: parseInt(ip.submission_count),
+            avgSuspicion: parseFloat(ip.avg_suspicion).toFixed(1),
+            spamCount: parseInt(ip.spam_count)
+          })),
+          status_trends: statusTrends,
+          metadata: {
+            period: `${days} days`,
+            start_date: startDate.toISOString(),
+            end_date: endDate.toISOString(),
+            today_start: todayStart.toISOString(),
+            last_updated: new Date().toISOString(),
+            data_source: 'contact_submissions_table'
+          }
+        }
+      });
+
+    } catch (error) {
+      logger.error('Error fetching contact form statistics', {
+        error: error.message,
+        stack: error.stack
+      });
+
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to fetch contact form statistics',
         error: error.message
       });
     }

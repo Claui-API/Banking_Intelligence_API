@@ -1,8 +1,8 @@
 // src/services/bank-user.service.js
 const logger = require('../utils/logger');
-const BankUser = require('../models/BankUser');
-const Account = require('../models/Account');
-const Transaction = require('../models/Transaction');
+const { BankUser } = require('../models');
+const { Account } = require('../models');
+const { Transaction } = require('../models');
 const { sequelize } = require('../config/database');
 const { Op } = require('sequelize');
 

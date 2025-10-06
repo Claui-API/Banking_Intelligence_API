@@ -1,5 +1,5 @@
 // src/middleware/usage-notification.middleware.js
-const { User, Client } = require('../models/User');
+const { User, Client } = require('../models');
 const logger = require('../utils/logger');
 
 /**

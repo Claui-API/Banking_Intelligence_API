@@ -1,7 +1,7 @@
 // src/scripts/deleteRevokedTokens.js
 
 require('dotenv').config();
-const Token = require('../models/Token');
+const { Token } = require('../models');
 const { sequelize } = require('../config/database');
 
 async function deleteRevokedTokens() {

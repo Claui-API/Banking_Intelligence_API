@@ -1,6 +1,6 @@
 // src/controllers/auth.controller.js
 const authService = require('../services/auth');
-const { User, Client } = require('../models/User');
+const { User, Client } = require('../models');
 const logger = require('../utils/logger');
 
 /**
@@ -64,7 +64,7 @@ class AuthController {
       });
     } catch (error) {
       logger.error('Error registering user:', error);
-      
+
       // Handle specific errors
       if (error.message.includes('already in use')) {
         return res.status(409).json({
@@ -72,7 +72,7 @@ class AuthController {
           message: error.message
         });
       }
-      
+
       return res.status(500).json({
         success: false,
         message: 'Failed to register user',
@@ -112,7 +112,7 @@ class AuthController {
       });
     } catch (error) {
       logger.error('Error during login:', error);
-      
+
       // Determine appropriate status code
       let statusCode = 500;
       if (
@@ -122,7 +122,7 @@ class AuthController {
       ) {
         statusCode = 401;
       }
-      
+
       return res.status(statusCode).json({
         success: false,
         message: error.message
@@ -154,7 +154,7 @@ class AuthController {
       });
     } catch (error) {
       logger.error('Error refreshing token:', error);
-      
+
       return res.status(401).json({
         success: false,
         message: error.message
@@ -170,23 +170,23 @@ class AuthController {
   async logout(req, res) {
     try {
       const token = req.headers.authorization?.split(' ')[1];
-      
+
       if (token) {
         await authService.revokeToken(token, 'access');
       }
-      
+
       const { refreshToken } = req.body;
       if (refreshToken) {
         await authService.revokeToken(refreshToken, 'refresh');
       }
-      
+
       return res.status(200).json({
         success: true,
         message: 'Logged out successfully'
       });
     } catch (error) {
       logger.error('Error during logout:', error);
-      
+
       return res.status(500).json({
         success: false,
         message: 'Logout failed'
@@ -234,7 +234,7 @@ class AuthController {
       });
     } catch (error) {
       logger.error('Error changing password:', error);
-      
+
       // Determine appropriate status code
       let statusCode = 500;
       if (error.message.includes('incorrect')) {
@@ -242,7 +242,7 @@ class AuthController {
       } else if (error.message.includes('not found')) {
         statusCode = 404;
       }
-      
+
       return res.status(statusCode).json({
         success: false,
         message: error.message
@@ -288,7 +288,7 @@ class AuthController {
       });
     } catch (error) {
       logger.error('Error changing client secret:', error);
-      
+
       return res.status(500).json({
         success: false,
         message: error.message
@@ -325,7 +325,7 @@ class AuthController {
       });
     } catch (error) {
       logger.error('Error generating API token:', error);
-      
+
       return res.status(500).json({
         success: false,
         message: 'Failed to generate API token',

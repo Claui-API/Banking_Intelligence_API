@@ -2,9 +2,9 @@
 const { Op } = require('sequelize');
 const schedule = require('node-schedule');
 const { sequelize } = require('../config/database');
-const { User, Client } = require('../models/User');
-const Token = require('../models/Token');
-const PlaidItem = require('../models/PlaidItem');
+const { User, Client } = require('../models');
+const { Token } = require('../models');
+const { PlaidItem } = require('../models');
 const logger = require('../utils/logger');
 const dataService = require('./data.service');
 const cryptoService = require('./crypto.service');

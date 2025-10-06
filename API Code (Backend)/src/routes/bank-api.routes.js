@@ -28,7 +28,7 @@ const getClientIdMiddleware = async (req, res, next) => {
 		}
 
 		// Otherwise, look up the client ID for this user
-		const { Client } = require('../models/User');
+		const { Client } = require('../models');
 		const clients = await Client.findAll({
 			where: {
 				userId: req.auth.userId,

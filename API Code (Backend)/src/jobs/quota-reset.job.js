@@ -1,5 +1,5 @@
 // src/jobs/quota-reset.job.js
-const { Client, User } = require('../models/User');
+const { Client, User } = require('../models');
 const logger = require('../utils/logger');
 const { Op } = require('sequelize');
 

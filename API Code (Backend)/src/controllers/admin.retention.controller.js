@@ -1,7 +1,7 @@
 // src/controllers/admin.retention.controller.js - Final Fix
 const { Op } = require('sequelize'); // Import Op explicitly
 const dataRetentionService = require('../services/data-retention.service');
-const { User, Client } = require('../models/User');
+const { User, Client } = require('../models');
 const logger = require('../utils/logger');
 const { sequelize } = require('../config/database');
 

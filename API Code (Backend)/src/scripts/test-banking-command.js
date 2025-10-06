@@ -3,9 +3,9 @@
 
 const dotenv = require('dotenv');
 const logger = require('../utils/logger');
-const BankUser = require('../models/BankUser');
-const Account = require('../models/Account');
-const Transaction = require('../models/Transaction');
+const { BankUser } = require('../models');
+const { Account } = require('../models');
+const { Transaction } = require('../models');
 const { Op } = require('sequelize');
 
 // Load environment variables

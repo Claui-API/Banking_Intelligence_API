@@ -3,7 +3,7 @@ const speakeasy = require('speakeasy');
 const QRCode = require('qrcode');
 const crypto = require('crypto');
 const logger = require('../utils/logger');
-const { User } = require('../models/User');
+const { User } = require('../models');
 const { sequelize } = require('../config/database');
 
 class TwoFactorService {

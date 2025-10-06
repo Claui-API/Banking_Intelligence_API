@@ -2,19 +2,19 @@
 const { sequelize } = require('./src/config/database');
 const User = require('./src/models/User').User;
 const Client = require('./src/models/User').Client;
-const Token = require('./src/models/Token');
+const { Token } = require('./src/models/Token');
 const logger = require('./src/utils/logger');
 
 async function setupDatabase() {
   try {
     logger.info('Setting up database tables...');
-    
+
     // Force: true will drop tables if they exist
     // Use with caution in production!
     await sequelize.sync({ force: true });
-    
+
     logger.info('Database tables created successfully!');
-    
+
     // Optionally create a test admin user
     const adminUser = await User.create({
       clientName: 'Admin',
@@ -24,7 +24,7 @@ async function setupDatabase() {
       status: 'active',
       role: 'admin'
     });
-    
+
     // Create admin client credentials
     await Client.create({
       userId: adminUser.id,
@@ -33,9 +33,9 @@ async function setupDatabase() {
       description: 'Admin client',
       status: 'active'
     });
-    
+
     logger.info('Admin user created');
-    
+
     return true;
   } catch (error) {
     logger.error('Error setting up database:', error);

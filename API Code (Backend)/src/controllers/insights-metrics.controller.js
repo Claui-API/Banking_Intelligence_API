@@ -1,13 +1,13 @@
 // src/controllers/insights-metrics.controller.js
 const logger = require('../utils/logger');
-const { 
-  getSystemInsightMetrics, 
-  getUserInsightMetrics, 
+const {
+  getSystemInsightMetrics,
+  getUserInsightMetrics,
   getQueryTypeMetrics,
   getHistoricalInsightMetrics,
   initializeMetricsModel
 } = require('../middleware/insights-metrics.middleware');
-const { User } = require('../models/User');
+const { User } = require('../models');
 const { sequelize } = require('../config/database');
 
 /**
@@ -28,10 +28,10 @@ class InsightsMetricsController {
           message: 'Access denied. Admin privileges required.'
         });
       }
-      
+
       // Get system metrics
       const metrics = await getSystemInsightMetrics();
-      
+
       return res.status(200).json({
         success: true,
         data: metrics
@@ -45,7 +45,7 @@ class InsightsMetricsController {
       });
     }
   }
-  
+
   /**
    * Get historical metrics for system dashboard
    * @param {Object} req - Express request object
@@ -60,13 +60,13 @@ class InsightsMetricsController {
           message: 'Access denied. Admin privileges required.'
         });
       }
-      
+
       // Get days parameter from query, default to 7 days
       const days = parseInt(req.query.days) || 7;
-      
+
       // Get historical metrics
       const historicalData = await getHistoricalInsightMetrics(days);
-      
+
       return res.status(200).json({
         success: true,
         data: historicalData
@@ -95,18 +95,18 @@ class InsightsMetricsController {
           message: 'Access denied. Admin privileges required.'
         });
       }
-      
+
       // Get user metrics
       const metrics = await getUserInsightMetrics();
-      
+
       // Enrich with user details
       const enrichedMetrics = [];
-      
+
       for (const metric of metrics) {
         try {
           // Find user details
           const user = await User.findByPk(metric.userId);
-          
+
           if (user) {
             enrichedMetrics.push({
               ...metric,
@@ -123,7 +123,7 @@ class InsightsMetricsController {
           }
         } catch (userError) {
           logger.warn(`Error retrieving user details for ${metric.userId}:`, userError);
-          
+
           // Include metrics even if user details not found
           enrichedMetrics.push({
             ...metric,
@@ -132,7 +132,7 @@ class InsightsMetricsController {
           });
         }
       }
-      
+
       return res.status(200).json({
         success: true,
         data: enrichedMetrics
@@ -161,17 +161,17 @@ class InsightsMetricsController {
           message: 'Access denied. Admin privileges required.'
         });
       }
-      
+
       // Get query type metrics
       const metrics = await getQueryTypeMetrics();
-      
+
       // Transform into array format for easier front-end charting
       const formattedMetrics = Object.entries(metrics).map(([type, count]) => ({
         type,
         count,
         percentage: (count / Object.values(metrics).reduce((sum, val) => sum + val, 0) * 100).toFixed(1)
       }));
-      
+
       return res.status(200).json({
         success: true,
         data: {

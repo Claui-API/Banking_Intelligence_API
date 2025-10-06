@@ -2,9 +2,9 @@
 // Minor updates needed for Account normalization integration
 
 const logger = require('../utils/logger');
-const BankUser = require('../models/BankUser');
-const Account = require('../models/Account');
-const Transaction = require('../models/Transaction');
+const { BankUser } = require('../models');
+const { Account } = require('../models');
+const { Transaction } = require('../models');
 const { sequelize } = require('../config/database');
 const { Op } = require('sequelize');
 // ADD THIS IMPORT for data quality monitoring

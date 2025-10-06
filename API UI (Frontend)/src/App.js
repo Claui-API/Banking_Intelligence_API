@@ -29,6 +29,9 @@ import BankUserDetails from './components/Bank/BankUserDetails';
 import AdminDashboard from './components/Admin/AdminDashboard';
 import ClientDetailPage from './components/Admin/ClientDetailPage';
 
+// Unsubscribe Page
+import UnsubscribePage from './pages/UnsubscribePage';
+
 // Error Page Component
 const ErrorPage = () => {
   logger.warn('404 Page Not Found');
@@ -80,6 +83,9 @@ const App = () => {
             <Route path="/admin" element={<Layout><AdminDashboard /></Layout>} />
             <Route path="/admin/clients/:clientId" element={<Layout><ClientDetailPage /></Layout>} />
           </Route>
+
+          {/* Unsubscribe Route */}
+          <Route path="/unsubscribe" element={<UnsubscribePage />} />
 
           {/* Catch-all route for undefined paths */}
           <Route path="*" element={<Layout><ErrorPage /></Layout>} />

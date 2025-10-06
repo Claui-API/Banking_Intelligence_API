@@ -111,7 +111,7 @@ router.post('/invalidate-all-sessions', authMiddleware, async (req, res) => {
 		}
 
 		// Import token model and auth service
-		const Token = require('../models/Token');
+		const { Token } = require('../models');
 		const authService = require('../services/auth');
 
 		// Revoke all tokens for this user except the current one

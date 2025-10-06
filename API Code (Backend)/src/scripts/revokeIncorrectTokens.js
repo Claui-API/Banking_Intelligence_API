@@ -2,7 +2,7 @@
 
 require('dotenv').config();
 const jwt = require('jsonwebtoken');
-const Token = require('../models/Token');
+const { Token } = require('../models');
 const { sequelize } = require('../config/database');
 const logger = require('../utils/logger');
 

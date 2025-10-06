@@ -54,7 +54,7 @@ class PlaidService {
   async determineEnvironmentFromTokens() {
     try {
       // Import models dynamically to avoid circular dependencies
-      const PlaidItem = require('../models/PlaidItem');
+      const { PlaidItem } = require('../models');
 
       // Get the first active token
       const firstItem = await PlaidItem.findOne({

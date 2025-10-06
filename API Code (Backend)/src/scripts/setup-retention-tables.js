@@ -7,7 +7,7 @@ const logger = require('../utils/logger');
 const createRetentionLogTable = require('../migrations/create-retention-log-table');
 const createAdminLogTable = require('../migrations/create-admin-log-table');
 const { sequelize } = require('../config/database');
-const { User } = require('../models/User');
+const { User } = require('../models');
 const dataRetentionService = require('../services/data-retention.service');
 
 /**

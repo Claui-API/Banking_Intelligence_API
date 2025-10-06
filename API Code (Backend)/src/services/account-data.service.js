@@ -1,4 +1,4 @@
-const Account = require('../models/Account');
+const { Account } = require('../models');
 const logger = require('../utils/logger');
 const { Op } = require('sequelize');
 

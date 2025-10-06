@@ -1,6 +1,6 @@
 // src/services/data.service.js (Modified with strict user isolation)
 const logger = require('../utils/logger');
-const PlaidItem = require('../models/PlaidItem');
+const { PlaidItem } = require('../models');
 const plaidService = require('./plaid.service');
 const { sequelize } = require('../config/database');
 

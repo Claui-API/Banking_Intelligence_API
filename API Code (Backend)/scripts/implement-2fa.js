@@ -143,7 +143,7 @@ const speakeasy = require('speakeasy');
 const QRCode = require('qrcode');
 const crypto = require('crypto');
 const logger = require('../utils/logger');
-const { User } = require('../models/User');
+const { User } = require('../models');
 
 class TwoFactorService {
   /**
@@ -585,7 +585,7 @@ function updateAuthController() {
       const twoFactorService = require('../services/twoFactor.service');
       
       // Get user information
-      const { User } = require('../models/User');
+      const { User } = require('../models');
       const user = await User.findByPk(userId);
       
       if (!user) {
@@ -656,7 +656,7 @@ function updateAuthController() {
       }
       
       // Get backup codes to return
-      const { User } = require('../models/User');
+      const { User } = require('../models');
       const user = await User.findByPk(userId);
       
       return res.status(200).json({
@@ -697,7 +697,7 @@ function updateAuthController() {
       const twoFactorService = require('../services/twoFactor.service');
       
       // Get user information
-      const { User } = require('../models/User');
+      const { User } = require('../models');
       const user = await User.findByPk(userId);
       
       if (!user) {

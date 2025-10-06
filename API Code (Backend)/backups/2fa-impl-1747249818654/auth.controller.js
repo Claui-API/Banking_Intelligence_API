@@ -1,7 +1,7 @@
 // src/controllers/auth.controller.js
 const authService = require('../services/auth');
 const twoFactorService = require('../services/twoFactor.service');
-const { User, Client } = require('../models/User');
+const { User, Client } = require('../models');
 const logger = require('../utils/logger');
 
 class AuthController {
