@@ -7,6 +7,19 @@ const cors = require('cors');
 const dotenv = require('dotenv');
 const rateLimit = require('express-rate-limit');
 const jwt = require('jsonwebtoken');
+const analysisScheduler = require('./services/analysis-scheduler.service');
+
+// Start the background analysis scheduler
+if (process.env.NODE_ENV === 'production' || process.env.ENABLE_BACKGROUND_ANALYSIS === 'true') {
+  analysisScheduler.start();
+
+  // Graceful shutdown
+  process.on('SIGINT', () => {
+    console.log('Shutting down gracefully...');
+    analysisScheduler.stop();
+    process.exit(0);
+  });
+}
 
 // Load .env variables FIRST
 dotenv.config();

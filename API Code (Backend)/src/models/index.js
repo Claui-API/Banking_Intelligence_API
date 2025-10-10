@@ -12,11 +12,13 @@ const modelFiles = [
 	'BankUser',
 	'ContactSubmission',
 	'EmailSuppression',
+	'InsightMetrics',
 	'NotificationPreference',
 	'PlaidItem',
 	'RetentionLog',
 	'Token',
-	'Transaction'
+	'Transaction',
+	'UserAnalysis'
 ];
 
 modelFiles.forEach(modelName => {
@@ -69,7 +71,8 @@ const setupAssociations = () => {
 		BankUser,
 		Account,
 		Transaction,
-		RetentionLog
+		RetentionLog,
+		UserAnalysis
 	} = models;
 
 	try {
@@ -155,6 +158,11 @@ const setupAssociations = () => {
 			// These would be application-level associations without foreign key constraints
 			// Account.hasMany(Transaction, { foreignKey: 'accountId', sourceKey: 'accountId' });
 			// Transaction.belongsTo(Account, { foreignKey: 'accountId', targetKey: 'accountId' });
+		}
+
+		// UserAnalysis associations
+		if (UserAnalysis && User) {
+			UserAnalysis.associate(models);
 		}
 
 		console.log('Model associations set up successfully');

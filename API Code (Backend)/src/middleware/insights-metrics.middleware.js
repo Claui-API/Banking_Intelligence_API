@@ -597,11 +597,9 @@ const getHistoricalInsightMetrics = async (days = 7) => {
 };
 
 /**
- * Get per-user insight metrics
+ * Get per-user insight metrics - FIXED VERSION with queryTypes
  * @returns {Array} User metrics
  */
-// In your insights-metrics.middleware.js, modify the getUserInsightMetrics function:
-
 const getUserInsightMetrics = async () => {
   try {
     const metricsModel = await initializeMetricsModel();
@@ -648,10 +646,15 @@ const getUserInsightMetrics = async () => {
           WHERE "userId" = :userId
           GROUP BY "queryType"
           ORDER BY "count" DESC
-          LIMIT 1
         `, {
           replacements: { userId: record.userId },
           type: sequelize.QueryTypes.SELECT
+        });
+
+        // FIXED: Transform query types into object format for frontend
+        const userQueryTypes = {};
+        queryTypes.forEach(typeData => {
+          userQueryTypes[typeData.queryType] = parseInt(typeData.count);
         });
 
         const mostCommonQueryType = queryTypes.length > 0
@@ -737,6 +740,7 @@ const getUserInsightMetrics = async () => {
           name: user ? user.clientName : 'Unknown',
           email: user ? user.email : `${record.userId.substring(0, 8)}...`,
           mostCommonQueryType,
+          queryTypes: userQueryTypes, // FIXED: Add the aggregated query types object
           recentQueries,
           activityByHour,
           activityByDay
@@ -757,6 +761,7 @@ const getUserInsightMetrics = async () => {
           name: 'Unknown',
           email: `${record.userId.substring(0, 8)}...`,
           mostCommonQueryType: 'unknown',
+          queryTypes: {}, // FIXED: Add empty object instead of missing field
           recentQueries: [],
           activityByHour: Array(24).fill(0),
           activityByDay: Array(7).fill(0)

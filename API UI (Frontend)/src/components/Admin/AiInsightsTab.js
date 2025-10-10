@@ -10,7 +10,7 @@ import UserInsightMetrics from './UserInsightMetrics';
  */
 const AiInsightsTab = () => {
   const [activeSubTab, setActiveSubTab] = useState('system-metrics');
-  
+
   return (
     <Row className="mt-4">
       <Col xs={12}>
@@ -38,19 +38,6 @@ const AiInsightsTab = () => {
               <Tab eventKey="user-analytics" title="User Analytics">
                 <div className="pt-3">
                   <UserInsightMetrics />
-                </div>
-              </Tab>
-              <Tab eventKey="query-analytics" title="Query Analytics">
-                <div className="pt-3">
-                  <Card className="text-center py-5">
-                    <Card.Body>
-                      <h4 className="text-muted">Query Analytics Dashboard</h4>
-                      <p className="text-muted">
-                        This dashboard displays analytics about user queries, including common question types, 
-                        trending topics, and query patterns over time.
-                      </p>
-                    </Card.Body>
-                  </Card>
                 </div>
               </Tab>
             </Tabs>

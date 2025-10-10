@@ -1,31 +1,23 @@
-// src/routes/insights-metrics.routes.js
+// routes/insights-metrics.routes.js - UPDATED VERSION
 const express = require('express');
-const router = express.Router();
 const { authMiddleware, authorize } = require('../middleware/auth');
-const { 
-  getSystemInsightMetrics,
-  getHistoricalInsightMetrics,
-  getUserInsightMetrics,
-  getQueryTypeMetrics
-} = require('../middleware/insights-metrics.middleware');
 const logger = require('../utils/logger');
 
+const router = express.Router();
+
+const adminOnly = [authMiddleware, authorize('admin')];
+
 /**
- * @route GET /api/insights/metrics/system
+ * @route GET /api/insights-metrics/system
  * @desc Get system-wide insight metrics
  * @access Private (Admin only)
  */
-router.get('/system', authMiddleware, authorize('admin'), async (req, res) => {
+router.get('/system', adminOnly, async (req, res) => {
   try {
-    // Get real metrics data from the database
-    const metricsData = await getSystemInsightMetrics();
-    
-    return res.status(200).json({
-      success: true,
-      data: metricsData
-    });
+    const insightsMetricsController = require('../controllers/insights-metrics.controller');
+    return await insightsMetricsController.getSystemMetrics(req, res);
   } catch (error) {
-    logger.error('Error getting system metrics:', error);
+    logger.error('Error in system metrics route:', error);
     return res.status(500).json({
       success: false,
       message: 'Failed to get system metrics',
@@ -35,23 +27,16 @@ router.get('/system', authMiddleware, authorize('admin'), async (req, res) => {
 });
 
 /**
- * @route GET /api/insights/metrics/history
+ * @route GET /api/insights-metrics/history
  * @desc Get historical insight metrics
  * @access Private (Admin only)
  */
-router.get('/history', authMiddleware, authorize('admin'), async (req, res) => {
+router.get('/history', adminOnly, async (req, res) => {
   try {
-    const days = parseInt(req.query.days) || 7;
-    
-    // Get real historical metrics data from the database
-    const historicalData = await getHistoricalInsightMetrics(days);
-    
-    return res.status(200).json({
-      success: true,
-      data: historicalData
-    });
+    const insightsMetricsController = require('../controllers/insights-metrics.controller');
+    return await insightsMetricsController.getHistoricalMetrics(req, res);
   } catch (error) {
-    logger.error('Error getting historical metrics:', error);
+    logger.error('Error in historical metrics route:', error);
     return res.status(500).json({
       success: false,
       message: 'Failed to get historical metrics',
@@ -61,24 +46,16 @@ router.get('/history', authMiddleware, authorize('admin'), async (req, res) => {
 });
 
 /**
- * @route GET /api/insights/metrics/users
- * @desc Get per-user insight metrics
+ * @route GET /api/insights-metrics/users
+ * @desc Get enhanced user metrics (now fast with caching)
  * @access Private (Admin only)
  */
-router.get('/users', authMiddleware, authorize('admin'), async (req, res) => {
+router.get('/users', adminOnly, async (req, res) => {
   try {
-    // Parse enhanced option from query parameters
-    const enhanced = req.query.enhanced === 'true';
-    
-    // Get real user metrics data from the database
-    const userData = await getUserInsightMetrics();
-    
-    return res.status(200).json({
-      success: true,
-      data: userData
-    });
+    const insightsMetricsController = require('../controllers/insights-metrics.controller');
+    return await insightsMetricsController.getUserMetrics(req, res);
   } catch (error) {
-    logger.error('Error getting user metrics:', error);
+    logger.error('Error in user metrics route:', error);
     return res.status(500).json({
       success: false,
       message: 'Failed to get user metrics',
@@ -88,42 +65,77 @@ router.get('/users', authMiddleware, authorize('admin'), async (req, res) => {
 });
 
 /**
- * @route GET /api/insights/metrics/query-types
+ * @route GET /api/insights-metrics/query-types
  * @desc Get query type distribution metrics
  * @access Private (Admin only)
  */
-router.get('/query-types', authMiddleware, authorize('admin'), async (req, res) => {
+router.get('/query-types', adminOnly, async (req, res) => {
   try {
-    // Get real query type distribution data from the database
-    const queryTypeData = await getQueryTypeMetrics();
-    
-    // Transform into formatted data for frontend visualization
-    const formattedData = Object.entries(queryTypeData).map(([type, count]) => {
-      const total = Object.values(queryTypeData).reduce((sum, val) => sum + val, 0);
-      const percentage = total > 0 ? ((count / total) * 100).toFixed(1) : '0.0';
-      
-      return {
-        type,
-        count,
-        percentage
-      };
-    });
-    
-    return res.status(200).json({
-      success: true,
-      data: {
-        distribution: queryTypeData,
-        formattedData
-      }
-    });
+    const insightsMetricsController = require('../controllers/insights-metrics.controller');
+    return await insightsMetricsController.getQueryTypeMetrics(req, res);
   } catch (error) {
-    logger.error('Error getting query type metrics:', error);
+    logger.error('Error in query type metrics route:', error);
     return res.status(500).json({
       success: false,
       message: 'Failed to get query type metrics',
       error: error.message
     });
   }
+});
+
+/**
+ * @route POST /api/insights-metrics/trigger-analysis
+ * @desc Manually trigger user analysis
+ * @access Private (Admin only)
+ */
+router.post('/trigger-analysis', adminOnly, async (req, res) => {
+  try {
+    const insightsMetricsController = require('../controllers/insights-metrics.controller');
+    return await insightsMetricsController.triggerUserAnalysis(req, res);
+  } catch (error) {
+    logger.error('Error in trigger analysis route:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to trigger analysis',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @route GET /api/insights-metrics/analysis-status
+ * @desc Get background analysis status
+ * @access Private (Admin only)
+ */
+router.get('/analysis-status', adminOnly, async (req, res) => {
+  try {
+    const insightsMetricsController = require('../controllers/insights-metrics.controller');
+    return await insightsMetricsController.getAnalysisStatus(req, res);
+  } catch (error) {
+    logger.error('Error in analysis status route:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to get analysis status',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * Error handling middleware for this router
+ */
+router.use((error, req, res, next) => {
+  logger.error('Insights Metrics Route Error:', error);
+
+  if (res.headersSent) {
+    return next(error);
+  }
+
+  return res.status(500).json({
+    success: false,
+    message: 'Internal server error in insights metrics',
+    error: process.env.NODE_ENV === 'development' ? error.message : 'Server error'
+  });
 });
 
 module.exports = router;

@@ -1,13 +1,50 @@
-// src/routes/insights.routes.js - Enhanced with Session Management
+// Quick fix for insights.routes.js - Replace trackInsightManually calls
 const express = require('express');
 const insightsController = require('../controllers/insights.controller');
 const { authMiddleware, authorize } = require('../middleware/auth');
-const { sessionMiddleware } = require('../middleware/session.middleware'); // Add session middleware
+const { sessionMiddleware } = require('../middleware/session.middleware');
+const { InsightMetrics } = require('../models');
 const logger = require('../utils/logger');
 const databaseService = require('../services/data.service');
 const llmFactory = require('../services/llm-factory.service');
 
-// In-memory storage for streaming queries (enhanced with session info)
+// Add direct database storage function
+const { sequelize } = require('../config/database');
+const { v4: uuidv4 } = require('uuid');
+
+// Direct metrics storage function
+async function storeQueryMetrics(userId, query, queryType, success, responseTime, errorMessage = null) {
+  try {
+    const requestId = `manual_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+    logger.info('📊 METRICS: Storing query metrics via model', {
+      userId: userId.substring(0, 8) + '...',
+      query: query.substring(0, 50) + '...',
+      queryType,
+      success,
+      responseTime,
+      requestId
+    });
+
+    const record = await InsightMetrics.create({
+      userId,
+      queryId: requestId,
+      query: query || 'Unknown query',
+      queryType: queryType || 'unknown',
+      responseTime: responseTime || 0,
+      success,
+      errorMessage
+    });
+
+    logger.info('✅ METRICS: Successfully stored metrics with ID', record.id);
+    return record;
+  } catch (error) {
+    logger.error('🚨 METRICS: Model storage error:', error);
+    throw error;
+  }
+}
+
+// In-memory storage for streaming queries
 const streamingQueries = new Map();
 
 const router = express.Router();
@@ -16,21 +53,17 @@ const router = express.Router();
 router.use(sessionMiddleware);
 
 /**
- * Classify query - this should match your main classification function
- * @param {string} query - The query to classify
- * @returns {string} - Query type
+ * Classify query
  */
 function classifyQuery(query) {
   if (!query) return 'general';
 
   const normalizedQuery = query.trim().toLowerCase();
 
-  // Check for harmful patterns
   if (/\b(cocaine|heroin|hack|bomb|illegal|drug|weapon)\b/.test(normalizedQuery)) {
     return 'harmful';
   }
 
-  // Basic classification
   if (/^(hi|hello|hey)/.test(normalizedQuery)) return 'greeting';
   if (/joke|funny/.test(normalizedQuery)) return 'joke';
   if (/budget/.test(normalizedQuery)) return 'budgeting';
@@ -43,31 +76,16 @@ function classifyQuery(query) {
 
 /**
  * @route POST /api/insights/generate
- * @desc Generate personal financial insights
- * @access Private
  */
 router.post('/generate', authMiddleware, insightsController.generateInsights);
 
 /**
  * @route GET /api/insights/summary
- * @desc Get financial summary for the user
- * @access Private
  */
 router.get('/summary', authMiddleware, insightsController.getFinancialSummary);
 
 /**
- * @route GET /api/insights/metrics/:metric
- * @desc Redirect to metrics routes (for backward compatibility)
- * @access Private (Admin only)
- */
-router.get('/metrics/:metric', authMiddleware, authorize('admin'), (req, res) => {
-  res.redirect(`/api/insights-metrics/${req.params.metric}`);
-});
-
-/**
  * @route POST /api/insights/stream-prepare
- * @desc Prepare for streaming insights with session support
- * @access Private
  */
 router.post('/stream-prepare', authMiddleware, (req, res) => {
   try {
@@ -92,12 +110,14 @@ router.post('/stream-prepare', authMiddleware, (req, res) => {
       });
     }
 
-    // Log full integration mode details including session
-    logger.info('Stream preparation with session', {
-      userId,
+    const queryType = classifyQuery(query);
+
+    logger.info('🎯 STREAM PREP: Preparing streaming request', {
+      userId: userId.substring(0, 8) + '...',
       sessionId,
       requestId,
-      query: query.substring(0, 30),
+      query: query.substring(0, 50) + '...',
+      queryType,
       integrationMode,
       dataSourceMode,
       useConnectedData: !!useConnectedData,
@@ -106,11 +126,11 @@ router.post('/stream-prepare', authMiddleware, (req, res) => {
       provider: provider || 'default'
     });
 
-    // Store query for streaming with session info
     streamingQueries.set(requestId, {
       query,
+      queryType,
       userId,
-      sessionId, // Store session ID
+      sessionId,
       integrationMode,
       dataSourceMode,
       useConnectedData: !!useConnectedData,
@@ -118,6 +138,7 @@ router.post('/stream-prepare', authMiddleware, (req, res) => {
       financialData,
       provider,
       timestamp: Date.now(),
+      startTime: Date.now(),
       processed: false
     });
 
@@ -132,10 +153,10 @@ router.post('/stream-prepare', authMiddleware, (req, res) => {
     return res.status(200).json({
       success: true,
       message: 'Stream prepared successfully',
-      sessionId // Return session ID to client
+      sessionId
     });
   } catch (error) {
-    logger.error('Stream preparation error', error);
+    logger.error('🚨 STREAM PREP ERROR:', error);
     return res.status(500).json({
       success: false,
       message: 'Error preparing stream'
@@ -145,8 +166,6 @@ router.post('/stream-prepare', authMiddleware, (req, res) => {
 
 /**
  * @route GET /api/insights/stream
- * @desc Stream insights via SSE with session context
- * @access Private
  */
 router.get('/stream', authMiddleware, (req, res) => {
   try {
@@ -154,9 +173,9 @@ router.get('/stream', authMiddleware, (req, res) => {
     const userId = req.auth.userId;
     const sessionId = req.sessionId || req.headers['x-session-id'] || req.query.sessionId;
 
-    logger.info('Stream request with session', {
+    logger.info('🌊 STREAM: Starting streaming response', {
       requestId,
-      userId,
+      userId: userId.substring(0, 8) + '...',
       sessionId
     });
 
@@ -167,7 +186,6 @@ router.get('/stream', authMiddleware, (req, res) => {
       });
     }
 
-    // Get the query from storage
     const queryData = streamingQueries.get(requestId);
 
     if (!queryData) {
@@ -184,29 +202,16 @@ router.get('/stream', authMiddleware, (req, res) => {
       });
     }
 
-    // Verify session matches if provided
-    if (sessionId && queryData.sessionId && sessionId !== queryData.sessionId) {
-      logger.warn('Session mismatch in streaming', {
-        requestId,
-        expectedSession: queryData.sessionId,
-        providedSession: sessionId
-      });
-    }
-
-    // Mark as processed
     queryData.processed = true;
     streamingQueries.set(requestId, queryData);
 
-    // Set up SSE headers
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
     res.setHeader('X-Accel-Buffering', 'no');
 
-    // Send a comment to establish connection
     res.write(': connected\n\n');
 
-    // Send session info if available
     if (sessionId) {
       res.write(`data: ${JSON.stringify({
         type: 'session',
@@ -214,36 +219,80 @@ router.get('/stream', authMiddleware, (req, res) => {
       })}\n\n`);
     }
 
-    // Check for harmful content immediately
-    const queryType = classifyQuery(queryData.query);
-    if (queryType === 'harmful') {
+    // Check for harmful content
+    if (queryData.queryType === 'harmful') {
       const errorMsg = "I cannot provide information about potentially harmful or illegal topics. Please ask about legitimate financial matters instead.";
+
+      // FIXED: Use direct storage instead of trackInsightManually
+      storeQueryMetrics(
+        userId,
+        queryData.query,
+        queryData.queryType,
+        false,
+        Date.now() - queryData.startTime,
+        'Harmful content blocked'
+      ).catch(err => {
+        logger.error('🚨 METRICS: Error storing harmful query:', err);
+      });
+
       res.write(`data: ${JSON.stringify({
         chunk: errorMsg,
         isComplete: true
       })}\n\n`);
 
-      // Clean up
       streamingQueries.delete(requestId);
       res.end();
       return;
     }
 
-    // Process insights in streaming mode with session context
-    processStreamingInsight(queryData.query, userId, requestId, sessionId, (chunk, isComplete) => {
-      // Send chunk
+    // Process insights with direct metrics tracking
+    processStreamingInsight(queryData, userId, requestId, sessionId, (chunk, isComplete) => {
       res.write(`data: ${JSON.stringify({
         chunk,
         isComplete
       })}\n\n`);
 
-      // End if complete
+      // FIXED: Store metrics when streaming is complete
       if (isComplete) {
+        const responseTime = Date.now() - queryData.startTime;
+
+        storeQueryMetrics(
+          userId,
+          queryData.query,
+          queryData.queryType,
+          true,
+          responseTime,
+          null
+        ).then(() => {
+          logger.info('✅ METRICS: Successfully tracked streaming query', {
+            requestId,
+            userId: userId.substring(0, 8) + '...',
+            queryType: queryData.queryType,
+            responseTime
+          });
+        }).catch(err => {
+          logger.error('🚨 METRICS: Error tracking successful streaming query:', err);
+        });
+
         streamingQueries.delete(requestId);
         res.end();
       }
     }).catch(error => {
-      logger.error('Error in streaming insights', error);
+      logger.error('🚨 STREAM: Error in streaming insights', error);
+
+      const responseTime = Date.now() - queryData.startTime;
+
+      // FIXED: Store failed query metrics
+      storeQueryMetrics(
+        userId,
+        queryData.query,
+        queryData.queryType,
+        false,
+        responseTime,
+        error.message || 'Streaming error'
+      ).catch(err => {
+        logger.error('🚨 METRICS: Error tracking failed streaming query:', err);
+      });
 
       res.write(`data: ${JSON.stringify({
         chunk: `I'm sorry, I encountered an error. Please try again.`,
@@ -256,11 +305,28 @@ router.get('/stream', authMiddleware, (req, res) => {
 
     // Handle client disconnection
     req.on('close', () => {
-      logger.info('Client disconnected', { requestId, sessionId });
+      logger.info('🔌 STREAM: Client disconnected', { requestId, sessionId });
+
+      if (streamingQueries.has(requestId)) {
+        const queryData = streamingQueries.get(requestId);
+        const responseTime = Date.now() - queryData.startTime;
+
+        storeQueryMetrics(
+          userId,
+          queryData.query,
+          queryData.queryType,
+          false,
+          responseTime,
+          'Client disconnected'
+        ).catch(err => {
+          logger.error('🚨 METRICS: Error tracking disconnected query:', err);
+        });
+      }
+
       streamingQueries.delete(requestId);
     });
   } catch (error) {
-    logger.error('Stream setup error', error);
+    logger.error('🚨 STREAM: Stream setup error', error);
     return res.status(500).json({
       success: false,
       message: 'Error setting up stream'
@@ -269,71 +335,62 @@ router.get('/stream', authMiddleware, (req, res) => {
 });
 
 /**
- * Process streaming insights with session context
- * @param {string} query - User query
- * @param {string} userId - User ID
- * @param {string} requestId - Request ID for tracking
- * @param {string} sessionId - Session ID for conversation context
- * @param {Function} callback - Streaming callback function
+ * Process streaming insights
  */
-async function processStreamingInsight(query, userId, requestId, sessionId, callback) {
-  // Get the stored query data
-  const queryData = streamingQueries.get(requestId) || {};
-
+async function processStreamingInsight(queryData, userId, requestId, sessionId, callback) {
   const integrationMode = queryData.integrationMode || 'plaid';
   const useConnectedData = queryData.useConnectedData || false;
   const useDirectData = queryData.useDirectData || false;
   const providedFinancialData = queryData.financialData;
   const provider = queryData.provider || null;
 
-  logger.info('Processing streaming insight with session context', {
+  logger.info('🔮 PROCESSING: Processing streaming insight', {
     requestId,
     sessionId,
     integrationMode,
     useConnectedData,
     useDirectData,
-    hasProvidedData: !!providedFinancialData
+    hasProvidedData: !!providedFinancialData,
+    queryType: queryData.queryType
   });
 
-  // Get user financial data based on mode
   let userData;
   try {
     if (useDirectData && providedFinancialData) {
       userData = providedFinancialData;
-      logger.info('Using PROVIDED financial data for streaming (Direct mode)', {
+      logger.info('📊 DATA: Using PROVIDED financial data for streaming (Direct mode)', {
         requestId,
-        userId,
+        userId: userId.substring(0, 8) + '...',
         sessionId,
         dataSource: 'client-provided'
       });
     } else if (useConnectedData) {
       userData = await databaseService.getUserFinancialData(userId);
-      logger.info('Using REAL connected financial data for streaming (Plaid mode)', {
+      logger.info('🏦 DATA: Using REAL connected financial data for streaming (Plaid mode)', {
         requestId,
-        userId,
+        userId: userId.substring(0, 8) + '...',
         sessionId,
         dataSource: 'plaid-connected'
       });
 
-      // Send a special marker to indicate we're using real data
       callback('<using-real-data>', false);
     } else {
       userData = await databaseService.getUserFinancialData(userId);
-      logger.info('Using default financial data for streaming', {
+      logger.info('📈 DATA: Using default financial data for streaming', {
         requestId,
-        userId,
+        userId: userId.substring(0, 8) + '...',
         sessionId,
         dataSource: 'default-fallback'
       });
     }
   } catch (error) {
-    logger.warn('Error getting user data', error);
+    logger.warn('⚠️ DATA: Error getting user data', error);
 
     if (process.env.NODE_ENV !== 'production') {
       userData = databaseService.getMockUserData(userId);
-      logger.info('Using mock data for streaming (after data fetch error)', {
+      logger.info('🎭 DATA: Using mock data for streaming (after data fetch error)', {
         requestId,
-        userId,
+        userId: userId.substring(0, 8) + '...',
         sessionId,
         dataSource: 'mock-fallback'
       });
@@ -342,38 +399,32 @@ async function processStreamingInsight(query, userId, requestId, sessionId, call
     }
   }
 
-  const queryType = classifyQuery(query);
-
   try {
-    // Add session context to the request
     const insight = await llmFactory.generateInsights({
       ...userData,
-      query,
-      queryType,
+      query: queryData.query,
+      queryType: queryData.queryType,
       requestId,
-      sessionId, // Include session ID for conversation context
+      sessionId,
       useConnectedData,
       useDirectData,
       integrationMode,
       userId
     }, provider);
 
-    // Log the LLM provider used
     if (insight.llmProvider) {
-      logger.info(`Using ${insight.llmProvider} service for request ${requestId} with session ${sessionId}`);
+      logger.info(`🤖 LLM: Using ${insight.llmProvider} service for request ${requestId} with session ${sessionId}`);
     }
 
     if (insight.usingBackupService) {
-      logger.info(`Using backup service for request ${requestId} with session ${sessionId}`);
+      logger.info(`🔄 LLM: Using backup service for request ${requestId} with session ${sessionId}`);
     }
 
-    // Break response into smaller parts for streaming
     const content = insight.insight || '';
 
-    // Handle different streaming strategies based on content length
     if (content.length < 100) {
       callback(content, true);
-    } else if (['greeting', 'joke'].includes(queryType)) {
+    } else if (['greeting', 'joke'].includes(queryData.queryType)) {
       const chunkSize = 5;
       for (let i = 0; i < content.length; i += chunkSize) {
         const chunk = content.slice(i, Math.min(i + chunkSize, content.length));
@@ -386,7 +437,6 @@ async function processStreamingInsight(query, userId, requestId, sessionId, call
         callback(chunk, isLast);
       }
     } else {
-      // For longer responses, stream by paragraph or sentence
       const paragraphs = content.split('\n\n').filter(p => p.trim());
 
       if (paragraphs.length > 1) {
@@ -412,15 +462,13 @@ async function processStreamingInsight(query, userId, requestId, sessionId, call
       }
     }
   } catch (error) {
-    logger.error('Error generating streaming insight', error);
+    logger.error('🚨 PROCESSING: Error generating streaming insight', error);
     throw error;
   }
 }
 
 /**
  * @route DELETE /api/insights/session
- * @desc Clear conversation session
- * @access Private
  */
 router.delete('/session', authMiddleware, async (req, res) => {
   try {
@@ -438,14 +486,11 @@ router.delete('/session', authMiddleware, async (req, res) => {
 
     const sessionManager = require('../services/session.service');
 
-    // Delete current session
     sessionManager.deleteSession(sessionId);
-
-    // Create new session
     const newSessionId = sessionManager.createSession(userId);
 
-    logger.info('Session cleared and recreated', {
-      userId,
+    logger.info('🔄 SESSION: Session cleared and recreated', {
+      userId: userId ? userId.substring(0, 8) + '...' : 'unknown',
       oldSessionId: sessionId,
       newSessionId
     });
@@ -458,7 +503,7 @@ router.delete('/session', authMiddleware, async (req, res) => {
       }
     });
   } catch (error) {
-    logger.error('Error clearing session:', error);
+    logger.error('🚨 SESSION: Error clearing session:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to clear session'
