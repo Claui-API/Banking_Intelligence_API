@@ -1,9 +1,11 @@
-// src/components/Auth/Register.js
+// src/components/Auth/Register.js - Updated with glassmorphism design
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { Container, Form, Button, Alert, Card, InputGroup, Modal, Row, Col } from 'react-bootstrap';
+import { motion, AnimatePresence } from 'framer-motion';
 import logger from '../../utils/logger';
+import './Auth.css'; // Same CSS file as Login
 
 const Register = () => {
   const [clientName, setClientName] = useState('');
@@ -17,9 +19,20 @@ const Register = () => {
   const [credentialsSaved, setCredentialsSaved] = useState(false);
   const [showTwoFactorSetup, setShowTwoFactorSetup] = useState(false);
   const [twoFactorData, setTwoFactorData] = useState(null);
+  const [passwordStrength, setPasswordStrength] = useState(0);
 
   const { register } = useAuth();
   const navigate = useNavigate();
+
+  // Password strength calculator
+  const calculatePasswordStrength = (password) => {
+    let strength = 0;
+    if (password.length >= 8) strength += 25;
+    if (/[A-Z]/.test(password)) strength += 25;
+    if (/[0-9]/.test(password)) strength += 25;
+    if (/[^A-Za-z0-9]/.test(password)) strength += 25;
+    return strength;
+  };
 
   const validateForm = () => {
     // Validate email format
@@ -102,270 +115,587 @@ const Register = () => {
     navigate('/login');
   };
 
+  // Animation variants
+  const containerVariants = {
+    hidden: { opacity: 0, y: 50 },
+    visible: {
+      opacity: 1,
+      y: 0,
+      transition: {
+        duration: 0.6,
+        ease: "easeOut"
+      }
+    }
+  };
+
+  const cardVariants = {
+    hidden: { opacity: 0, scale: 0.9, rotateY: -15 },
+    visible: {
+      opacity: 1,
+      scale: 1,
+      rotateY: 0,
+      transition: {
+        duration: 0.8,
+        ease: "easeOut",
+        delay: 0.2
+      }
+    }
+  };
+
+  const inputVariants = {
+    focused: { scale: 1.02, boxShadow: "0 0 20px rgba(40, 167, 69, 0.3)" },
+    unfocused: { scale: 1, boxShadow: "0 0 0px rgba(40, 167, 69, 0)" }
+  };
+
+  const successVariants = {
+    hidden: { opacity: 0, scale: 0.8, rotateX: -90 },
+    visible: {
+      opacity: 1,
+      scale: 1,
+      rotateX: 0,
+      transition: {
+        duration: 0.6,
+        ease: "easeOut"
+      }
+    }
+  };
+
+  const getPasswordStrengthColor = () => {
+    if (passwordStrength < 25) return '#dc3545';
+    if (passwordStrength < 50) return '#fd7e14';
+    if (passwordStrength < 75) return '#ffc107';
+    return '#28a745';
+  };
+
+  const getPasswordStrengthLabel = () => {
+    if (passwordStrength < 25) return 'Weak';
+    if (passwordStrength < 50) return 'Fair';
+    if (passwordStrength < 75) return 'Good';
+    return 'Strong';
+  };
+
   return (
-    <Container className="bg-transparent d-flex justify-content-center align-items-center vh-100">
-      <Card className="w-100 bg-white" style={{ maxWidth: '500px' }}>
-        <Card.Body>
-          <h2 className="text-center mb-4 text-black">Register a new account</h2>
+    <div className="auth-container">
+      {/* Animated background */}
+      <div className="auth-background">
+        {[...Array(25)].map((_, i) => (
+          <motion.div
+            key={i}
+            className="floating-particle"
+            initial={{
+              opacity: 0,
+              x: Math.random() * window.innerWidth,
+              y: Math.random() * window.innerHeight,
+            }}
+            animate={{
+              opacity: [0, 1, 0],
+              x: Math.random() * window.innerWidth,
+              y: Math.random() * window.innerHeight,
+            }}
+            transition={{
+              duration: 25 + Math.random() * 15,
+              repeat: Infinity,
+              delay: Math.random() * 10,
+            }}
+          />
+        ))}
+      </div>
 
-          {error && (
-            <Alert variant="danger">
-              {error}
-            </Alert>
-          )}
+      <Container className="d-flex justify-content-center align-items-center min-vh-100 py-4">
+        <motion.div
+          className="w-100"
+          style={{ maxWidth: '540px' }}
+          initial="hidden"
+          animate="visible"
+          variants={containerVariants}
+        >
+          <AnimatePresence mode="wait">
+            {success ? (
+              <motion.div
+                key="success"
+                className="glass-card auth-card"
+                variants={successVariants}
+                initial="hidden"
+                animate="visible"
+              >
+                {/* Success Header */}
+                <motion.div
+                  className="text-center mb-4"
+                  initial={{ opacity: 0, y: -20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.6, delay: 0.3 }}
+                >
+                  <motion.div
+                    className="auth-logo success"
+                    initial={{ scale: 0 }}
+                    animate={{ scale: 1, rotate: 360 }}
+                    transition={{ duration: 0.8, delay: 0.4 }}
+                  >
+                    <i className="bi bi-check-circle-fill"></i>
+                  </motion.div>
+                  <h2 className="auth-title">Registration Complete!</h2>
+                  <p className="auth-subtitle">Save your credentials securely</p>
+                </motion.div>
 
-          {success ? (
-            <div>
-              <Alert variant="warning" className="text-center">
-                <strong>Important:</strong> Please save these credentials securely.
-                They will only be shown once!
-              </Alert>
+                <div className="glass-alert warning-alert">
+                  <i className="bi bi-exclamation-triangle-fill me-2"></i>
+                  <strong>Important:</strong> Please save these credentials securely. They will only be shown once!
+                </div>
 
-              <Card className="mb-3 border-danger bg-white">
-                <Card.Body>
-                  <h5 className="mb-3 text-danger">API Credentials</h5>
+                {/* API Credentials Display */}
+                <div className="credentials-container">
+                  <h5 className="credentials-title">
+                    <i className="bi bi-key-fill me-2"></i>
+                    API Credentials
+                  </h5>
 
-                  <Form.Group className="mb-3">
-                    <Form.Label>Client ID</Form.Label>
-                    <InputGroup>
-                      <Form.Control
+                  <div className="form-group">
+                    <label className="form-label">Client ID</label>
+                    <div className="credential-display">
+                      <input
                         type="text"
                         readOnly
                         value={success.clientId}
-                        className="text-monospace"
+                        className="glass-input credential-input"
                       />
-                      <Button
-                        variant="outline-secondary"
+                      <motion.button
+                        className="glass-button secondary-button"
                         onClick={() => handleCopyToClipboard(success.clientId)}
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
                       >
-                        Copy
-                      </Button>
-                    </InputGroup>
-                  </Form.Group>
+                        <i className="bi bi-clipboard"></i>
+                      </motion.button>
+                    </div>
+                  </div>
 
-                  <Form.Group className="mb-3">
-                    <Form.Label>Client Secret</Form.Label>
-                    <InputGroup>
-                      <Form.Control
+                  <div className="form-group">
+                    <label className="form-label">Client Secret</label>
+                    <div className="credential-display">
+                      <input
                         type="text"
                         readOnly
                         value={success.clientSecret}
-                        className="text-monospace"
+                        className="glass-input credential-input"
                       />
-                      <Button
-                        variant="outline-secondary"
+                      <motion.button
+                        className="glass-button secondary-button"
                         onClick={() => handleCopyToClipboard(success.clientSecret)}
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
                       >
-                        Copy
-                      </Button>
-                    </InputGroup>
-                  </Form.Group>
+                        <i className="bi bi-clipboard"></i>
+                      </motion.button>
+                    </div>
+                  </div>
 
-                  <Alert variant="info">
+                  <div className="glass-alert info-alert">
+                    <i className="bi bi-info-circle-fill me-2"></i>
                     <strong>Note:</strong> You can now login with either your email/password or these API credentials.
-                  </Alert>
+                  </div>
 
-                  <Form.Group className="mb-3">
-                    <Form.Check
-                      type="checkbox"
-                      id="credentials-saved"
-                      label="I have saved my credentials securely"
-                      checked={credentialsSaved}
-                      onChange={() => setCredentialsSaved(!credentialsSaved)}
-                    />
-                  </Form.Group>
+                  <div className="form-group">
+                    <motion.label
+                      className="credentials-checkbox"
+                      whileHover={{ scale: 1.02 }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={credentialsSaved}
+                        onChange={() => setCredentialsSaved(!credentialsSaved)}
+                        className="checkbox-input"
+                      />
+                      <span className="checkbox-checkmark">
+                        <i className="bi bi-check"></i>
+                      </span>
+                      I have saved my credentials securely
+                    </motion.label>
+                  </div>
 
-                  <Button
-                    variant="primary"
-                    className="w-100"
+                  <motion.button
+                    className="glass-button primary-button w-100"
                     disabled={!credentialsSaved}
                     onClick={handleLoginRedirect}
+                    whileHover={credentialsSaved ? { scale: 1.02, boxShadow: "0 10px 30px rgba(40, 167, 69, 0.4)" } : {}}
+                    whileTap={credentialsSaved ? { scale: 0.98 } : {}}
                   >
+                    <i className="bi bi-arrow-right me-2"></i>
                     Proceed to Login
-                  </Button>
-                </Card.Body>
-              </Card>
+                  </motion.button>
+                </div>
 
-              <div className="text-center text-muted small">
-                <p>
+                <div className="security-notice">
                   <i className="bi bi-exclamation-triangle me-2"></i>
                   Do not share these credentials with anyone
-                </p>
-              </div>
-            </div>
-          ) : (
-            <Form onSubmit={handleSubmit}>
-              <Form.Group className="mb-3">
-                <Form.Label>Application Name</Form.Label>
-                <Form.Control
-                  type="text"
-                  value={clientName}
-                  onChange={(e) => setClientName(e.target.value)}
-                  required
-                  placeholder="My Banking App"
-                />
-              </Form.Group>
-
-              <Form.Group className="mb-3">
-                <Form.Label>Email</Form.Label>
-                <Form.Control
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                  placeholder="you@example.com"
-                />
-              </Form.Group>
-
-              <Form.Group className="mb-3">
-                <Form.Label>Password</Form.Label>
-                <Form.Control
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                  placeholder="At least 8 characters"
-                />
-                <Form.Text className="text-muted">
-                  Password must be at least 8 characters long
-                </Form.Text>
-              </Form.Group>
-
-              <Form.Group className="mb-3">
-                <Form.Label>Confirm Password</Form.Label>
-                <Form.Control
-                  type="password"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  required
-                  placeholder="Confirm your password"
-                />
-              </Form.Group>
-
-              <Form.Group className="mb-3">
-                <Form.Label>Description (Optional)</Form.Label>
-                <Form.Control
-                  as="textarea"
-                  rows={3}
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  placeholder="Describe the purpose of your application"
-                />
-              </Form.Group>
-
-              <Button
-                variant="success"
-                type="submit"
-                className="w-100"
-                disabled={loading}
+                </div>
+              </motion.div>
+            ) : (
+              <motion.div
+                key="form"
+                className="glass-card auth-card"
+                variants={cardVariants}
               >
-                {loading ? 'Registering...' : 'Register Account'}
-              </Button>
+                {/* Header with logo/icon */}
+                <motion.div
+                  className="text-center mb-4"
+                  initial={{ opacity: 0, y: -20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.6, delay: 0.4 }}
+                >
+                  <motion.div
+                    className="auth-logo"
+                    whileHover={{
+                      scale: 1.1,
+                      rotate: 360,
+                      boxShadow: "0 0 30px rgba(40, 167, 69, 0.6)"
+                    }}
+                    transition={{ duration: 0.6 }}
+                  >
+                    <i className="bi bi-person-plus-fill"></i>
+                  </motion.div>
+                  <h2 className="auth-title">Join Us Today</h2>
+                  <p className="auth-subtitle">Create your new account</p>
+                </motion.div>
 
-              <div className="text-center mt-3">
-                <Link to="/login" className="text-decoration-none">
-                  Already have an account? <span className="login-link">Login here</span>
-                </Link>
-              </div>
-            </Form>
-          )}
-        </Card.Body>
-      </Card>
+                <AnimatePresence mode="wait">
+                  {error && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0, marginBottom: 0 }}
+                      animate={{ opacity: 1, height: 'auto', marginBottom: 16 }}
+                      exit={{ opacity: 0, height: 0, marginBottom: 0 }}
+                      transition={{ duration: 0.3 }}
+                    >
+                      <div className="glass-alert error-alert">
+                        <i className="bi bi-exclamation-triangle-fill me-2"></i>
+                        {error}
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
+                <Form onSubmit={handleSubmit}>
+                  <div className="form-group">
+                    <label className="form-label">
+                      <i className="bi bi-person me-2"></i>
+                      Application Name
+                    </label>
+                    <motion.div
+                      className="input-container"
+                      variants={inputVariants}
+                      whileFocus="focused"
+                      initial="unfocused"
+                    >
+                      <input
+                        type="text"
+                        className="glass-input"
+                        value={clientName}
+                        onChange={(e) => setClientName(e.target.value)}
+                        required
+                        placeholder="My Banking App"
+                      />
+                    </motion.div>
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">
+                      <i className="bi bi-envelope-fill me-2"></i>
+                      Email Address
+                    </label>
+                    <motion.div
+                      className="input-container"
+                      variants={inputVariants}
+                      whileFocus="focused"
+                      initial="unfocused"
+                    >
+                      <input
+                        type="email"
+                        className="glass-input"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        required
+                        placeholder="you@example.com"
+                      />
+                    </motion.div>
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">
+                      <i className="bi bi-lock-fill me-2"></i>
+                      Password
+                    </label>
+                    <motion.div
+                      className="input-container"
+                      variants={inputVariants}
+                      whileFocus="focused"
+                      initial="unfocused"
+                    >
+                      <input
+                        type="password"
+                        className="glass-input"
+                        value={password}
+                        onChange={(e) => {
+                          setPassword(e.target.value);
+                          setPasswordStrength(calculatePasswordStrength(e.target.value));
+                        }}
+                        required
+                        placeholder="At least 8 characters"
+                      />
+                    </motion.div>
+
+                    {password && (
+                      <motion.div
+                        className="password-strength"
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        transition={{ duration: 0.3 }}
+                      >
+                        <div className="strength-bar">
+                          <motion.div
+                            className="strength-fill"
+                            style={{ backgroundColor: getPasswordStrengthColor() }}
+                            initial={{ width: 0 }}
+                            animate={{ width: `${passwordStrength}%` }}
+                            transition={{ duration: 0.3 }}
+                          />
+                        </div>
+                        <span
+                          className="strength-label"
+                          style={{ color: getPasswordStrengthColor() }}
+                        >
+                          {getPasswordStrengthLabel()}
+                        </span>
+                      </motion.div>
+                    )}
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">
+                      <i className="bi bi-shield-check me-2"></i>
+                      Confirm Password
+                    </label>
+                    <motion.div
+                      className="input-container"
+                      variants={inputVariants}
+                      whileFocus="focused"
+                      initial="unfocused"
+                    >
+                      <input
+                        type="password"
+                        className="glass-input"
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        required
+                        placeholder="Confirm your password"
+                      />
+                    </motion.div>
+
+                    {confirmPassword && password !== confirmPassword && (
+                      <motion.div
+                        className="password-mismatch"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                      >
+                        <i className="bi bi-exclamation-circle me-1"></i>
+                        Passwords do not match
+                      </motion.div>
+                    )}
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">
+                      <i className="bi bi-file-text me-2"></i>
+                      Description <span className="optional">(Optional)</span>
+                    </label>
+                    <motion.div
+                      className="input-container"
+                      variants={inputVariants}
+                      whileFocus="focused"
+                      initial="unfocused"
+                    >
+                      <textarea
+                        className="glass-input textarea"
+                        rows={3}
+                        value={description}
+                        onChange={(e) => setDescription(e.target.value)}
+                        placeholder="Describe the purpose of your application"
+                      />
+                    </motion.div>
+                  </div>
+
+                  <motion.button
+                    type="submit"
+                    className="glass-button primary-button w-100"
+                    disabled={loading}
+                    whileHover={{ scale: 1.02, boxShadow: "0 10px 30px rgba(40, 167, 69, 0.4)" }}
+                    whileTap={{ scale: 0.98 }}
+                  >
+                    {loading ? (
+                      <>
+                        <motion.div
+                          className="loading-spinner"
+                          animate={{ rotate: 360 }}
+                          transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+                        >
+                          <i className="bi bi-arrow-clockwise"></i>
+                        </motion.div>
+                        Creating Account...
+                      </>
+                    ) : (
+                      <>
+                        <i className="bi bi-person-plus me-2"></i>
+                        Create Account
+                      </>
+                    )}
+                  </motion.button>
+                </Form>
+
+                {/* Footer Link */}
+                <motion.div
+                  className="text-center mt-4"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ duration: 0.6, delay: 0.8 }}
+                >
+                  <p className="auth-link-text">
+                    Already have an account?{' '}
+                    <Link to="/login" className="auth-link">
+                      Sign in here
+                    </Link>
+                  </p>
+                </motion.div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </motion.div>
+      </Container>
 
       {/* 2FA Setup Modal */}
-      <Modal
-        show={showTwoFactorSetup}
-        onHide={() => setShowTwoFactorSetup(false)}
-        size="lg"
-        centered
-      >
-        <Modal.Header closeButton>
-          <Modal.Title>Set Up Two-Factor Authentication</Modal.Title>
-        </Modal.Header>
-        <Modal.Body>
-          <Alert variant="info">
-            <strong>Two-Factor Authentication Required:</strong> For enhanced security, 2FA has been enabled for your account.
-            Please complete the setup by scanning the QR code with your authenticator app.
-          </Alert>
-
-          <div className="text-center mb-4">
-            <img
-              src={twoFactorData?.qrCode}
-              alt="2FA QR Code"
-              className="img-fluid border rounded"
-              style={{ maxWidth: '200px' }}
-            />
-          </div>
-
-          <p><strong>Secret Key:</strong> <code>{twoFactorData?.secret}</code></p>
-
-          <hr />
-
-          <h5 className="mb-3">Backup Codes</h5>
-          <p className="text-danger small fw-bold">
-            <i className="bi bi-exclamation-triangle me-1"></i>
-            IMPORTANT: Save these backup codes in a secure place.
-            Each code can only be used once if you lose access to your authenticator app.
-          </p>
-
-          <div className="backup-codes bg-light p-3 rounded mb-3">
-            <Row>
-              {twoFactorData?.backupCodes?.map((code, index) => (
-                <Col xs={6} md={4} className="mb-2" key={index}>
-                  <code className="user-select-all">{code}</code>
-                </Col>
-              ))}
-            </Row>
-          </div>
-
-          <div className="d-flex justify-content-between">
-            <Button
-              variant="outline-secondary"
-              size="sm"
-              onClick={() => {
-                if (twoFactorData?.backupCodes) {
-                  navigator.clipboard.writeText(twoFactorData.backupCodes.join('\n'));
-                  // Show a success message
-                }
-              }}
-            >
-              <i className="bi bi-clipboard me-1"></i>
-              Copy Codes
-            </Button>
-
-            <Button
-              variant="outline-primary"
-              size="sm"
-              onClick={() => {
-                if (twoFactorData?.backupCodes) {
-                  // Handle download of backup codes
-                  const element = document.createElement("a");
-                  const file = new Blob([twoFactorData.backupCodes.join('\n')], { type: 'text/plain' });
-                  element.href = URL.createObjectURL(file);
-                  element.download = "2fa-backup-codes.txt";
-                  document.body.appendChild(element);
-                  element.click();
-                }
-              }}
-            >
-              <i className="bi bi-download me-1"></i>
-              Download Codes
-            </Button>
-          </div>
-        </Modal.Body>
-        <Modal.Footer>
-          <Button
-            variant="primary"
-            onClick={() => {
-              setShowTwoFactorSetup(false);
-              // Proceed with normal registration flow
-            }}
+      <AnimatePresence>
+        {showTwoFactorSetup && (
+          <motion.div
+            className="modal-backdrop"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
           >
-            I've Saved My Codes
-          </Button>
-        </Modal.Footer>
-      </Modal>
-    </Container>
+            <motion.div
+              className="glass-modal large"
+              initial={{ opacity: 0, scale: 0.9, y: 50 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 50 }}
+              transition={{ duration: 0.3 }}
+            >
+              <div className="modal-header">
+                <h4 className="modal-title">
+                  <i className="bi bi-shield-lock me-2"></i>
+                  Set Up Two-Factor Authentication
+                </h4>
+                <button
+                  className="modal-close"
+                  onClick={() => setShowTwoFactorSetup(false)}
+                >
+                  <i className="bi bi-x"></i>
+                </button>
+              </div>
+
+              <div className="modal-body">
+                <div className="glass-alert info-alert">
+                  <i className="bi bi-info-circle-fill me-2"></i>
+                  <strong>Two-Factor Authentication Required:</strong> For enhanced security, 2FA has been enabled for your account.
+                  Please complete the setup by scanning the QR code with your authenticator app.
+                </div>
+
+                <div className="qr-container">
+                  <motion.img
+                    src={twoFactorData?.qrCode}
+                    alt="2FA QR Code"
+                    className="qr-code"
+                    initial={{ opacity: 0, scale: 0.8 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ duration: 0.5 }}
+                  />
+                </div>
+
+                <div className="secret-key">
+                  <strong>Secret Key:</strong>
+                  <code className="secret-code">{twoFactorData?.secret}</code>
+                </div>
+
+                <hr className="divider" />
+
+                <h5 className="backup-title">Backup Codes</h5>
+                <div className="backup-warning">
+                  <i className="bi bi-exclamation-triangle me-1"></i>
+                  <strong>IMPORTANT:</strong> Save these backup codes in a secure place.
+                  Each code can only be used once if you lose access to your authenticator app.
+                </div>
+
+                <div className="backup-codes-grid">
+                  <Row>
+                    {twoFactorData?.backupCodes?.map((code, index) => (
+                      <Col xs={6} md={4} className="mb-2" key={index}>
+                        <div className="backup-code">
+                          <code>{code}</code>
+                        </div>
+                      </Col>
+                    ))}
+                  </Row>
+                </div>
+
+                <div className="backup-actions">
+                  <motion.button
+                    className="glass-button secondary-button"
+                    onClick={() => {
+                      if (twoFactorData?.backupCodes) {
+                        navigator.clipboard.writeText(twoFactorData.backupCodes.join('\n'));
+                      }
+                    }}
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                  >
+                    <i className="bi bi-clipboard me-1"></i>
+                    Copy Codes
+                  </motion.button>
+
+                  <motion.button
+                    className="glass-button secondary-button"
+                    onClick={() => {
+                      if (twoFactorData?.backupCodes) {
+                        const element = document.createElement("a");
+                        const file = new Blob([twoFactorData.backupCodes.join('\n')], { type: 'text/plain' });
+                        element.href = URL.createObjectURL(file);
+                        element.download = "2fa-backup-codes.txt";
+                        document.body.appendChild(element);
+                        element.click();
+                      }
+                    }}
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                  >
+                    <i className="bi bi-download me-1"></i>
+                    Download Codes
+                  </motion.button>
+                </div>
+              </div>
+
+              <div className="modal-footer">
+                <motion.button
+                  className="glass-button primary-button"
+                  onClick={() => {
+                    setShowTwoFactorSetup(false);
+                  }}
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                >
+                  <i className="bi bi-check me-2"></i>
+                  I've Saved My Codes
+                </motion.button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
   );
 };
 

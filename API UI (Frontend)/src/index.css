@@ -1,4 +1,4 @@
-/* index.css */
+/* index.css - Complete file with navbar offset fix */
 
 /* Import Bootstrap CSS */
 @import url('https://cdn.jsdelivr.net/npm/bootswatch@5.3.0/dist/cyborg/bootstrap.min.css');
@@ -34,9 +34,75 @@
   /* Example: dark blue-ish background */
 }
 
+/* MAIN BODY STYLES WITH NAVBAR OFFSET FIX */
 body {
   background-color: var(--bs-body-bg) !important;
   font-family: 'Inter Display', sans-serif;
+  /* FIX: Add padding-top to offset fixed navbar */
+  padding-top: 80px !important;
+  transition: padding-top 0.3s ease;
+  margin: 0;
+  overflow-x: hidden;
+}
+
+/* Responsive navbar offset for mobile */
+@media (max-width: 991.98px) {
+  body {
+    padding-top: 70px !important;
+  }
+}
+
+@media (max-width: 576px) {
+  body {
+    padding-top: 65px !important;
+  }
+}
+
+/* Dynamic navbar offset classes (for Header.js animations) */
+body.navbar-offset {
+  padding-top: 80px;
+}
+
+body.navbar-offset.navbar-scrolled {
+  padding-top: 70px;
+}
+
+body.navbar-offset.navbar-normal {
+  padding-top: 80px;
+}
+
+/* Mobile responsive for dynamic classes */
+@media (max-width: 991.98px) {
+  body.navbar-offset {
+    padding-top: 70px;
+  }
+
+  body.navbar-offset.navbar-scrolled {
+    padding-top: 65px;
+  }
+
+  body.navbar-offset.navbar-normal {
+    padding-top: 70px;
+  }
+}
+
+@media (max-width: 576px) {
+  body.navbar-offset {
+    padding-top: 65px;
+  }
+
+  body.navbar-offset.navbar-scrolled {
+    padding-top: 60px;
+  }
+
+  body.navbar-offset.navbar-normal {
+    padding-top: 65px;
+  }
+}
+
+/* Ensure smooth scrolling */
+html {
+  scroll-behavior: smooth;
 }
 
 /* Make sure your overrides have higher specificity if needed */
@@ -58,7 +124,6 @@ body {
 }
 
 /* Sidebar styles */
-
 .nav-tabs .nav-link.active {
   background-color: #ffffff;
   border-bottom-color: transparent;
@@ -77,8 +142,6 @@ body {
 .login-link {
   color: #28a745;
 }
-
-/* Previous existing styles... */
 
 /* Login Page Specific Styles */
 .vh-100 {
@@ -205,6 +268,31 @@ a .register-link:hover {
 .dropdown-menu .dropdown-item:focus {
   background-color: rgba(255, 255, 255, 0.1) !important;
   color: #fff !important;
+}
+
+/* Additional fixes for layout issues */
+.home-page-container {
+  position: relative;
+  z-index: 1;
+}
+
+/* Ensure all page content respects the navbar offset */
+.main-content {
+  position: relative;
+  z-index: 1;
+}
+
+/* Fix for any potential Bootstrap container issues */
+.container,
+.container-fluid {
+  position: relative;
+}
+
+/* Prevent mobile horizontal scroll */
+body,
+html {
+  overflow-x: hidden;
+  width: 100%;
 }
 
 /* Import mobile-responsive styles - must be AFTER all other imports */

@@ -946,6 +946,8 @@ const Dashboard = () => {
       logout();
     }
   };
+
+  // Render the playground section
   const renderPlaygroundSection = () => (
     <div className="playground-layout">
       {/* Playground Header */}
